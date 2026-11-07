@@ -9,6 +9,7 @@ import getpass
 import hashlib
 import hmac
 import importlib.util
+import io
 import json
 import os
 import re
@@ -24,6 +25,9 @@ from urllib.parse import urlsplit, parse_qs
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 DEFAULT_STATE = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'JobSearchHQ'
+REQUEST_DEADLINE_SECONDS = 30
+AI_UPLOAD_DEADLINE_SECONDS = 600
+MAX_REQUEST_WORKERS = 32
 LOGIN = '''<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in — Job Search HQ</title>
 <style>body{font:18px system-ui;background:#f5f6fa;color:#182034;margin:0;padding:24px}main{max-width:380px;margin:12vh auto;background:white;padding:28px;border-radius:20px}input,button{box-sizing:border-box;width:100%;font:inherit;padding:14px;margin:12px 0;border:1px solid #afb7c8;border-radius:10px}button{background:#244acb;color:white}p{line-height:1.5}</style>
@@ -199,11 +203,82 @@ def attachment(name):
     return {'Content-Disposition':'attachment; filename="'+(re.sub(r'[^A-Za-z0-9._-]','_',name) or 'document')+'"'}
 
 
+class BoundedHTTPServer(ThreadingHTTPServer):
+    def __init__(self, server_address, RequestHandlerClass, *,
+                 request_deadline_seconds=REQUEST_DEADLINE_SECONDS,
+                 max_workers=MAX_REQUEST_WORKERS):
+        self.request_deadline_seconds = request_deadline_seconds
+        self._workers = threading.BoundedSemaphore(max_workers)
+        self._deadlines = {}
+        super().__init__(server_address, RequestHandlerClass)
+
+    def get_request(self):
+        request, client_address = super().get_request()
+        self._deadlines[request] = time.monotonic() + self.request_deadline_seconds
+        return request, client_address
+
+    def process_request(self, request, client_address):
+        if not self._workers.acquire(blocking=False):
+            self._deadlines.pop(request, None)
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._deadlines.pop(request, None)
+            self._workers.release()
+            raise
+
+    def finish_request(self, request, client_address):
+        self.RequestHandlerClass(request, client_address, self,
+                                 request_deadline=self._deadlines[request])
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._deadlines.pop(request, None)
+            self._workers.release()
+
+
+class DeadlineReader(io.RawIOBase):
+    """Check the absolute deadline on every recv, including buffered readline."""
+    def __init__(self, connection, deadline):
+        super().__init__()
+        self.connection = connection
+        self.deadline = deadline
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('Request deadline exceeded')
+        self.connection.settimeout(min(15, remaining))
+        size = self.connection.recv_into(buffer)
+        if time.monotonic() >= self.deadline:
+            raise TimeoutError('Request deadline exceeded')
+        return size
+
+
 def handler(app):
     class Handler(BaseHTTPRequestHandler):
+        def __init__(self, *args, request_deadline=None, **kwargs):
+            self.request_deadline = (time.monotonic() + REQUEST_DEADLINE_SECONDS
+                                     if request_deadline is None else request_deadline)
+            super().__init__(*args, **kwargs)
+
         def setup(self):
             super().setup()
+            self.rfile.close()
+            self.rfile = io.BufferedReader(DeadlineReader(self.connection, self.request_deadline))
             self.connection.settimeout(15)
+
+        def end_headers(self):
+            # The request read budget must not shorten response/download writes.
+            self.connection.settimeout(15)
+            super().end_headers()
 
         def log_message(self, *args):
             pass  # Never log passwords, request bodies, cookie values or job content.
@@ -292,8 +367,20 @@ def handler(app):
                     return self.send(413)
                 if self.path != '/api/login' and not app.session_key(self.headers.get('Cookie', '')):
                     return self.send(401, {'error': 'Sign in required.'})
+                if self.path == '/api/ai/submit':
+                    # Signed-in phone uploads of photos can be large and slow; only the unauthenticated routes keep the short deadline.
+                    self.rfile.raw.deadline = max(self.rfile.raw.deadline, time.monotonic() + AI_UPLOAD_DEADLINE_SECONDS)
                 content_type = self.headers.get('Content-Type', '').split(';')[0]
-                raw = self.rfile.read(length).decode('utf-8')
+                chunks = []
+                remaining = length
+                while remaining:
+                    chunk = self.rfile.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    remaining -= len(chunk)
+                self.connection.settimeout(15)
+                raw = b''.join(chunks).decode('utf-8')
                 if self.path == '/api/login':
                     if content_type != 'application/x-www-form-urlencoded':
                         return self.send(415)
@@ -338,6 +425,9 @@ def handler(app):
                     return self.send(202, {'queued': True, 'write': item})
                 return self.send(409 if item['status'] in ('conflict', 'needs_check') else 400,
                                  {'error': item['message'], 'write': item})
+            except (TimeoutError, ConnectionError):
+                self.close_connection = True
+                return
             except app.tracker.Conflict as e:
                 return self.send(409, {'error': str(e)})
             except PermissionError:
@@ -372,7 +462,7 @@ def main():
     with load_tracker(a.workbook).workbook_lock(a.state/'server-instance'):
         app = App(a.state, a.workbook, a.origin)
         print(f'HQ listening only on 127.0.0.1:{a.port}. Expected browser origin: {app.origin}',flush=True)
-        server = ThreadingHTTPServer(('127.0.0.1', a.port), handler(app))
+        server = BoundedHTTPServer(('127.0.0.1', a.port), handler(app))
         app.queue.start()
         app.ai.start()
         try:

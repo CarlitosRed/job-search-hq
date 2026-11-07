@@ -6,6 +6,7 @@ import importlib.util
 import json
 from pathlib import Path
 import secrets
+import socket
 import ssl
 import subprocess
 import tempfile
@@ -15,6 +16,7 @@ import sys
 import shutil
 import unittest
 import uuid
+from types import SimpleNamespace
 from urllib.parse import urlencode
 
 import openpyxl
@@ -23,6 +25,137 @@ HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('hq_pc', HERE / 'server.py')
 hq = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hq)
+
+
+class RequestLimits(unittest.TestCase):
+    def start_server(self, deadline=1, max_workers=2):
+        self.started = threading.Semaphore(0)
+        self.finished = threading.Semaphore(0)
+        self.login_calls = []
+        app = SimpleNamespace(host='', origin='')
+
+        def login(password):
+            self.login_calls.append(password)
+            return None, 401
+
+        app.login = login
+        started, finished = self.started, self.finished
+
+        class Handler(hq.handler(app)):
+            def setup(self):
+                super().setup()
+                started.release()
+
+        class Server(hq.BoundedHTTPServer):
+            def process_request_thread(self, request, client_address):
+                try:
+                    super().process_request_thread(request, client_address)
+                finally:
+                    finished.release()
+
+        self.server = Server(('127.0.0.1', 0), Handler,
+                             request_deadline_seconds=deadline, max_workers=max_workers)
+        self.port = self.server.server_port
+        app.host = f'127.0.0.1:{self.port}'
+        app.origin = f'http://{app.host}'
+        self.app = app
+        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread.start()
+
+        def cleanup():
+            self.server.shutdown()
+            self.server.server_close()
+            thread.join(timeout=2)
+
+        self.addCleanup(cleanup)
+
+    def assert_login_page(self):
+        c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=2)
+        try:
+            c.request('GET', '/login', headers={'Host': self.app.host})
+            r = c.getresponse()
+            self.assertEqual(r.status, 200)
+            self.assertIn(b'Sign in', r.read())
+        finally:
+            c.close()
+
+    def test_slow_request_line_headers_and_login_body_have_absolute_deadline(self):
+        self.start_server()
+        prefixes = (
+            b'GET /login HTTP/1.1',
+            b'GET /login HTTP/1.1\r\nX-Slow: ',
+            (f'POST /api/login HTTP/1.1\r\nHost: {self.app.host}\r\n'
+             f'Origin: {self.app.origin}\r\nContent-Type: application/x-www-form-urlencoded\r\n'
+             'Content-Length: 100\r\n\r\npassword=').encode(),
+        )
+        for prefix in prefixes:
+            with self.subTest(prefix=prefix):
+                stop = threading.Event()
+                sent = []
+                with socket.create_connection(('127.0.0.1', self.port), timeout=3) as client:
+                    began = time.monotonic()
+                    client.sendall(prefix)
+                    self.assertTrue(self.started.acquire(timeout=2))
+
+                    def trickle():
+                        while not stop.wait(0.05):
+                            try:
+                                client.sendall(b'x')
+                                sent.append(1)
+                            except OSError:
+                                return
+
+                    writer = threading.Thread(target=trickle, daemon=True)
+                    writer.start()
+                    try:
+                        try:
+                            self.assertEqual(client.recv(1), b'')
+                        except ConnectionResetError:
+                            pass
+                        self.assertLess(time.monotonic() - began, 2.5)
+                        self.assertGreaterEqual(len(sent), 3)
+                    finally:
+                        stop.set()
+                        writer.join(timeout=1)
+                self.assertTrue(self.finished.acquire(timeout=2))
+        self.assertEqual(self.login_calls, [])
+        self.assert_login_page()
+        c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=2)
+        try:
+            c.request('POST', '/api/login', 'password=fictional', headers={
+                'Host': self.app.host, 'Origin': self.app.origin,
+                'Content-Type': 'application/x-www-form-urlencoded',
+            })
+            r = c.getresponse()
+            self.assertEqual(r.status, 401)
+            r.read()
+            self.assertEqual(self.login_calls, ['fictional'])
+        finally:
+            c.close()
+
+    def test_worker_cap_closes_extra_connection_and_releases_slots(self):
+        self.start_server(deadline=5, max_workers=2)
+        clients = []
+        try:
+            for _ in range(2):
+                client = socket.create_connection(('127.0.0.1', self.port), timeout=2)
+                clients.append(client)
+                self.assertTrue(self.started.acquire(timeout=2))
+            with socket.create_connection(('127.0.0.1', self.port), timeout=1) as extra:
+                began = time.monotonic()
+                try:
+                    self.assertEqual(extra.recv(1), b'')
+                except ConnectionResetError:
+                    pass
+                self.assertLess(time.monotonic() - began, 1)
+            self.assertFalse(self.started.acquire(blocking=False))
+            clients.pop().close()
+            self.assertTrue(self.finished.acquire(timeout=2))
+            # One slow connection remains open while the released slot serves normally.
+            self.assert_login_page()
+        finally:
+            for client in clients:
+                client.close()
 
 
 class Integration(unittest.TestCase):
@@ -43,7 +176,7 @@ class Integration(unittest.TestCase):
         self.app = hq.App(self.state, self.book, 'http://127.0.0.1')
         self.app.scan_log_dir = self.state
         self.app.cv_work = self.state
-        self.server = hq.ThreadingHTTPServer(('127.0.0.1', 0), hq.handler(self.app))
+        self.server = hq.BoundedHTTPServer(('127.0.0.1', 0), hq.handler(self.app))
         self.port = self.server.server_port
         self.app.origin = f'http://127.0.0.1:{self.port}'
         self.app.host = f'127.0.0.1:{self.port}'
@@ -369,7 +502,7 @@ with m.workbook_lock(sys.argv[2]):
         openssl = Path('C:/Program Files/Git/usr/bin/openssl.exe')
         subprocess.run([str(openssl),'req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(key),'-out',str(cert),'-days','1','-subj','/CN=localhost'],
                        check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        self.server = hq.ThreadingHTTPServer(('127.0.0.1',0),hq.handler(self.app))
+        self.server = hq.BoundedHTTPServer(('127.0.0.1',0),hq.handler(self.app))
         tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         tls.load_cert_chain(cert,key)
         self.server.socket = tls.wrap_socket(self.server.socket,server_side=True)
