@@ -14,9 +14,10 @@ against **your own evidence** and draft a one-page CV or cover letter. Every dra
 - **Board, list, overview and contacts** over your spreadsheet (`work/applications-tracker.xlsx`), with durable saves:
   edits queue safely while Excel or a scan has the file open, conflicts are shown instead of overwritten.
 - **Review a posting**: paste text or add photos, get a fit score and an honest gaps list, then ask for a CV or letter.
-- **Evidence first**: drafts can only use entries in `evidence/` that are marked `verified` or `stated`, `public-safe: yes`
-  and have CV-ready wording. The model must list each claim with the evidence IDs behind it, and the app rejects drafts that
-  cite unknown or ineligible IDs or whose claim list does not match the text. It cannot prove a claim is true: you still read every line.
+- **Evidence first**: the model is asked to use entries in `evidence/` that are marked `verified` or `stated`, `public-safe: yes`
+  and have CV-ready wording, and to list each factual claim with its evidence IDs. The app checks that cited IDs are eligible
+  and each listed claim string appears in the document. It does not check that every factual sentence is listed or that the
+  cited evidence supports a claim. A human must review every line before using the draft.
 - **Easy to read**: CV Word files are laid out for quick reading (one page, clear section headings, dates on the right),
   and trimming to one page deletes whole lines or Summary sentences only (page 2 only as a last resort), never rewording anything.
 - **One page**: the AI is asked for at most 520 words and the app rejects anything over 600. `cv_onepage.py` trims an

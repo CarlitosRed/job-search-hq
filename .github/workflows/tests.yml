@@ -11,6 +11,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
+      - run: python -m pip install playwright
+      # The phone and tab-geometry tests launch WebKit.
+      - run: python -m playwright install webkit
       - run: python tools/hq-dashboard/port_tracker.py --backend pc
       - run: python -I tools/hq-dashboard/test_ai_tasks.py
       - run: python -I tools/hq-dashboard/test_cv_onepage.py
+      - run: python -I tools/hq-dashboard/test_pc_server.py

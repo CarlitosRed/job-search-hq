@@ -69,6 +69,49 @@ class CareerTasks(unittest.TestCase):
         self.assertEqual(next(t for t in self.tasks.list_tasks() if t['kind']=='cv')['status'],'failed')
         self.assertNotIn('cv_markdown',self.tasks.posting(key)['fit'])
 
+    def test_ineligible_claim_evidence_is_rejected(self):
+        key=self.analyze()
+        for kind,field in (('cv','cv_markdown'),('letter','cover_letter_markdown')):
+            with self.subTest(kind=kind):
+                self.result={field:'Fictional example skill.','sources':['E-999'],'flags':[],
+                             'claims':[{'text':'Fictional example skill.','evidence':['E-998']}]}
+                task_id=self.tasks.submit({'kind':kind,'postingId':key,'withoutSentiment':True,'requestId':str(uuid.uuid4())})
+                self.tasks.process_one()
+                task=next(t for t in self.tasks.list_tasks() if t['id']==task_id)
+                self.assertEqual(task['status'],'failed')
+                self.assertEqual(task['message'],'The draft cited evidence that is not eligible.')
+                self.assertNotIn(field,self.tasks.posting(key)['fit'])
+
+    def test_listed_claim_absent_from_document_is_rejected(self):
+        key=self.analyze()
+        for kind,field in (('cv','cv_markdown'),('letter','cover_letter_markdown')):
+            with self.subTest(kind=kind):
+                self.result={field:'Fictional example skill.','sources':['E-999'],'flags':[],
+                             'claims':[{'text':'This claim is absent.','evidence':['E-999']}]}
+                task_id=self.tasks.submit({'kind':kind,'postingId':key,'withoutSentiment':True,'requestId':str(uuid.uuid4())})
+                self.tasks.process_one()
+                task=next(t for t in self.tasks.list_tasks() if t['id']==task_id)
+                self.assertEqual(task['status'],'failed')
+                self.assertEqual(task['message'],'The evidence map does not match the document text.')
+                self.assertNotIn(field,self.tasks.posting(key)['fit'])
+
+    def test_documented_limitation_unlisted_factual_prose_is_accepted(self):
+        # Claim coverage is not validated; a human must review the whole draft.
+        key=self.analyze()
+        content='Fictional example skill.\nI managed 500 fictional employees.'
+        claims=[{'text':'Fictional example skill.','evidence':['E-999']}]
+        for kind,field in (('cv','cv_markdown'),('letter','cover_letter_markdown')):
+            with self.subTest(kind=kind):
+                self.result={field:content,'sources':['E-999'],'flags':[],'claims':claims}
+                task_id=self.tasks.submit({'kind':kind,'postingId':key,'withoutSentiment':True,'requestId':str(uuid.uuid4())})
+                self.tasks.process_one()
+                task=next(t for t in self.tasks.list_tasks() if t['id']==task_id)
+                self.assertEqual(task['status'],'done')
+                record=self.tasks.posting(key)
+                self.assertEqual(record['fit'][field],content)
+                self.assertEqual(record['fit'][kind+'_claims'],claims)
+                self.assertFalse(record['reviewed'])
+
     def test_missing_analysis_and_invalid_photo(self):
         with self.assertRaises(ValueError):
             self.tasks.submit({'kind':'cv','postingId':str(uuid.uuid4()),'requestId':str(uuid.uuid4())})
