@@ -158,6 +158,112 @@ class RequestLimits(unittest.TestCase):
                 client.close()
 
 
+
+class SaveNoticeUI(unittest.TestCase):
+    # Offline UI regressions. Signed: Codex (builder), 2026-11-07.
+    def test_save_notice_lifecycle(self):
+        from playwright.sync_api import sync_playwright, expect
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            page = browser.new_page(reduced_motion='reduce')
+            page.route('**/*', lambda route: route.abort())
+            tracker = (HERE.parent / 'tracker' / 'index.html').read_text(encoding='utf-8')
+            css = tracker.split('<style>', 1)[1].split('</style>', 1)[0]
+            css += (HERE / 'hosted' / 'pc.css').read_text(encoding='utf-8')
+            page.set_content('<style>' + css + '</style><header class="top"></header>')
+            # Deterministic time without sleeping, network, workbook writes or a provider.
+            page.add_script_tag(content="""
+                let tick=0, timerID=0; const timers=new Map();
+                window.setTimeout=(fn,ms=0)=>{timers.set(++timerID,{fn,at:tick+ms});return timerID};
+                window.clearTimeout=id=>timers.delete(id);
+                window.advance=ms=>{const end=tick+ms;while(true){
+                    const next=[...timers].filter(([,t])=>t.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];
+                    if(!next)break;tick=next[1].at;timers.delete(next[0]);next[1].fn();
+                }tick=end};
+                window.writes=[]; window.offline=false; window.dismissed=[];
+            """)
+            page.add_script_tag(content=(HERE / 'hosted' / 'pc-data.js').read_text(encoding='utf-8'))
+            page.evaluate("""() => {
+                pcFetch=async(path,options)=>{if(offline)throw Error('offline');
+                    if(options){const {id}=JSON.parse(options.body);dismissed.push(id);
+                        writes=writes.map(w=>w.id===id?{...w,status:'cancelled'}:w);return {}};
+                    return {writes}};
+                reloadJobs=async()=>{};
+            }""")
+            def poll(items):
+                page.evaluate('(items)=>{writes=items;return pcWrites()}', items)
+
+            saved = dict(id='fictional-1', label='<Example>', status='saved', message='Saved to your spreadsheet.')
+            poll([saved])
+            box = page.locator('#pc-saves')
+            expect(box).to_be_visible()
+            expect(box).to_have_attribute('role', 'status')
+            expect(box).to_have_attribute('aria-live', 'polite')
+            expect(box).to_have_class('banner n')
+            expect(box).to_contain_text('<Example>: Saved to your spreadsheet.')
+            self.assertEqual(box.locator('example').count(), 0, 'Untrusted labels must stay text')
+            page.evaluate('advance(4000)')
+            poll([saved])
+            page.evaluate('advance(1000)')
+            expect(box).to_be_hidden()
+            poll([saved])
+            expect(box).to_be_hidden()
+            # A new message gets a fresh five seconds; pointer/focus pause expiry.
+            waiting = dict(id='fictional-2', label='Example', status='waiting', message='Waiting for Excel')
+            poll([waiting])
+            page.evaluate('advance(4000)')
+            applying = {**waiting, 'status': 'applying', 'message': 'Saving now'}
+            poll([applying])
+            page.evaluate('advance(1000)')
+            expect(box).to_be_visible()
+            box.dispatch_event('pointerenter')
+            page.evaluate('advance(6000)')
+            expect(box).to_be_visible()
+            box.dispatch_event('pointerleave')
+            page.evaluate('advance(5000)')
+            expect(box).to_be_hidden()
+            poll([waiting])
+            box.locator('button').focus()
+            page.evaluate('advance(6000)')
+            expect(box).to_be_visible()
+            page.evaluate('document.activeElement.blur();advance(5000)')
+            expect(box).to_be_hidden()
+            # An older failure must remain visible even alongside a newer waiting edit.
+            for status in ('conflict', 'needs_check', 'failed'):
+                error = dict(id='error-'+status, label='Example', status=status, message='Check spreadsheet')
+                poll([waiting, error])
+                expect(box).to_have_attribute('role', 'alert')
+                expect(box).to_have_class('banner')
+                page.evaluate('advance(10000)')
+                expect(box).to_be_visible()
+                expect(box).to_contain_text('1 edit waiting or saving')
+                box.locator('button').click()
+                self.assertEqual(page.evaluate('dismissed.at(-1)'), error['id'])
+            poll([waiting, {**waiting, 'id': 'fictional-3'}])
+            expect(box).to_contain_text('2 edits waiting or saving')
+            self.assertEqual(page.locator('#pc-saves').count(), 1)
+            page.evaluate('offline=true;pcWrites()')
+            expect(box).to_contain_text('Server unreachable')
+            page.evaluate('advance(10000)')
+            expect(box).to_be_visible()
+            box.get_by_role('button', name='Dismiss', exact=True).click()
+            page.evaluate('pcWrites()')
+            expect(box).to_be_hidden()
+            page.evaluate('offline=false;writes=[];pcWrites()')
+            expect(box).to_be_hidden()
+            # Normal motion fades after the delay; reduced motion above hides immediately.
+            page.mouse.move(0, 0)
+            box.dispatch_event('pointerleave')
+            page.evaluate('advance(0)')
+            page.emulate_media(reduced_motion='no-preference')
+            poll([saved])
+            page.evaluate('advance(5000)')
+            expect(box).to_have_class('banner n pc-save-fade')
+            page.evaluate('advance(180)')
+            expect(box).to_be_hidden()
+            browser.close()
+
+
 class Integration(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='hq-pc-test-')
@@ -580,6 +686,18 @@ with m.workbook_lock(sys.argv[2]):
             self.app.queue.process_one()
             page.evaluate('() => pcWrites()')
             expect(page.locator('#pc-saves')).to_contain_text('Saved to your spreadsheet')
+            # Success remains observable, then clears without a repeating-poll revival.
+            expect(page.locator('#pc-saves')).to_have_attribute('role', 'status')
+            expect(page.locator('#pc-saves')).to_have_attribute('aria-live', 'polite')
+            expect(page.locator('#pc-saves')).to_be_hidden(timeout=7000)
+            page.evaluate('() => pcWrites()')
+            expect(page.locator('#pc-saves')).to_be_hidden()
+            # Render the fictional Link column in the drawer without requesting that URL.
+            page.evaluate('() => openJob(D.jobs[0]._id)')
+            posting = page.locator('#drawer a[href="https://example.com/job"]')
+            expect(posting).to_have_attribute('target', '_blank')
+            expect(posting).to_have_attribute('rel', 'noopener noreferrer')
+            page.evaluate('() => closeDrawers()')
             wb = openpyxl.load_workbook(self.book)
             self.assertEqual(wb.active.cell(2,6).value,'Phone queued note')
             wb.close()
