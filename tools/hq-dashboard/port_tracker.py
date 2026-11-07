@@ -142,7 +142,6 @@ def main():
     h = sub(h, '<div class="col-empty">${s.id==="wish"?"No saved jobs":"Drag a card here"}</div>', '<div class="col-empty">${s.id==="wish"?"No saved jobs":`<span class="h-desk">Drag a card here</span><span class="h-touch">Nothing here yet</span>`}</div>')
     h = sub(h, '<p class="hint">Drag cards between', '<p class="hint h-desk">Drag cards between')
     h = sub(h, 'return`<div class="board" role="list">', 'return`<p class="hint h-touch">Swipe sideways for more columns. Tap a card for details, or use Move… on it.</p><div class="board" role="list">')
-    h = sub(h, "jobs shown · click to filter</p>", 'jobs shown · <span class="h-desk">click</span><span class="h-touch">tap</span> to filter</p>')
     # Help: phones get phone help, not keyboard shortcuts.
     h = sub(h, '<div id="help" popover><h2>Shortcuts</h2><dl>',
             '<div id="help" popover><h2 class="h-desk">Shortcuts</h2><h2 class="h-touch">Help</h2><p class="h-touch">Tap a job to open it. Change its status there, or with Move… on the Board. Scrolled down? Tap the open tab to go back up.</p><dl class="h-desk">')

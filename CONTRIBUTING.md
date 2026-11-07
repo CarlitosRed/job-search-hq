@@ -31,3 +31,13 @@ Follow the Quick start in the README. Use only the fictional files in `examples/
 1. Run the three test commands in the README. They must pass without a live model.
 2. Keep the change to UI files. Say in the description what you changed and attach a screenshot (fictional data only).
 3. Open a pull request against `main`. The owner reviews and merges; nothing is merged without that.
+
+## What a good pull request looks like (from our first one)
+
+- Start from the latest `main` and keep to the "safe to change" files above. Fill in the pull request template.
+- Run the build and the tests before you open it, and paste the results. A PR whose own description says the build fails is not ready.
+- Do not change what a number means (applications, tile counts, percentages) in a styling PR. If you think it should change, say so in the description and let the owner decide. Skipped jobs are not applications.
+- Keep functions the page needs out of the data section (see `docs/REVIEWING-PULL-REQUESTS.md`) and leave the phone header rules alone unless the geometry test still passes.
+- Attach desktop and phone screenshots (fictional data).
+
+The owner's review steps are in `docs/REVIEWING-PULL-REQUESTS.md`.
