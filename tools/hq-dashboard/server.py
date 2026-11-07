@@ -181,7 +181,7 @@ class App:
                     raise ValueError('Text fields must contain text.')
                 if isinstance(value, str) and (len(value) > 32767 or len(value.encode('utf-16-le')) // 2 > 32767):
                     raise ValueError('That text is too long for a spreadsheet cell.')
-                if isinstance(value, str) and value.startswith('='):
+                if isinstance(value, str) and t.is_formula_text(value):
                     raise ValueError('Text cannot start with an equals sign. Add a word before it.')
             if path == '/api/update':
                 expected = payload.get('expect')
@@ -287,7 +287,7 @@ def handler(app):
                 return self.send(400)
             try:
                 length = int(self.headers.get('Content-Length', '-1'))
-                maximum=56*1024*1024 if self.path=='/api/ai/submit' else 262144
+                maximum = 4096 if self.path == '/api/login' else (56*1024*1024 if self.path == '/api/ai/submit' else 262144)
                 if not 0 <= length <= maximum:
                     return self.send(413)
                 if self.path != '/api/login' and not app.session_key(self.headers.get('Cookie', '')):
@@ -295,8 +295,6 @@ def handler(app):
                 content_type = self.headers.get('Content-Type', '').split(';')[0]
                 raw = self.rfile.read(length).decode('utf-8')
                 if self.path == '/api/login':
-                    if length > 4096:
-                        return self.send(413)
                     if content_type != 'application/x-www-form-urlencoded':
                         return self.send(415)
                     password = parse_qs(raw).get('password', [''])[0]

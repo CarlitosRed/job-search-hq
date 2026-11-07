@@ -185,6 +185,56 @@ class Integration(unittest.TestCase):
         self.assertEqual(self.edit(note='x' * 32768)[0], 400)
         self.assertEqual(self.edit(note='😀' * 17000)[0], 400)
 
+    def test_add_formula_after_whitespace_rejected(self):
+        self.login()
+        expected = None
+        for note in ('=1+1', ' \t=1+1', '\u2003\u00a0=1+1', '\x01\t=1+1', '\u200b\ufeff=1+1'):
+            with self.subTest(note=repr(note)):
+                p = {'sheet': 'Fictional jobs', 'Company': 'Second Example', 'Role': 'Test role',
+                     'Notes': note, 'version': self.data()['version'], 'requestId': str(uuid.uuid4())}
+                status, _, raw = self.request('POST', '/api/add', p)
+                self.assertEqual(status, 400)
+                body = json.loads(raw)
+                self.assertEqual(body['write']['status'], 'failed')
+                # Compare the response body except per-request identifiers and timestamps.
+                for key in ('id', 'created', 'updated'):
+                    body['write'].pop(key)
+                expected = body if expected is None else expected
+                self.assertEqual(body, expected)
+                self.assertEqual(len(self.data()['jobs']), 1)
+
+    def test_tracker_formula_text_saved_as_string(self):
+        tracker = self.app.tracker
+        for note in ('=1+1', ' \t=1+1', '\u2003=1+1', '\u200b=1+1', ' Ordinary note '):
+            with self.subTest(note=repr(note)):
+                row, _ = tracker.add({'sheet': 'Fictional jobs', 'Company': 'Second Example',
+                                      'Role': 'Test role', 'Notes': note})
+                tracker.update({'sheet': 'Fictional jobs', 'row': 2, 'note': note})
+                wb = openpyxl.load_workbook(self.book)
+                try:
+                    self.assertEqual(wb.active.cell(row, 6).value, note.strip())
+                    self.assertEqual(wb.active.cell(row, 6).data_type, 's')
+                    self.assertEqual(wb.active.cell(2, 6).value, note)
+                    self.assertEqual(wb.active.cell(2, 6).data_type, 's')
+                finally:
+                    wb.close()
+
+    def test_login_oversize_rejected_before_body_read(self):
+        # Send headers only: waiting for the declared body must fail this test.
+        c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=2)
+        try:
+            c.putrequest('POST', '/api/login', skip_host=True)
+            c.putheader('Host', self.app.host)
+            c.putheader('Origin', self.app.origin)
+            c.putheader('Content-Type', 'application/x-www-form-urlencoded')
+            c.putheader('Content-Length', '4097')
+            c.endheaders()
+            r = c.getresponse()
+            self.assertEqual(r.status, 413)
+            self.assertEqual(r.read(), b'')
+        finally:
+            c.close()
+
     def test_add_and_read_external_save(self):
         self.login()
         p = {'sheet': 'Fictional jobs', 'Company': 'Second Example', 'Role': 'Test role', 'version': self.data()['version'],'requestId':str(uuid.uuid4())}

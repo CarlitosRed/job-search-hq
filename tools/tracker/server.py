@@ -16,6 +16,7 @@ from pathlib import Path
 
 import openpyxl
 import importlib.util
+import unicodedata
 
 # Shared Windows writer lock.
 _lock_spec = importlib.util.spec_from_file_location('tracker_workbook_lock', Path(__file__).with_name('workbook_lock.py'))
@@ -35,6 +36,15 @@ ADD_FIELDS = ("Company", "Role", "Where", "Posted", "Score", "Verdict", "My stat
 
 class Conflict(Exception):
     pass
+
+
+def is_formula_text(value):
+    """Check stripped text after skipping leading whitespace and control characters."""
+    for char in value.strip():
+        if char.isspace() or unicodedata.category(char) in ('Cc', 'Cf'):
+            continue
+        return char == '='
+    return False
 
 
 def cell(v):
@@ -171,7 +181,10 @@ def update(p):
             if key == "date" and val:
                 val = date.fromisoformat(val)
             # assign .value directly: ws.cell(r, c, None) silently ignores None, so clearing would not work
-            ws.cell(row, head.index(col[key]) + 1).value = val if val not in ("", None) else None
+            dst = ws.cell(row, head.index(col[key]) + 1)
+            dst.value = val if val not in ("", None) else None
+            if isinstance(val, str) and is_formula_text(val):
+                dst.data_type = "s"
     save(wb)
 
 
@@ -220,6 +233,8 @@ def add(p):
             v = date.fromisoformat(v)
         if v not in ("", None):
             dst.value = v
+            if isinstance(v, str) and is_formula_text(v):
+                dst.data_type = "s"
     if last >= 2 and ws.row_dimensions[last].height:
         ws.row_dimensions[new].height = ws.row_dimensions[last].height
     sc = openpyxl.utils.get_column_letter(head.index("My status") + 1)
