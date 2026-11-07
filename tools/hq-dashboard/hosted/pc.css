@@ -13,5 +13,7 @@
 .rep-body ul.rep-rows{list-style:none;padding:0;display:grid;gap:6px}
 .rep-rows li{background:var(--card);border-radius:10px;padding:8px 10px;display:grid;gap:2px}
 @media (max-width:900px){.pc-acts{flex:1 1 100%}.pc-acts .btn{flex:1 1 0;justify-content:center}.cvl .pc-dl{margin-left:auto}}
-/* six tabs with the longer Documents label still fit a 375 px phone, so the strip never scrolls between views */
-@media (max-width:560px){.seg button{padding:7px 4px;gap:4px}}
+/* Allow fractional flex shrink: intrinsic label widths plus gaps can exceed the
+   phone strip by a pixel. Otherwise viewShown() scrolls it when tabs change.
+   The shared 44px minimum still preserves each button's touch target. */
+@media (max-width:560px){.seg button{flex:1 1 auto;padding:7px 4px;gap:4px}}

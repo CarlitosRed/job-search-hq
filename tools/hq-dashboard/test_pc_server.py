@@ -388,7 +388,6 @@ with m.workbook_lock(sys.argv[2]):
         except Exception:
             self.fail('Browser sign-in did not finish: '+page.url+' '+page.locator('body').inner_text()[:300])
 
-    @unittest.skipIf(os.environ.get('HQ_SKIP_BROWSER'), 'WebKit tests are skipped in CI: they fail on the GitHub runner')
     def test_tab_geometry_is_stable(self):
         # Top tabs keep position and size in every view, including Documents, at desktop, computer, tablet and phone widths.
         from playwright.sync_api import sync_playwright, expect
@@ -409,11 +408,13 @@ with m.workbook_lock(sys.argv[2]):
                     now = page.evaluate(rects)
                     first = first or now
                     self.assertEqual(now, first, f'tabs moved at {width}px in {view}')
+                    if width == 375:
+                        self.assertTrue(page.locator('.seg').evaluate('(s) => s.scrollWidth <= s.clientWidth'),
+                                        f'phone tabs overflow in {view}, allowing viewShown to scroll them')
                 self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), width)
                 context.close()
             browser.close()
 
-    @unittest.skipIf(os.environ.get('HQ_SKIP_BROWSER'), 'WebKit tests are skipped in CI: they fail on the GitHub runner')
     def test_phone_browser(self):
         from playwright.sync_api import sync_playwright, expect
         docs, report = self.make_documents()
@@ -520,8 +521,14 @@ with m.workbook_lock(sys.argv[2]):
             self.assertEqual([page.input_value(f) for f in ('#r-company', '#r-role', '#r-link')], ['Example Company', 'Example Engineer', 'https://example.com/job'])
             expect(page.locator('#r-hint')).to_contain_text('Writing a cover letter for Example Company')
             page.fill('#r-text', 'Fictional job posting with example requirements. '*8)
-            page.click('#r-go')
+            # The worker must see this submission, and the sentiment form from
+            # the earlier result must not count as completion of this analysis.
+            with page.expect_response(lambda r: r.url.endswith('/api/ai/submit') and r.request.method == 'POST') as submitted:
+                page.click('#r-go')
+            self.assertTrue(submitted.value.ok)
+            self.assertEqual(submitted.value.request.post_data_json['posting']['jobId'], self.app.data()['jobs'][0]['_id'])
             self.app.ai.process_one()
+            expect(page.locator('#r-go')).to_be_enabled(timeout=10000)
             expect(page.locator('#r-sent')).to_be_visible(timeout=10000)
             self.assertEqual([t['kind'] for t in self.app.ai.list_tasks()].count('letter'), 0, 'A letter waits for the sentiment choice')
             self.assertIn(self.app.data()['jobs'][0]['_id'], [x.get('jobId') for x in self.app.ai.postings()])

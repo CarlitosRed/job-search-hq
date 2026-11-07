@@ -11,10 +11,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
+      - run: pip install playwright
+      - run: python -m playwright install webkit
       - run: python tools/hq-dashboard/port_tracker.py --backend pc
       - run: python -I tools/hq-dashboard/test_ai_tasks.py
       - run: python -I tools/hq-dashboard/test_cv_onepage.py
-      # The two WebKit tests are skipped here: on the GitHub runner they fail (1px tab offset; a posting check). Run them locally.
       - run: python -I tools/hq-dashboard/test_pc_server.py
-        env:
-          HQ_SKIP_BROWSER: "1"
