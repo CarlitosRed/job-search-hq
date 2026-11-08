@@ -11,3 +11,5 @@ tools/hq-dashboard/pc-index.html
 rules.md
 evidence/*
 !evidence/*-example-*.md
+
+.venv/
