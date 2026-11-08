@@ -45,7 +45,7 @@ page fit uses font metrics and needs visual review in Word or Pages.
 
 ## Quick start
 
-Follow [SETUP.md](SETUP.md) for Python 3.12 installation, a fictional workbook, the PC page build, password setup, and the Windows server on `127.0.0.1:8770`. It also covers HTTPS phone access, backups, startup tasks, and known gaps. The example workbook referenced by older instructions is not bundled; use the setup guide's fixture snippet.
+Follow [SETUP.md](SETUP.md) for Python 3.12 installation, a fictional workbook, the PC page build, password setup, and the Windows server on `127.0.0.1:8770`. It also covers HTTPS phone access, backups, startup tasks, and known gaps. The bundled `examples/applications-tracker.xlsx` contains three fictional jobs and one fictional contact; the setup guide also provides a fixture snippet.
 
 For UI work, use [the contributor quickstart](docs/CONTRIBUTOR-QUICKSTART.md). macOS/Linux can build the HTML and preview the original tracker without writes; full server operation and complete validation require Windows. Read [the architecture overview](docs/ARCHITECTURE.md) for component and data boundaries.
 

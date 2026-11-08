@@ -75,7 +75,7 @@ python -m pip install playwright
 python -m playwright install webkit
 ```
 
-Downloads need internet access. Activate the environment in each new terminal. `.venv/` is **not** git-ignored here: never stage it. If PowerShell blocks activation, use the interpreter directly without changing machine-wide policy:
+Downloads need internet access. Activate the environment in each new terminal. `.venv/` is git-ignored here: never stage or commit it. If PowerShell blocks activation, use the interpreter directly without changing machine-wide policy:
 
 ```powershell
 & .\.venv\Scripts\python.exe -m pip install -r requirements.txt
@@ -85,7 +85,7 @@ Use that interpreter in place of `python` in later Windows commands if activatio
 
 ## 3. Fictional demo data in 60 seconds
 
-This is the shortest documented route after installation; timing is **Unverified**. No demo generator or example workbook is bundled. This snippet creates the reader's expected layout and refuses to overwrite an existing workbook. Use a fresh clone containing fictional evidence only.
+This is the shortest documented route after installation; timing is **Unverified**. The bundled `examples/applications-tracker.xlsx` contains three fictional jobs and one fictional contact. No demo generator is bundled. As an alternative, this snippet creates the reader's expected layout and refuses to overwrite an existing workbook. Use a fresh clone containing fictional evidence only.
 
 PowerShell:
 
@@ -217,7 +217,7 @@ Back up first. Keep private data in a personal installation, not a contribution 
 | `Where`, `Posted`, `Score`, `Verdict` | Display and filtering; use a numeric-looking score such as `3.5`. |
 | `My status`, `Date applied`, `Notes` | Editable fields; dates use `YYYY-MM-DD`. |
 | `CV used`, `Source`, `Link` | Document reference and posting context; links start with HTTP or HTTPS. |
-| `Open check YYYY-MM-DD` (optional) | Reader selects the newest dated nonempty check; recognizes OPEN, CLOSED, REDIRECTED, UNKNOWN. |
+| `Open check YYYY-MM-DD` (optional) | Reader selects the newest dated check matching a recognized status (OPEN, CLOSED, REDIRECTED, UNKNOWN), falling back to the newest nonempty value only when none match. |
 
 Stored statuses are exactly `Suggested (not applied)`, `Message drafted`, `CV ready`, `Applied`, `Interview`, `Rejected`, `Offer`, and `Skipped`. UI Interviewing corresponds to stored `Interview`. Applications means Applied + Interviewing + Offer + Rejected. Skipped is not an application. Each job counts once by its current status; charts do not reconstruct history.
 
@@ -384,9 +384,9 @@ To uninstall, disable the Funnel rule from step 8, end/delete `JobSearchHQ-Serve
 | Save unconfirmed / interrupted | Shutdown during apply or ambiguous failure. | Inspect the workbook before dismissing/repeating; the edit may already be present. |
 | Port in use / WinError 10048 | Another process uses 8770. | Stop the known instance or change both port and origin as in step 4. Update proxy/startup configuration too. |
 | Writer lock error on launch | Duplicate instance with the same state, or non-Windows OS. | Stop duplicate HQ; use Windows for the full server or Mac's read-only preview. |
-| No workbook / cannot read spreadsheet | Missing, damaged, inaccessible, or wrong path. | Create step 3's fixture or pass a valid workbook path. The example workbook cited in older docs is absent. |
+| No workbook / cannot read spreadsheet | Missing, damaged, inaccessible, or wrong path. | Copy the bundled `examples/applications-tracker.xlsx` to `work/applications-tracker.xlsx`, create step 3's fixture, or pass a valid workbook path. |
 | First run port_tracker.py message | Generated PC HTML missing. | Run the build in step 5. |
-| Build fails with expected-string error | Exact source marker/replacement changed. Errors include `port: expected ... match(es)` or `port: pattern matched ... times`. | Restore the expected source or narrowly synchronize the port script and explain it in the PR. Do not use stale generated HTML. |
+| Build fails with expected-string error | Exact source marker/replacement changed. Errors include `port: expected ... match(es)` or `port: pattern matched ... times`. | Restore the expected source or tell the owner exactly which anchor string changed so the owner can adjust `port_tracker.py`. Contributors must not edit the script. Do not use stale generated HTML. |
 | Playwright module/browser missing | Package or WebKit not installed in this environment. | Run both step 2 install commands with the same interpreter as the tests. |
 | Browser TLS test cannot find OpenSSL | Fixed Git for Windows path missing. | Install Git for Windows in its default path. Mac does not satisfy this fixture. |
 | Cannot open resource in CV tests | Fixed Windows Arial font paths unavailable. | Verify Arial on Windows. Cross-platform fitting needs an owner-approved code change. |
@@ -399,7 +399,7 @@ To uninstall, disable the Funnel rule from step 8, end/delete `JobSearchHQ-Serve
 
 Maintainer checklist before merge:
 
-1. **Demo asset and launcher.** The old `examples/applications-tracker.xlsx` copy instruction cannot work: that file is absent. No single demo command exists. The inline fixture replaces it; both shell variants and the 60-second target are **Unverified**. Run them in fresh clones and consider a supported generator separately.
+1. **Demo asset and launcher.** The bundled `examples/applications-tracker.xlsx` contains three fictional jobs and one fictional contact and can be copied to `work/applications-tracker.xlsx`. No single demo command exists. The inline fixture is an alternative; both shell variants and the 60-second target are **Unverified**. Run them in fresh clones and consider a supported generator separately.
 2. **Runtime validation and timings.** Python and Git execution were prohibited for this change. Installation, build, tests, update, screenshots, and cleanup sequences are **Unverified** at runtime. Follow the guide in fresh Windows and Mac clones, record test counts/times, and verify local links before merge.
 3. **Platform portability.** Windows mutexes, fixed Git OpenSSL, and fixed Windows Arial paths prevent complete Mac/Linux validation. Verify the limited Mac tracker preview and obtain Windows test/screenshot evidence for PC additions.
 4. **Local HTTP login.** Cookies are always Secure; automated browser coverage uses HTTPS. Browser acceptance of loopback HTTP is **Unverified**. Verify supported browsers or provide a supported local HTTPS route separately.

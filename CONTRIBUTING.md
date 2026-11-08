@@ -22,11 +22,11 @@ python -I tools/hq-dashboard/port_tracker.py --backend pc
 - `.github/workflows/`, `requirements.txt`, `LICENSE`
 - `evidence/`, `rules.example.md` (rules for what drafts may claim)
 
-Private `rules.md` and all private data are also outside UI scope. One narrow exception: `port_tracker.py` may be synchronized when a UI edit changes a string that the build expects. Explain the exact matching-string change in the PR; this does not authorize backend behavior changes. Qualify the PR template's no-Python checkbox when using that exception.
+Private `rules.md` and all private data are also outside UI scope. Contributors must not edit `port_tracker.py`. If a UI edit changes an anchor string that the build expects, tell the owner exactly which string changed so the owner can adjust the script.
 
 ## Run it with fictional data
 
-Follow [SETUP step 3](SETUP.md#3-fictional-demo-data-in-60-seconds). Use only fictional data and the example evidence. The old example-workbook copy instruction cannot work because that workbook is absent. Never commit a real spreadsheet, evidence file, password, token, `.env` file, or virtual environment. Generated HQ HTML is ignored; edit the source and rebuild.
+Follow [SETUP step 3](SETUP.md#3-fictional-demo-data-in-60-seconds). Use only fictional data and the example evidence. The bundled `examples/applications-tracker.xlsx` contains three fictional jobs and one fictional contact. Never commit a real spreadsheet, evidence file, password, token, `.env` file, or virtual environment. Generated HQ HTML is ignored; edit the source and rebuild.
 
 ## Before you open a pull request
 
