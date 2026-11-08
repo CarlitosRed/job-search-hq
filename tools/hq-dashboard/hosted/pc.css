@@ -17,3 +17,10 @@
    phone strip by a pixel. Otherwise viewShown() scrolls it when tabs change.
    The shared 44px minimum still preserves each button's touch target. */
 @media (max-width:560px){.seg button{flex:1 1 auto;padding:7px 4px;gap:4px}}
+
+/* PC save notices. Signed: Codex (builder), 2026-11-07. */
+#pc-saves{flex-wrap:wrap;align-items:center;margin:10px 16px;opacity:1;transition:opacity 180ms ease}
+#pc-saves>span{flex:1 1 240px;min-width:0;overflow-wrap:anywhere}
+#pc-saves .btn{color:inherit;border:1px solid currentColor;min-height:44px;white-space:normal}
+#pc-saves.pc-save-fade{opacity:0}
+@media (prefers-reduced-motion:reduce){#pc-saves{transition:none}}

@@ -3,6 +3,7 @@
 <title>Job Search HQ</title>
 <meta name="color-scheme" content="light dark">
 <!-- Local only: no external requests. -->
+<!-- Posting link notice. Signed: Codex (builder), 2026-11-07. -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%232f6bff'/%3E%3Cpath d='M9 12h14v11a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2z' fill='%23fff'/%3E%3Cpath d='M13 12V9.5A1.5 1.5 0 0 1 14.5 8h3A1.5 1.5 0 0 1 19 9.5V12' stroke='%23fff' stroke-width='2' fill='none'/%3E%3C/svg%3E">
 <style>
 :root{
@@ -1236,7 +1237,7 @@ function detail(j){const st=stageOf(j),si=stageIdx(j),closed=st.id==="closed",re
  if(closed)ban.push(`<div class="banner n">${IC.info}<span>Marked <b>${esc(sl(j["My status"]))}</b>. <button class="linkbtn" data-step="wish" style="padding:0">Move back to wishlist</button></span></div>`);
  const sc=j._sc,v=j._v;
  return`<article class="detail" data-k="${esc(key(j))}" aria-label="${esc(jname(j))} details">
- <div class="d-head">${av(j.Company,"lg")}<div class="t"><h2>${esc(j.Company)} <span class="pl">· ${flag(j._reg)} ${esc(place(j))}</span></h2><div class="role">${esc(j.Role)}</div></div><div class="d-actions d-actions-top">${/^https?:\/\//.test(j.Link)?`<a class="btn" href="${esc(j.Link)}" target="_blank" rel="noopener noreferrer">Open posting ${IC.ext}</a><button class="btn ghost" data-copy="${esc(j.Link)}">${IC.copy}Copy link</button>`:`<span style="color:var(--mute);font-size:13px">No link saved</span>`}</div></div>
+ <div class="d-head">${av(j.Company,"lg")}<div class="t"><h2>${esc(j.Company)} <span class="pl">· ${flag(j._reg)} ${esc(place(j))}</span></h2><div class="role">${esc(j.Role)}</div></div><div class="d-actions d-actions-top">${/^https?:\/\//.test(j.Link)?`<a class="btn" href="${esc(j.Link)}" target="_blank" rel="noopener noreferrer">Open posting ${IC.ext}<span class="sr"> (opens a new tab)</span></a><button class="btn ghost" data-copy="${esc(j.Link)}">${IC.copy}Copy link</button>`:`<span style="color:var(--mute);font-size:13px">No link saved</span>`}</div></div>
  ${ban.join("")}
  ${j._sib.length?`<div class="banner n">${IC.info}<span>Same company, other postings: ${j._sib.map(x=>`<button class="linkbtn" style="padding:0 2px" data-open="${esc(key(x))}">${esc(place(x))} · ${esc(sheetShort(x._sheet))}</button>`).join(", ")}</span></div>`:""}
  <section class="gd-card gd-match-card">

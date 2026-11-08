@@ -1,3 +1,4 @@
+/* Posting link notice. Signed: Codex (builder), 2026-11-07. */
 /* ---------- new search: queued in the store, run by the scheduled search ---------- */
 const REQ={queued:["Queued","a"],running:["Running","b"],done:["Done","g"],failed:["Failed","r"]};
 $("#f-search").addEventListener("submit",async e=>{e.preventDefault();const err=$("#s-err"),go=$("#s-go");err.hidden=true;$("#s-msg").textContent="";
@@ -294,7 +295,7 @@ function renderResult(r){const box=$("#result");if(!r){box.innerHTML="";return}
  const next=(sentOn&&!hasCl?sentBox(off):"")+(acts?`<div class="acts">${acts}</div>`:"")+status("next")+(AI_OFF?`<p class="banner">${esc(AI_OFF)}</p>`:"");
  box.innerHTML=`<article class="panel result">
  <div class="d-head">${av(r.company||"?","lg")}<div class="t"><h2>${esc(r.company||"Company")}</h2><div class="role">${esc(r.role||"Role")}</div>
-  <div class="d-meta"><span>${esc(String(r.createdAt||"").slice(0,10))}</span>${/^https?:\/\//.test(r.link||"")?`<a href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">Open posting</a>`:""}</div></div></div>
+  <div class="d-meta"><span>${esc(String(r.createdAt||"").slice(0,10))}</span>${/^https?:\/\//.test(r.link||"")?`<a href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">Open posting<span class="sr"> (opens a new tab)</span></a>`:""}</div></div></div>
  <div class="d-score">${ring(sc,58)}<div class="t"><b>${esc(fitText(sc,v))}</b>${f.summary?`<p>${esc(f.summary)}</p>`:""}</div>${vchip(v)}</div>
  <div class="chips"><span class="chip ${rv[0]}"><i class="dot"></i>${rv[1]}</span>${r.jobId?`<span class="chip g">In your tracker</span>`:""}${f.location_ok?`<span class="chip">Location: ${esc(f.location_ok)}</span>`:""}</div>
  ${issues.length?`<div class="banner">${IC.warn}<span><b>Fix before sending:</b><ul>${issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul></span></div>`:""}
