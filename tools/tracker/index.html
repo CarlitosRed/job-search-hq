@@ -960,7 +960,7 @@ function pcts(vals){const t=vals.reduce((a,b)=>a+b,0);return vals.map(v=>t?Math.
 const pctTol=vals=>Math.max(0.1,0.05*vals.filter(v=>v>0).length)+1e-9;
 const f1=v=>`${(+v).toFixed(1)}%`;
 const TILE_COLORS={all:"var(--tc-all)",tracked:"var(--tc-all)",wish:"var(--tc-wish)",ready:"var(--tc-ready)",applied:"var(--tc-applied)",interview:"var(--tc-interview)",offer:"var(--tc-offer)",rejected:"var(--tc-rejected)",skipped:"var(--tc-skipped)",other:"var(--tc-skipped)"};
-function sankey(js,C){const phone=innerWidth<960,SH={wish:"Wishlist",ready:"Ready",applied:"Applied",interview:"Interviewing",rejected:"Rejected",offer:"Offer",skipped:"Skipped",other:"Other"};
+function sankey(js,C,phone=innerWidth<960){const SH={wish:"Wishlist",ready:"Ready",applied:"Applied",interview:"Interviewing",rejected:"Rejected",offer:"Offer",skipped:"Skipped",other:"Other"};
  const N={};
  const D_COLS={wish:0,ready:1,skipped:1,other:1,applied:2,interview:3,rejected:3,offer:4};
  const P_ROWS={wish:0,ready:1,skipped:1,other:1,applied:2,interview:3,rejected:3,offer:4};
@@ -1016,7 +1016,7 @@ function sankey(js,C){const phone=innerWidth<960,SH={wish:"Wishlist",ready:"Read
   if(phone){
    anchor="middle";
    lx=p.cx;
-   ly=["wish","applied"].includes(key)?p.cy-14:p.cy+19;
+   ly=key==="offer"?p.cy-30:p.cy+19;
   }else{
    anchor="start";
    lx=p.cx+dotR+8;
@@ -1026,7 +1026,7 @@ function sankey(js,C){const phone=innerWidth<960,SH={wish:"Wishlist",ready:"Read
   out+=`<g class="nd" data-key="${key}" data-${phone?"row":"col"}="${v[2]}" data-n="${v[1]}" data-tip="<b>${v[0]}</b><br>${v[1]} job${v[1]===1?"":"s"} · ${pct} of tracked">
   <circle cx="${p.cx}" cy="${p.cy}" r="${dotR+10}" fill="transparent"/>
   <circle class="nd-dot" cx="${p.cx}" cy="${p.cy}" r="${dotR}" style="fill:${col};color:${col}"/>
-  <text x="${lx}" y="${ly}" text-anchor="${anchor}"><tspan class="v" font-weight="700">${v[1]}</tspan> ${nm} <tspan class="p">${pct}</tspan></text></g>`});
+  <text x="${lx}" y="${ly}" text-anchor="${anchor}">${phone?`<tspan x="${lx}"><tspan class="v" font-weight="700">${v[1]}</tspan> <tspan class="p">${pct}</tspan></tspan><tspan x="${lx}" dy="16">${nm}</tspan>`:`<tspan class="v" font-weight="700">${v[1]}</tspan> ${nm} <tspan class="p">${pct}</tspan>`}</text></g>`});
  return`<svg id="sk" class="${phone?"compact":""}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Job search flow: ${nodes.map(([k,v])=>v[1]+" "+v[0]+" ("+f1(C.pct[k])+")").join(", ")}. Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown. Rejection can happen before or after an interview.">${out}</svg>`}
 
 /* ---------- views ---------- */
@@ -1457,6 +1457,17 @@ window.trackerSelfTest=function(){const out=[],fail=m=>out.push("FAIL "+m),pass=
  (SC.offer===1&&SC.rejected===1&&SC.interview===1&&SC.ready===2&&SC.skipped===1&&SC.other===1&&SC.wish===2&&SC.applied===1&&SC.sent===4?pass:fail)("synthetic buckets: "+BUCKETS.map(([k,l])=>`${l} ${SC[k]}`).join(", "));
  check("rejected-only fixture",[mk("Rejected","Berlin, Germany"),mk("Rejected","Remote, EU")]);
  check("unequal-count fixture",[mk("Suggested (not applied)","Spain"),mk("Suggested (not applied)","Spain"),mk("Suggested (not applied)","Spain"),mk("CV ready","Germany"),mk("Applied","UK"),mk("Applied","UK"),mk("Interview","USA"),mk("Offer","Remote"),mk("Skipped","Spain")]);
+ // Estimate compact labels from character counts at the declared 13.5px / 13px sizes.
+ const large=Array.from({length:100},()=>["Suggested (not applied)","CV ready","Skipped","On hold??","Applied","Interview","Rejected","Offer"].map(st=>mk(st,"Home country"))).flat();
+ const compact=document.createElement("div");compact.innerHTML=sankey(large,counts(large,true),true);
+ const compactNodes=[...compact.querySelectorAll(".nd")];
+ const labelsFit=compactNodes.every(n=>{const text=n.querySelector("text"),x=+text.getAttribute("x");
+  const row=compactNodes.filter(other=>other.dataset.row===n.dataset.row).sort((a,b)=>+a.querySelector("text").getAttribute("x")- +b.querySelector("text").getAttribute("x"));
+  const i=row.indexOf(n),left=i?(+row[i-1].querySelector("text").getAttribute("x")+x)/2:0,right=i<row.length-1?(x+ +row[i+1].querySelector("text").getAttribute("x"))/2:300;
+  return [...text.children].every(line=>{const pct=line.querySelector(".p"),pctChars=pct?pct.textContent.length:0;
+   const width=0.55*((line.textContent.length-pctChars)*13.5+pctChars*13);
+   return x-width/2>=left+3&&x+width/2<=right-3})});
+ (labelsFit?pass:fail)("100-per-bucket fixture: compact label lines fit their slots with 3-unit margins");
  const ok=!out.some(l=>l.startsWith("FAIL"));console.log((ok?"SELF-TEST PASSED":"SELF-TEST FAILED")+"\n"+out.join("\n"));
  return{ok,total:C.total,buckets:Object.fromEntries(BUCKETS.map(([k])=>[k,C[k]])),pct:C.pct,lines:out}};
 
