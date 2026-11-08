@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/CarlitosRed/job-search-hq/actions/workflows/tests.yml/badge.svg)](https://github.com/CarlitosRed/job-search-hq/actions/workflows/tests.yml) [![release](https://img.shields.io/github/v/release/CarlitosRed/job-search-hq)](https://github.com/CarlitosRed/job-search-hq/releases) [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A private, password-protected job-search desk that runs on your own PC and opens on your phone.
+A private, password-protected job-search desk that runs on your Windows PC and opens on your phone through optional HTTPS hosting.
 It keeps your leads in an ordinary Excel file you already own, and can ask an AI assistant to score a posting
 against **your own evidence** and draft a one-page CV or cover letter. Every draft stays a draft until you check it.
 
@@ -18,10 +18,10 @@ against **your own evidence** and draft a one-page CV or cover letter. Every dra
   and have CV-ready wording, and to list each factual claim with its evidence IDs. The app checks that cited IDs are eligible
   and each listed claim string appears in the document. It does not check that every factual sentence is listed or that the
   cited evidence supports a claim. A human must review every line before using the draft.
-- **Easy to read**: CV Word files are laid out for quick reading (one page, clear section headings, dates on the right),
+- **Easy to read**: CV Word files aim for one page, with clear section headings and dates on the right,
   and trimming to one page deletes whole lines or Summary sentences only (page 2 only as a last resort), never rewording anything.
 - **One page**: the AI is asked for at most 520 words and the app rejects anything over 600. `cv_onepage.py` trims an
-  existing CV to one page by deleting lines only (nothing is reworded, and a check refuses anything that was not already there).
+  existing CV toward one page by deleting lines or Summary sentences only (nothing is reworded, and a check refuses anything that was not already there). A second page is possible as a last resort; inspect the exported layout.
 - **Cover letters need a sentiment** (or an explicit choice to go without), and the sentiment only changes tone.
 - **Documents**: one tab lists your CVs (`work/CV_*.docx`), cover letters (`work/CL_*.docx`) and reports (`work/report-*.md`)
   with phone-friendly downloads; reports can be read on the page and downloaded as .md or .docx. Exported files are clean
@@ -36,26 +36,18 @@ against **your own evidence** and draft a one-page CV or cover letter. Every dra
 | Network | Server listens on `127.0.0.1` only. Remote access is through a tunnel you control (Tailscale Funnel is described in `SETUP.md`). |
 | Login | One password you choose, stored only as a salted scrypt hash outside the repo; account-wide lockout after five failures, `--unlock` clears it locally. |
 | Browser | Secure, HttpOnly, SameSite=Strict cookie; exact Host and Origin checks on every write; a content security policy (same-origin resources only, inline scripts allowed because the page is one file); no directory serving. |
-| AI | Runs the Codex CLI in a read-only sandbox with shell, plugins and web search off, using your own ChatGPT login. No API keys are read. |
+| AI | Runs the Codex CLI in a read-only sandbox with shell, plugins, hooks and web search off, using your own ChatGPT login. API-key environment variables are removed from the child process. Submitted posting data and eligible evidence are sent to OpenAI. |
 | Data | The spreadsheet (`work/`), passwords and generated files live outside Git. Your real `evidence/` files and `rules.md` are git-ignored too; only the fictional `*-example-*` files and `rules.example.md` are tracked. |
 
 Known limits: one pending edit at a time; a changed workbook produces a conflict message instead of merging;
-AI tasks interrupted by a restart are not rerun; page layout of exported Word files was only checked with a Python reader.
+AI tasks that were running at a restart are marked interrupted rather than rerun (queued tasks can still run);
+page fit uses font metrics and needs visual review in Word or Pages.
 
-## Quick start (Windows, Python 3.12)
+## Quick start
 
-```
-pip install -r requirements.txt
-python -I tools/hq-dashboard/server.py --set-password
-python tools/hq-dashboard/port_tracker.py --backend pc
-mkdir work
-copy examples\applications-tracker.xlsx work\applications-tracker.xlsx
-python -I tools/hq-dashboard/server.py
-```
+Follow [SETUP.md](SETUP.md) for Python 3.12 installation, a fictional workbook, the PC page build, password setup, and the Windows server on `127.0.0.1:8770`. It also covers HTTPS phone access, backups, startup tasks, and known gaps. The example workbook referenced by older instructions is not bundled; use the setup guide's fixture snippet.
 
-Open http://127.0.0.1:8770 (the default origin) and sign in. `SETUP.md` covers phone access and starting it at boot.
-Replace the fictional files in `evidence/` with your own (name them anything not containing `-example-`, so Git ignores them)
-and copy `rules.example.md` to `rules.md` before generating anything real.
+For UI work, use [the contributor quickstart](docs/CONTRIBUTOR-QUICKSTART.md). macOS/Linux can build the HTML and preview the original tracker without writes; full server operation and complete validation require Windows. Read [the architecture overview](docs/ARCHITECTURE.md) for component and data boundaries.
 
 ## Repository map
 
@@ -67,13 +59,13 @@ and copy `rules.example.md` to `rules.md` before generating anything real.
 
 ## Tests
 
-```
+```powershell
 python -I tools/hq-dashboard/test_ai_tasks.py
 python -I tools/hq-dashboard/test_cv_onepage.py
-python -I tools/hq-dashboard/test_pc_server.py   # needs Playwright for the phone-browser case
+python -I tools/hq-dashboard/test_pc_server.py
 ```
 
-The suite never calls a live model and never reads real career data.
+The suites use fictional fixtures and never call a live model. Build the PC page first. The two browser cases need Playwright, WebKit, and Git for Windows OpenSSL at the fixed path described in [SETUP.md](SETUP.md#5-build-the-page-and-run-tests); CV fitting needs Windows Arial fonts. Runtime validation of this documentation change is Unverified.
 
 ## Contributing
 
