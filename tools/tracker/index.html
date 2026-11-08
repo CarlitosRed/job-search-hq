@@ -14,6 +14,7 @@
  --red:#dc2626;--red-ink:#b91c1c;--red-soft:#fef2f2;
  --sel-bar:#b8b2a5;--subtle-border:rgba(0,0,0,0.12);--float-shadow:0 8px 24px rgba(35,32,24,.07),0 2px 6px rgba(35,32,24,.04);--shadow:0 1px 3px rgba(35,32,24,.05),0 4px 14px rgba(35,32,24,.06);--shadow-lg:0 12px 36px rgba(35,32,24,.14);
  --tc-all:#0f172a;--tc-wish:#7c3aed;--tc-ready:#d97706;--tc-applied:#0284c7;--tc-interview:#db2777;--tc-offer:#059669;--tc-rejected:#dc2626;--tc-skipped:#64748b;
+--conn-wish:#6d28d9;--conn-ready:#b45309;--conn-applied:#0369a1;--conn-interview:#be185d;--conn-offer:#047857;--conn-rejected:#b91c1c;--conn-skipped:#475569;--conn-other:#475569;--conn-zero:#64748b;
  --sk-tracked:var(--tc-all);--sk-wish:var(--tc-wish);--sk-ready:var(--tc-ready);--sk-applied:var(--tc-applied);--sk-skip:var(--tc-skipped);--sk-wait:var(--tc-applied);--sk-int:var(--tc-interview);--sk-rej:var(--tc-rejected);--sk-offer:var(--tc-offer);--sk-prog:var(--green);
  --av-l:92%;--av-s:70%;--av-fl:30%;
  --r:16px;--r-sm:10px;--on-blue:#fff;
@@ -26,6 +27,7 @@
  --red:#f07474;--red-ink:#ffb3b3;--red-soft:#3d1c22;
  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35);--shadow-lg:0 12px 40px rgba(0,0,0,.6);
  --tc-all:#F8FAFC;--tc-wish:#A78BFA;--tc-ready:#FBBF24;--tc-applied:#38BDF8;--tc-interview:#F472B6;--tc-offer:#34D399;--tc-rejected:#F87171;--tc-skipped:#94A3B8;
+--conn-wish:#a78bfa;--conn-ready:#fbbf24;--conn-applied:#38bdf8;--conn-interview:#f472b6;--conn-offer:#34d399;--conn-rejected:#f87171;--conn-skipped:#94a3b8;--conn-other:#94a3b8;--conn-zero:#94a3b8;
  --sk-tracked:var(--tc-all);--sk-wish:var(--tc-wish);--sk-ready:var(--tc-ready);--sk-applied:var(--tc-applied);--sk-skip:var(--tc-skipped);--sk-wait:var(--tc-applied);--sk-int:var(--tc-interview);--sk-rej:var(--tc-rejected);--sk-offer:var(--tc-offer);--sk-prog:var(--green);
  --av-l:26%;--av-s:38%;--av-fl:86%;--on-blue:#0b1530;
 }}
@@ -38,6 +40,7 @@
  --red:#f07474;--red-ink:#ffb3b3;--red-soft:#3d1c22;
  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35);--shadow-lg:0 12px 40px rgba(0,0,0,.6);
  --tc-all:#F8FAFC;--tc-wish:#A78BFA;--tc-ready:#FBBF24;--tc-applied:#38BDF8;--tc-interview:#F472B6;--tc-offer:#34D399;--tc-rejected:#F87171;--tc-skipped:#94A3B8;
+--conn-wish:#a78bfa;--conn-ready:#fbbf24;--conn-applied:#38bdf8;--conn-interview:#f472b6;--conn-offer:#34d399;--conn-rejected:#f87171;--conn-skipped:#94a3b8;--conn-other:#94a3b8;--conn-zero:#94a3b8;
  --sk-tracked:var(--tc-all);--sk-wish:var(--tc-wish);--sk-ready:var(--tc-ready);--sk-applied:var(--tc-applied);--sk-skip:var(--tc-skipped);--sk-wait:var(--tc-applied);--sk-int:var(--tc-interview);--sk-rej:var(--tc-rejected);--sk-offer:var(--tc-offer);--sk-prog:var(--green);
  --av-l:26%;--av-s:38%;--av-fl:86%;--on-blue:#0b1530;
 }
@@ -49,6 +52,7 @@
  --red:#dc2626;--red-ink:#b91c1c;--red-soft:#fef2f2;
  --sel-bar:#b8b2a5;--subtle-border:rgba(0,0,0,0.12);--float-shadow:0 8px 24px rgba(35,32,24,.07),0 2px 6px rgba(35,32,24,.04);--shadow:0 1px 3px rgba(35,32,24,.05),0 4px 14px rgba(35,32,24,.06);--shadow-lg:0 12px 36px rgba(35,32,24,.14);
  --tc-all:#0f172a;--tc-wish:#7c3aed;--tc-ready:#d97706;--tc-applied:#0284c7;--tc-interview:#db2777;--tc-offer:#059669;--tc-rejected:#dc2626;--tc-skipped:#64748b;
+--conn-wish:#6d28d9;--conn-ready:#b45309;--conn-applied:#0369a1;--conn-interview:#be185d;--conn-offer:#047857;--conn-rejected:#b91c1c;--conn-skipped:#475569;--conn-other:#475569;--conn-zero:#64748b;
  --sk-tracked:var(--tc-all);--sk-wish:var(--tc-wish);--sk-ready:var(--tc-ready);--sk-applied:var(--tc-applied);--sk-skip:var(--tc-skipped);--sk-wait:var(--tc-applied);--sk-int:var(--tc-interview);--sk-rej:var(--tc-rejected);--sk-offer:var(--tc-offer);--sk-prog:var(--green);
  --av-l:92%;--av-s:70%;--av-fl:30%;--on-blue:#fff;
 }
@@ -192,36 +196,47 @@ main{flex:1 0 auto;width:100%;max-width:1680px;margin:0 auto;padding:18px 24px 6
 .tile:hover small,.tile:focus-visible small,.tile.flip small{max-height:48px;opacity:1;transform:translateY(0) rotateX(0deg);margin-top:4px}
 
 /* sankey - fine lines & tree branching animation */
-.sk-wrap{overflow-x:auto;margin:0 -6px;padding:6px}
-#sk{width:100%;min-width:680px;height:auto;display:block}
-#sk.compact{min-width:540px}#sk.compact text{font-size:12px;stroke-width:3px}
-#sk .lnk-wrap{outline:none;cursor:pointer}
-#sk .lnk-hit{fill:none;stroke:transparent;stroke-width:20px;pointer-events:stroke;cursor:pointer}
-#sk .lnk{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;animation:growBranch .68s cubic-bezier(.16,1,.3,1) forwards;transition:stroke-width .22s cubic-bezier(.16,1,.3,1),opacity .2s ease,filter .22s ease;pointer-events:none}
+.sk-wrap{overflow-x:hidden;margin:0;padding:4px 0;width:100%}
+#sk{width:100%;max-width:960px;height:auto;display:block;margin:0 auto}
+#sk.compact{max-width:360px;margin:0 auto}
+#sk .lnk-wrap{outline:none}
+#sk .lnk{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;animation:growBranch .68s cubic-bezier(.16,1,.3,1) forwards;transition:stroke-width .22s cubic-bezier(.16,1,.3,1),filter .22s ease;pointer-events:none}
 #sk .lnk[data-tier="0"]{animation-delay:.06s}
-#sk .lnk[data-tier="1"]{animation-delay:.52s}
-#sk .lnk-wrap:hover .lnk,#sk .lnk-wrap:focus .lnk{stroke-width:4.8px!important;opacity:1!important;filter:drop-shadow(0 0 8px currentColor)}
+#sk .lnk[data-tier="1"]{animation-delay:.46s}
+#sk .lnk[data-tier="2"]{animation-delay:.86s}
+#sk .lnk[data-tier="3"]{animation-delay:1.26s}
 #sk text{font-size:13.5px;fill:var(--ink);paint-order:stroke;stroke:var(--card);stroke-width:4px;stroke-linejoin:round;user-select:none}
+#sk.compact text{font-size:13.5px;stroke-width:3.5px}
 #sk text.v{font-weight:700}
-#sk .p{fill:var(--mute);font-size:11.5px}
-#sk .nd{cursor:pointer}
-#sk .nd-dot{transform-box:fill-box;transform-origin:center;transition:r .22s cubic-bezier(.34,1.56,.64,1),filter .22s ease,opacity .2s ease}
-#sk .nd[data-col="0"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .02s both}
-#sk .nd[data-col="1"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .52s both}
-#sk .nd[data-col="2"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .96s both}
-#sk .nd[data-col="0"] text{animation:fadeInLabel .35s ease .08s both}
-#sk .nd[data-col="1"] text{animation:fadeInLabel .35s ease .56s both}
-#sk .nd[data-col="2"] text{animation:fadeInLabel .35s ease 1.0s both}
+#sk .p{fill:var(--mute);font-size:12.5px}
+#sk.compact .p{font-size:13px}
+#sk .nd{cursor:default}
+#sk .nd-dot{transform-box:fill-box;transform-origin:center;transition:r .22s cubic-bezier(.34,1.56,.64,1),filter .22s ease}
+#sk .nd[data-col="0"] .nd-dot,#sk .nd[data-row="0"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .02s both}
+#sk .nd[data-col="1"] .nd-dot,#sk .nd[data-row="1"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .42s both}
+#sk .nd[data-col="2"] .nd-dot,#sk .nd[data-row="2"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .82s both}
+#sk .nd[data-col="3"] .nd-dot,#sk .nd[data-row="3"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) 1.22s both}
+#sk .nd[data-col="4"] .nd-dot,#sk .nd[data-row="4"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) 1.62s both}
+#sk .nd[data-col="0"] text,#sk .nd[data-row="0"] text{animation:fadeInLabel .35s ease .06s both}
+#sk .nd[data-col="1"] text,#sk .nd[data-row="1"] text{animation:fadeInLabel .35s ease .46s both}
+#sk .nd[data-col="2"] text,#sk .nd[data-row="2"] text{animation:fadeInLabel .35s ease .86s both}
+#sk .nd[data-col="3"] text,#sk .nd[data-row="3"] text{animation:fadeInLabel .35s ease 1.26s both}
+#sk .nd[data-col="4"] text,#sk .nd[data-row="4"] text{animation:fadeInLabel .35s ease 1.66s both}
 #sk .nd:hover .nd-dot,#sk .nd:focus-visible .nd-dot{r:8.5px;filter:drop-shadow(0 0 8px currentColor)}
+.sk-note{font-size:12px;color:var(--mute);margin:8px 0 0;line-height:1.4}
 .sk-empty{display:flex;align-items:center;gap:8px;color:var(--mute);font-size:12.5px;margin-top:6px}
 
 @keyframes growBranch{0%{stroke-dashoffset:100}100%{stroke-dashoffset:0}}
 @keyframes popDot{0%{transform:scale(0);opacity:0}65%{transform:scale(1.32);opacity:1}100%{transform:scale(1);opacity:1}}
 @keyframes fadeInLabel{0%{opacity:0;transform:translateY(3px)}100%{opacity:1;transform:translateY(0)}}
-@media (prefers-reduced-motion:reduce){#sk .lnk{animation:none;stroke-dashoffset:0}#sk .nd-dot{animation:none;transform:none;opacity:1}#sk text{animation:none;opacity:1}}
-html.no-anim #sk .lnk{animation:none!important;stroke-dashoffset:0!important}
-html.no-anim #sk .nd-dot{animation:none!important;transform:none!important;opacity:1!important}
-html.no-anim #sk text{animation:none!important;opacity:1!important}
+@media (prefers-reduced-motion:reduce){
+ #sk .lnk,#sk [data-tier]{animation:none!important;animation-delay:0s!important;stroke-dashoffset:0!important;opacity:1!important}
+ #sk .nd-dot,#sk [data-col] .nd-dot,#sk [data-row] .nd-dot{animation:none!important;animation-delay:0s!important;transform:none!important;opacity:1!important}
+ #sk text,#sk [data-col] text,#sk [data-row] text{animation:none!important;animation-delay:0s!important;opacity:1!important;transform:none!important}
+}
+html.no-anim #sk .lnk,html.no-anim #sk [data-tier]{animation:none!important;animation-delay:0s!important;stroke-dashoffset:0!important;opacity:1!important}
+html.no-anim #sk .nd-dot,html.no-anim #sk [data-col] .nd-dot,html.no-anim #sk [data-row] .nd-dot{animation:none!important;animation-delay:0s!important;transform:none!important;opacity:1!important}
+html.no-anim #sk text,html.no-anim #sk [data-col] text,html.no-anim #sk [data-row] text{animation:none!important;animation-delay:0s!important;opacity:1!important;transform:none!important}
 .legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--mute);font-size:12px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 #tip{position:fixed;z-index:60;pointer-events:none;background:var(--ink);color:var(--bg);padding:7px 10px;border-radius:9px;font-size:12.5px;box-shadow:var(--shadow-lg);opacity:0;transition:opacity .12s;max-width:260px}
@@ -945,51 +960,74 @@ function pcts(vals){const t=vals.reduce((a,b)=>a+b,0);return vals.map(v=>t?Math.
 const pctTol=vals=>Math.max(0.1,0.05*vals.filter(v=>v>0).length)+1e-9;
 const f1=v=>`${(+v).toFixed(1)}%`;
 const TILE_COLORS={all:"var(--tc-all)",tracked:"var(--tc-all)",wish:"var(--tc-wish)",ready:"var(--tc-ready)",applied:"var(--tc-applied)",interview:"var(--tc-interview)",offer:"var(--tc-offer)",rejected:"var(--tc-rejected)",skipped:"var(--tc-skipped)",other:"var(--tc-skipped)"};
-function sankey(js,C){const cw=innerWidth<700?Math.max(540,innerWidth-48):0,SH={wish:"Wishlist",ready:"Ready",applied:"Applied",interview:"Interviewing",rejected:"Rejected",offer:"Offer",skipped:"Skipped",other:"Other"};
- const appliedTotal=C.appliedTotal??(C.applied+C.interview+C.offer+C.rejected);
- const N={tracked:["Tracked",C.total,0,TILE_COLORS.tracked],applied:["Applied",appliedTotal,1,TILE_COLORS.applied]};
- BUCKETS.forEach(([k,l])=>{if(k==="applied")return;const col=["interview","offer","rejected"].includes(k)?2:1;N[k]=[l,C[k],col,TILE_COLORS[k]||"var(--tc-skipped)"]});
- const PC=Object.assign({},C.pct,{applied:C.pct.appliedTotal??(C.total?Math.round(appliedTotal*1000/C.total)/10:0)});
- const order=["tracked","wish","ready","applied","skipped","other","interview","offer","rejected"];
- const L=[["tracked","wish"],["tracked","ready"],["tracked","applied"],["tracked","skipped"],["tracked","other"],["applied","interview"],["applied","offer"],["applied","rejected"]].filter(([a,b])=>N[b]&&N[b][1]>0&&N[a]&&N[a][1]>0);
- const nodes=order.map(k=>[k,N[k]]).filter(([k,v])=>v&&(v[1]>0||k==="tracked"));
- const cols=Math.max(...nodes.map(([,v])=>v[2]))+1;
- const W=cw||1180,H=cw?240:280,top=32,dotR=cw?5:6,pad=cw?18:32,labelW=cols>1?(cw?86:190):0,left=cw?14:32;
- const byCol=[...Array(cols)].map((_,c)=>nodes.filter(([,v])=>v[2]===c));
- const P={};byCol.forEach((c,ci)=>{
-  const x=cols>1?left+ci*(W-left-labelW-dotR*2)/(cols-1):left;
-  const cx=x+dotR;
-  c.forEach(([key,v],idx)=>{
-   let cy;
-   if(c.length===1) cy=top+H/2;
-   else if(c.length===2) cy=top+H/2+(idx===0?-48:48);
-   else cy=top+pad+idx*(H-pad*2)/(c.length-1);
-   P[key]={cx,cy};
-  });
- });
- const tot=js.length||1;let out="";
+function sankey(js,C,phone=innerWidth<960){const SH={wish:"Wishlist",ready:"Ready",applied:"Applied",interview:"Interviewing",rejected:"Rejected",offer:"Offer",skipped:"Skipped",other:"Other"};
+ const N={};
+ const D_COLS={wish:0,ready:1,skipped:1,other:1,applied:2,interview:3,rejected:3,offer:4};
+ const P_ROWS={wish:0,ready:1,skipped:1,other:1,applied:2,interview:3,rejected:3,offer:4};
+ BUCKETS.forEach(([k,l])=>{if(k==="other"&&!C.other)return;N[k]=[l,C[k],phone?P_ROWS[k]:D_COLS[k],TILE_COLORS[k]||"var(--tc-skipped)"]});
+ const order=["wish","ready","skipped","other","applied","interview","rejected","offer"];
+ const nodes=order.map(k=>[k,N[k]]).filter(([,v])=>!!v);
+ const baseL=[["wish","ready"],["wish","skipped"],["ready","applied"],["applied","interview"],["applied","rejected"],["interview","offer"]];
+ if(C.other)baseL.splice(2,0,["wish","other"]);
+ const L=baseL.filter(([a,b])=>N[a]&&N[b]);
+ const dotR=phone?5.5:6;
+ const P={};
+ if(phone){
+  P.wish={cx:150,cy:34};
+  if(C.other){P.ready={cx:50,cy:110};P.skipped={cx:150,cy:110};P.other={cx:250,cy:110}}
+  else{P.ready={cx:70,cy:110};P.skipped={cx:215,cy:110}}
+  P.applied={cx:150,cy:186};
+  P.interview={cx:70,cy:262};P.rejected={cx:215,cy:262};
+  P.offer={cx:150,cy:338};
+ }else{
+  P.wish={cx:45,cy:130};
+  if(C.other){P.ready={cx:215,cy:55};P.skipped={cx:215,cy:130};P.other={cx:215,cy:205}}
+  else{P.ready={cx:215,cy:68};P.skipped={cx:215,cy:192}}
+  P.applied={cx:385,cy:130};
+  P.interview={cx:555,cy:68};P.rejected={cx:555,cy:192};
+  P.offer={cx:725,cy:130};
+ }
+ const W=phone?300:880,H=phone?370:260;
+ let out=`<desc>Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown. Rejection can happen before or after an interview.</desc>`;
  L.forEach(([a,b])=>{const v=N[b][1],A=P[a],B=P[b];
-  const x0=A.cx+dotR,y0=A.cy;
-  const x1=B.cx-dotR,y1=B.cy;
-  const xm=(x0+x1)/2;
-  const tier=a==="tracked"?0:1;
-  const col=TILE_COLORS[b]||TILE_COLORS.applied;
-  const pathD=`M${x0},${y0}C${xm},${y0} ${xm},${y1} ${x1},${y1}`;
-  out+=`<g class="lnk-wrap" tabindex="0" data-tip="<b>${N[a][0]} → ${N[b][0]}</b><br>${v} job${v===1?"":"s"} · ${f1(PC[b])} of tracked">
-  <path class="lnk-hit" d="${pathD}"/>
-  <path class="lnk" data-tier="${tier}" pathLength="100" d="${pathD}" style="stroke:${col};color:${col};stroke-width:2.85;opacity:.9"><title>${N[a][0]} to ${N[b][0]}: ${v}</title></path></g>`});
- nodes.forEach(([key,v])=>{const p=P[key];if(!v[1]&&key!=="tracked")return;
-  const hasOut=key==="tracked"||key==="applied";
-  const lx=hasOut?p.cx:p.cx+dotR+9;
-  const ly=hasOut?p.cy-14:p.cy+4.5;
-  const pct=key==="tracked"||cw?"":` ${f1(PC[key])}`;const nm=cw&&SH[key]?SH[key]:v[0];
+  if(!A||!B)return;
+  const tier=phone?P_ROWS[a]:D_COLS[a];
+  const col=v>0?`var(--conn-${b})`:"var(--conn-zero)";
+  const strokeW=v>0?2.85:2;
+  const dash=v>0?"":"stroke-dasharray:4 4;";
+  let pathD;
+  if(phone){
+   const x0=A.cx,y0=A.cy+dotR;
+   const x1=B.cx,y1=B.cy-dotR;
+   const ym=(y0+y1)/2;
+   pathD=`M${x0},${y0}C${x0},${ym} ${x1},${ym} ${x1},${y1}`;
+  }else{
+   const x0=A.cx+dotR,y0=A.cy;
+   const x1=B.cx-dotR,y1=B.cy;
+   const xm=(x0+x1)/2;
+   pathD=`M${x0},${y0}C${xm},${y0} ${xm},${y1} ${x1},${y1}`;
+  }
+  out+=`<g class="lnk-wrap">
+  <path class="lnk" data-tier="${tier}" data-link="${N[a][0]} to ${N[b][0]}" pathLength="100" d="${pathD}" style="stroke:${col};color:${col};stroke-width:${strokeW};opacity:1;${dash}"><title>${N[a][0]} to ${N[b][0]}</title></path></g>`});
+ nodes.forEach(([key,v])=>{const p=P[key];if(!p)return;
+  const pct=`${f1(C.pct[key])}`;
   const col=TILE_COLORS[key]||"var(--tc-skipped)";
-  const tipSub=key==="applied"&&C.applied?`<br>${C.applied} awaiting reply`:"" ;
-  out+=`<g class="nd" data-key="${key}" data-col="${v[2]}" data-n="${v[1]}" data-tip="<b>${v[0]}</b><br>${v[1]} job${v[1]===1?"":"s"}${key!=="tracked"?" · "+f1(PC[key])+" of tracked":""}${tipSub}">
-  <circle cx="${p.cx}" cy="${p.cy}" r="${dotR+10}" fill="transparent" style="cursor:pointer"/>
+  let lx,ly,anchor;
+  if(phone){
+   anchor="middle";
+   lx=p.cx;
+   ly=key==="offer"?p.cy-30:p.cy+19;
+  }else{
+   anchor="start";
+   lx=p.cx+dotR+8;
+   ly=p.cy+4.5;
+  }
+  const nm=SH[key]||v[0];
+  out+=`<g class="nd" data-key="${key}" data-${phone?"row":"col"}="${v[2]}" data-n="${v[1]}" data-tip="<b>${v[0]}</b><br>${v[1]} job${v[1]===1?"":"s"} · ${pct} of tracked">
+  <circle cx="${p.cx}" cy="${p.cy}" r="${dotR+10}" fill="transparent"/>
   <circle class="nd-dot" cx="${p.cx}" cy="${p.cy}" r="${dotR}" style="fill:${col};color:${col}"/>
-  <text x="${lx}" y="${ly}"><tspan class="v" font-weight="700">${v[1]}</tspan> ${nm}${pct?`<tspan class="p" dx="6">${pct.trim()}</tspan>`:""}</text></g>`});
- return`<svg id="sk" class="${cw?"compact":""}" viewBox="0 0 ${W} ${H+top*2}" role="img" aria-label="Job search flow: ${nodes.map(([,v])=>v[1]+" "+v[0]).join(", ")}">${out}</svg>`}
+  <text x="${lx}" y="${ly}" text-anchor="${anchor}">${phone?`<tspan x="${lx}"><tspan class="v" font-weight="700">${v[1]}</tspan> <tspan class="p">${pct}</tspan></tspan><tspan x="${lx}" dy="16">${nm}</tspan>`:`<tspan class="v" font-weight="700">${v[1]}</tspan> ${nm} <tspan class="p">${pct}</tspan>`}</text></g>`});
+ return`<svg id="sk" class="${phone?"compact":""}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Job search flow: ${nodes.map(([k,v])=>v[1]+" "+v[0]+" ("+f1(C.pct[k])+")").join(", ")}. Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown. Rejection can happen before or after an interview.">${out}</svg>`}
 
 /* ---------- views ---------- */
 function attnBtn(){const n=D.jobs.filter(j=>matches(j,"attention")&&attention(j)).length;return`<button class="btn ${S.attention?"":"ghost"} attn" data-act="attn" aria-pressed="${S.attention}">${IC.warn}Needs attention <span class="count">${n}</span></button>`}
@@ -1001,7 +1039,7 @@ function overview(js){const st=j=>stageOf(j).id,C=counts(js);
  const why=attention;
  return`<section class="tiles" aria-label="Summary. Tracked equals the sum of the stage tiles; each job counts once, by its current status.">${T.map(t=>{const pct=t[4]==="all"?"100%":f1(C.pct[t[4]]);const col=TILE_COLORS[t[4]]||`var(${t[3]})`;return`<button class="tile ${t[4]==="all"?"total":""}" style="--tc:${col}" data-tile="${t[4]}" data-n="${t[0]}" data-pct="${pct}"><b><span class="num">${t[0]}</span><span class="pct">${pct}</span></b><span>${t[1]}</span><small>${t[2]}</small></button>`}).join("")}</section>
  <section class="panel ov-chart-panel" aria-labelledby="skh"><div class="panel-h"><h2 id="skh">Job search summary</h2><p>${activeCount()||S.q?"Filtered view":"All lists"}</p></div>
-  <div class="sk-wrap">${sankey(js,C)}</div>${appliedN?"":`<div class="sk-empty">${IC.info.replace("<svg",'<svg width="16" height="16"')}No applications yet. Once you mark one Applied, it flows on to interviews, offers or rejections here.</div>`}</section>
+  <div class="sk-wrap">${sankey(js,C)}</div><p class="sk-note">Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown. Rejection can happen before or after an interview.</p>${appliedN?"":`<div class="sk-empty">${IC.info.replace("<svg",'<svg width="16" height="16"')}No applications yet. Once you mark one Applied, it flows on to interviews, offers or rejections here.</div>`}</section>
  <section class="panel" style="margin-top:16px"><div class="panel-h"><h2>Needs attention</h2><span class="chip ${att.length?"r":"g"}">${att.length}</span>${att.length?`<button class="btn ghost sp attn" data-act="attn-list">Show all</button>`:""}</div>
   ${att.length?`<ul class="mini" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:6px">${att.slice(0,6).map(j=>`<li><button data-open="${esc(key(j))}">${av(j.Company,"sm")}<span class="t"><b>${esc(j.Company)} <span style="font-weight:500;color:var(--mute)">· ${esc(place(j))}</span></b><small>${esc(why(j))}</small></span></button></li>`).join("")}</ul>`:`<p style="color:var(--mute);margin:0;font-size:13px">All clear: nothing closed, drafted or waiting on you.</p>`}</section>`}
 
@@ -1362,7 +1400,7 @@ document.addEventListener("mousemove",e=>{const el=e.target.closest&&e.target.cl
 document.addEventListener("focusin",e=>{const el=e.target.closest&&e.target.closest("#sk [data-tip]");if(!el)return;const b=el.getBoundingClientRect();tip.innerHTML=el.dataset.tip;tip.style.opacity=1;tip.style.left=Math.min(innerWidth-240,b.left+b.width/2)+"px";tip.style.top=(b.top+b.height/2)+"px"});
 document.addEventListener("focusout",e=>{if(e.target.closest&&e.target.closest("#sk"))tip.style.opacity=0});
 addEventListener("beforeunload",e=>{if($$("textarea[data-dirty='1']").length){e.preventDefault();e.returnValue=""}});
-let rT,lastCompact=innerWidth<700;addEventListener("resize",()=>{clearTimeout(rT);rT=setTimeout(()=>{if((innerWidth<700)!==lastCompact){lastCompact=innerWidth<700;if(S.view==="overview")render()}if(S.view==="list"&&wide()&&$("#drawer").classList.contains("on")&&!$("#drawer textarea[data-dirty='1']")){closeDrawers();render()}},200)});
+let rT,lastCompact=innerWidth<960;addEventListener("resize",()=>{clearTimeout(rT);rT=setTimeout(()=>{if((innerWidth<960)!==lastCompact){lastCompact=innerWidth<960;if(S.view==="overview")render()}if(S.view==="list"&&wide()&&$("#drawer").classList.contains("on")&&!$("#drawer textarea[data-dirty='1']")){closeDrawers();render()}},200)});
 
 /* ---------- add lead ---------- */
 function fillAdd(){const sel=$("#addSheet");const cur=sel.value;sel.innerHTML=D.sheets.map(s=>`<option>${esc(s.name)}</option>`).join("");if(cur)sel.value=cur;
@@ -1390,9 +1428,20 @@ window.trackerSelfTest=function(){const out=[],fail=m=>out.push("FAIL "+m),pass=
   const box=document.createElement("div");box.innerHTML=overview(js);const tiles=[...box.querySelectorAll("[data-tile]")];
   const tracked=+tiles.find(t=>t.dataset.tile==="all").dataset.n,stageSum=tiles.filter(t=>t.dataset.tile!=="all").reduce((a,t)=>a+ +t.dataset.n,0);
   (tracked===js.length&&stageSum===tracked?pass:fail)(`${name}: Tracked tile ${tracked} = stage tiles ${stageSum} = jobs ${js.length}`);
-  const nd=[...box.querySelectorAll("#sk [data-col]")],col=c=>nd.filter(n=>n.dataset.col==c).reduce((a,n)=>a+ +n.dataset.n,0),appliedNode=+(nd.find(n=>n.dataset.key==="applied")?.dataset.n||0);
-  (col(1)===js.length?pass:fail)(`${name}: flow first column ${col(1)} = tracked ${js.length}`);
-  (col(2)+(C.applied||0)===appliedNode?pass:fail)(`${name}: flow second column ${col(2)} + awaiting ${C.applied||0} = applied ${appliedNode}`);
+  const nd=[...box.querySelectorAll("#sk [data-col], #sk [data-row]")];
+  const keys=nd.map(n=>n.dataset.key);
+  const expectedKeys=BUCKETS.map(([k])=>k).filter(k=>k!=="other"||C.other);
+  (new Set(keys).size===keys.length?pass:fail)(`${name}: flow node keys are unique`);
+  (keys.length===expectedKeys.length&&expectedKeys.every(k=>keys.includes(k))?pass:fail)(`${name}: exact expected node keys present`);
+  const expectedEdges=["Wishlist to Ready to send","Wishlist to Skipped","Ready to send to Applied","Applied to Interviewing","Applied to Rejected","Interviewing to Offer"];
+  if(C.other)expectedEdges.push("Wishlist to Other status");
+  const svgLinks=[...box.querySelectorAll("#sk .lnk")].map(l=>l.getAttribute("data-link")||"");
+  (expectedEdges.every(e=>svgLinks.includes(e))?pass:fail)(`${name}: all intended schematic edges present`);
+  (nd.every(n=>+n.dataset.n===(C[n.dataset.key]||0))?pass:fail)(`${name}: flow nodes match stage counts`);
+  const flowSum=nd.reduce((a,n)=>a+ +n.dataset.n,0);
+  (flowSum===js.length?pass:fail)(`${name}: flow nodes sum ${flowSum} = tracked ${js.length}`);
+  const skNote=box.querySelector(".sk-note");
+  (skNote&&skNote.textContent.includes("Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown.")&&skNote.textContent.includes("Rejection can happen before or after an interview.")?pass:fail)(`${name}: flow schematic explanatory note present`);
   const tp=tiles.filter(t=>t.dataset.tile!=="all").reduce((a,t)=>a+parseFloat(t.querySelector("small").textContent),0);
   (!js.length||Math.abs(tp-100)<=pctTol(tiles.filter(t=>t.dataset.tile!=="all").map(t=>+t.dataset.n))?pass:fail)(`${name}: stage tile percentages total ${tp.toFixed(1)}%`);
   const bars=[...box.querySelectorAll(".bar")];
@@ -1406,6 +1455,21 @@ window.trackerSelfTest=function(){const out=[],fail=m=>out.push("FAIL "+m),pass=
  const synth=[mk("Offer","Madrid, Spain"),mk("Rejected","Berlin, Germany"),mk("Interview","Home country"),mk("Message drafted","Milan, Italy"),mk("Skipped","Remote, LATAM"),mk("On hold??","Home country"),mk("","Somewhere"),mk("Applied","Home country"),mk("CV ready","Home country"),mk("Suggested (not applied)","Home country")];
  const SC=check("synthetic: one of every status + unknown + blank",synth);
  (SC.offer===1&&SC.rejected===1&&SC.interview===1&&SC.ready===2&&SC.skipped===1&&SC.other===1&&SC.wish===2&&SC.applied===1&&SC.sent===4?pass:fail)("synthetic buckets: "+BUCKETS.map(([k,l])=>`${l} ${SC[k]}`).join(", "));
+ check("rejected-only fixture",[mk("Rejected","Berlin, Germany"),mk("Rejected","Remote, EU")]);
+ check("unequal-count fixture",[mk("Suggested (not applied)","Spain"),mk("Suggested (not applied)","Spain"),mk("Suggested (not applied)","Spain"),mk("CV ready","Germany"),mk("Applied","UK"),mk("Applied","UK"),mk("Interview","USA"),mk("Offer","Remote"),mk("Skipped","Spain")]);
+ // Estimate compact labels from character counts at the declared 13.5px / 13px sizes.
+ const large=Array.from({length:100},()=>["Suggested (not applied)","CV ready","Skipped","On hold??","Applied","Interview","Rejected","Offer"].map(st=>mk(st,"Home country"))).flat();
+ const compact=document.createElement("div");compact.innerHTML=sankey(large,counts(large,true),true);
+ const compactNodes=[...compact.querySelectorAll(".nd")];
+ const labelsFit=compactNodes.every(n=>{const text=n.querySelector("text"),x=+text.getAttribute("x");
+  const lines=[...text.children],stage={wish:"Wishlist",ready:"Ready",applied:"Applied",interview:"Interviewing",rejected:"Rejected",offer:"Offer",skipped:"Skipped",other:"Other"}[n.dataset.key];
+  if(lines.length!==2||!lines.every(line=>line.localName==="tspan")||lines[1].textContent!==stage||lines[1].getAttribute("dy")!=="16")return false;
+  const row=compactNodes.filter(other=>other.dataset.row===n.dataset.row).sort((a,b)=>+a.querySelector("text").getAttribute("x")- +b.querySelector("text").getAttribute("x"));
+  const i=row.indexOf(n),left=i?(+row[i-1].querySelector("text").getAttribute("x")+x)/2:0,right=i<row.length-1?(x+ +row[i+1].querySelector("text").getAttribute("x"))/2:300;
+  return lines.every(line=>{const pct=line.querySelector(".p"),pctChars=pct?pct.textContent.length:0;
+   const width=0.55*((line.textContent.length-pctChars)*13.5+pctChars*13);
+   return x-width/2>=left+3&&x+width/2<=right-3})});
+ (labelsFit?pass:fail)("100-per-bucket fixture: compact label lines fit their slots with 3-unit margins");
  const ok=!out.some(l=>l.startsWith("FAIL"));console.log((ok?"SELF-TEST PASSED":"SELF-TEST FAILED")+"\n"+out.join("\n"));
  return{ok,total:C.total,buckets:Object.fromEntries(BUCKETS.map(([k])=>[k,C[k]])),pct:C.pct,lines:out}};
 
