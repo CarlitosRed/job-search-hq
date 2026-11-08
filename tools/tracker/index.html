@@ -1462,9 +1462,11 @@ window.trackerSelfTest=function(){const out=[],fail=m=>out.push("FAIL "+m),pass=
  const compact=document.createElement("div");compact.innerHTML=sankey(large,counts(large,true),true);
  const compactNodes=[...compact.querySelectorAll(".nd")];
  const labelsFit=compactNodes.every(n=>{const text=n.querySelector("text"),x=+text.getAttribute("x");
+  const lines=[...text.children],stage={wish:"Wishlist",ready:"Ready",applied:"Applied",interview:"Interviewing",rejected:"Rejected",offer:"Offer",skipped:"Skipped",other:"Other"}[n.dataset.key];
+  if(lines.length!==2||!lines.every(line=>line.localName==="tspan")||lines[1].textContent!==stage||lines[1].getAttribute("dy")!=="16")return false;
   const row=compactNodes.filter(other=>other.dataset.row===n.dataset.row).sort((a,b)=>+a.querySelector("text").getAttribute("x")- +b.querySelector("text").getAttribute("x"));
   const i=row.indexOf(n),left=i?(+row[i-1].querySelector("text").getAttribute("x")+x)/2:0,right=i<row.length-1?(x+ +row[i+1].querySelector("text").getAttribute("x"))/2:300;
-  return [...text.children].every(line=>{const pct=line.querySelector(".p"),pctChars=pct?pct.textContent.length:0;
+  return lines.every(line=>{const pct=line.querySelector(".p"),pctChars=pct?pct.textContent.length:0;
    const width=0.55*((line.textContent.length-pctChars)*13.5+pctChars*13);
    return x-width/2>=left+3&&x+width/2<=right-3})});
  (labelsFit?pass:fail)("100-per-bucket fixture: compact label lines fit their slots with 3-unit margins");
