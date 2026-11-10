@@ -40,7 +40,7 @@ def main():
     # The Artifact tool wraps the page in its own document: no doctype/html/head/body here.
     h = resub(h, r"\A.*?(?=<style>)", "<title>Job Search HQ</title>\n\n")
     # Dark tokens also follow the viewer's explicit theme choice.
-    m = re.search(r"@media \(prefers-color-scheme:dark\)\{:root\{(.*?)\}\}", h, flags=re.S)
+    m = re.search(r'@media \(prefers-color-scheme:dark\)\{:root(?::not\(\[data-theme="light"\]\))?\{(.*?)\}\}', h, flags=re.S)
     if not m:
         raise SystemExit("port: dark token block not found")
     dark = m.group(1).rstrip().rstrip(";") + ";color-scheme:dark"
@@ -159,7 +159,17 @@ def main():
     h = sub(h, '$("#addDlg").showModal();f.Company.focus()}', '$("#addDlg").showModal();if(wide())f.Company.focus();else{const d=$("#addDlg");d.tabIndex=-1;d.focus();d.scrollTop=0}}')
     h = sub(h, 'err.textContent="Not saved. See the message at the bottom of the screen."', 'err.textContent=$("#tmsg").textContent||"Not saved. Try again in a moment.";err.scrollIntoView({block:"center"})')
     h = sub(h, 'err.textContent="Please add "+bad.join(", ")+".";return}', 'err.textContent="Please add "+bad.join(", ")+".";err.scrollIntoView({block:"center"});return}')
-    h = sub(h, "\nboot();\n</script>", "\n" + read("tools.js").rstrip() + "\n\nboot();\n</script>")
+    h = sub(h, "\nboot();\n</script>", "\n" + read("lead-policy.js").rstrip() + "\n" + read("tools.js").rstrip() + "\n\nboot();\n</script>")
+    # Lanes use existing Verdict,
+    # preserving legacy history and the workbook schema. Never hand-edit generated pages.
+    h = sub(h, 'const VERD={', 'const VERD={READY:["Ready","g"],STRETCH:["Stretch","b"],VERIFY:["Verify","a"],MONITOR:["Monitor",""],ARCHIVE:["Archive",""],')
+    h = sub(h, 'function fitText(sc,v){', 'function fitText(sc,v){if(["READY","STRETCH","VERIFY","MONITOR","ARCHIVE"].includes(v.key))return VERD[v.key][0];')
+    h = sub(h, '<option>APPLY</option>', '<option>Ready</option><option>Stretch</option><option>Verify</option><option>Monitor</option><option>Archive</option><option>APPLY</option>')
+    h = sub(h, 'function ring(sc,size=38){', 'function ring(sc,size=38,v={key:"NONE"}){')
+    h = sub(h, 'ring(j._sc,opts.list?40:36)', 'ring(j._sc,opts.list?40:36,j._v)')
+    h = sub(h, 'ring(sc,52)', 'ring(sc,52,v)')
+    h = sub(h, 'function boardCard(j,s){', 'function boardCard(j,s){const v=j._v;')
+    h = sub(h, 'Fit score ${esc(sc.raw)} of 5', '${["READY","STRETCH","VERIFY","MONITOR","ARCHIVE"].includes(v.key)?"Attainability":"Previous fit score"} ${esc(sc.raw)} of 5', count=4)
 
     for bad in ("fetch(", "confirm(", "/api/data", "/api/version", "await load("):
         if bad in h:
@@ -193,8 +203,20 @@ def main():
                       'Codex reads it, scores it against your evidence bank and shows the fit.')
         h = h.replace('They stay drafts until a truth review.',
                       'They stay drafts until a separate truth reviewer checks them.')
+        # PC Search uses live public company boards; the hosted daily-request form stays unchanged.
+        #
         h = h.replace('Say what the search assistant should look for. It runs at the next daily search (on your computer) and the new leads land on the Board as a new list. ',
-                      'Scans run on this PC and update the spreadsheet. On-demand search from this page is not connected yet.')
+                      'Search current openings on the company boards below. Review the results, then choose which leads to add to your tracker. Remote does not always mean you can work from your country.')
+        h = resub(h, r'<form id="f-search".*?</form>', lambda _: '''<form id="f-search" class="form2" novalidate>
+   <label class="f full" for="s-what"><span>Role keywords <span class="req">*</span></span><input class="inp" id="s-what" maxlength="300" required aria-describedby="s-query-help" placeholder="e.g. automation analyst"></label>
+   <p id="s-query-help" class="mut full pc-search-help">Matches any keyword in the job title. Use fewer words for a broader search.</p>
+   <label class="f full" for="s-where">Location contains (optional)<input class="inp" id="s-where" maxlength="120" aria-describedby="s-location-help" placeholder="e.g. Latin America"></label>
+   <p id="s-location-help" class="mut full pc-search-help">Use one place name as written in the posting. Leave blank to see all locations, then check the eligible countries.</p>
+   <label class="pc-search-check full"><input type="checkbox" id="s-remote">Remote only</label>
+   <p id="s-sources" class="mut full">Loading the company boards…</p>
+   <p id="s-err" class="banner full" role="alert" hidden></p>
+   <div class="full tool-foot"><small id="s-msg" role="status"></small><button class="btn" id="s-go" type="submit">Search now</button></div>
+  </form>''')
         h = sub(h, 'boot();\n</script>', read('pc-tools.js') + '\nboot();\n</script>')
         h = sub(h, '</style>', '</style></head><body>')
         h = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">' + h + '</body></html>'

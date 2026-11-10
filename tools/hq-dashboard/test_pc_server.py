@@ -1,6 +1,6 @@
+# Activation updates: Codex - Activation Builder, 2026-11-07.
 """Synthetic integration checks; no real workbook or AI calls."""
 import hashlib
-import os
 import http.client
 import importlib.util
 import json
@@ -17,6 +17,7 @@ import shutil
 import unittest
 import uuid
 from types import SimpleNamespace
+from unittest import mock
 from urllib.parse import urlencode
 
 import openpyxl
@@ -160,7 +161,7 @@ class RequestLimits(unittest.TestCase):
 
 
 class SaveNoticeUI(unittest.TestCase):
-    # Offline UI regressions. Signed: Codex (builder), 2026-11-07.
+    # Offline UI regressions.
     def test_save_notice_lifecycle(self):
         from playwright.sync_api import sync_playwright, expect
         with sync_playwright() as p:
@@ -265,6 +266,30 @@ class SaveNoticeUI(unittest.TestCase):
 
 
 class Integration(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Self-contained page fixture.
+        fixture = tempfile.TemporaryDirectory(prefix='hq-pc-page-test-')
+        cls.addClassCleanup(fixture.cleanup)
+        dashboard = Path(fixture.name) / 'tools' / 'hq-dashboard'
+        tracker = dashboard.parent / 'tracker'
+        dashboard.mkdir(parents=True)
+        tracker.mkdir()
+        # Keep the server's existing HERE-based module loading in the fixture tree.
+        for source, target in ((HERE, dashboard), (HERE.parent / 'tracker', tracker)):
+            for path in source.glob('*.py'):
+                shutil.copyfile(path, target / path.name)
+        page_spec = importlib.util.spec_from_file_location('pc_page_fixture', HERE / 'port_tracker.py')
+        page = importlib.util.module_from_spec(page_spec)
+        page_spec.loader.exec_module(page)
+        # Read tracked UI sources, but generate the real PC page only in temporary storage.
+        page.HERE = dashboard
+        with mock.patch.object(sys, 'argv', ['port_tracker.py', '--backend', 'pc']):
+            page.main()
+        paths = mock.patch.object(hq, 'HERE', dashboard)
+        paths.start()
+        cls.addClassCleanup(paths.stop)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='hq-pc-test-')
         self.state = Path(self.tmp.name)
@@ -293,6 +318,7 @@ class Integration(unittest.TestCase):
     def tearDown(self):
         self.app.queue.stop()
         self.app.ai.stop()
+        self.app.search.stop()
         self.server.shutdown()
         self.server.server_close()
         self.thread.join()
@@ -509,6 +535,33 @@ class Integration(unittest.TestCase):
         log.write_text('=== 2026-11-04T11:38:14+00:00 end (exit 1) ===\n')
         self.assertEqual(self.app.health()['scan']['state'],'failed')
 
+    def test_public_search_auth_contract_and_explicit_workbook_save(self):
+        # No network or real workbook.
+        source={'id':'example','label':'Example Discovery','provider':'greenhouse','board':'example'}
+        self.app.search.sources=(source,)
+        self.app.search.fetcher=lambda _: {'jobs':[{'title':'AI Workflow Engineer','location':{'name':'Remote'},'absolute_url':'https://example.org/jobs/new'}]}
+        payload={'query':'AI','location':'','remote':True,'requestId':str(uuid.uuid4())}
+        self.assertEqual(self.request('GET','/api/search/state')[0],401)
+        self.assertEqual(self.request('POST','/api/search/submit',payload)[0],401)
+        self.login()
+        self.assertEqual(self.request('POST','/api/search/submit',payload,origin='https://other.example')[0],403)
+        status,_,raw=self.request('POST','/api/search/submit',payload)
+        self.assertEqual(status,202)
+        key=json.loads(raw)['id']
+        self.assertEqual(self.request('POST','/api/search/submit',payload)[0],202)
+        self.app.search.process_one()
+        state=json.loads(self.request('GET','/api/search/state')[2])
+        item=state['searches'][0]
+        self.assertEqual((item['id'],item['status']),(key,'completed'))
+        self.assertEqual(item['results'][0]['link'],'https://example.org/jobs/new')
+        self.assertEqual(len(self.data()['jobs']),1,'Discovery must not silently add a tracker row')
+        result=item['results'][0]
+        add={'sheet':'Fictional jobs','Company':result['company'],'Role':result['role'],'Link':result['link'],
+             'My status':'Suggested (not applied)','version':self.data()['version'],'requestId':str(uuid.uuid4())}
+        self.assertEqual(self.request('POST','/api/add',add)[0],200)
+        self.assertEqual(len(self.data()['jobs']),2)
+        self.assertEqual(self.request('POST','/api/search/submit',{**payload,'query':'AI','url':'http://localhost/private'})[0],400)
+
     def test_other_process_writer_lock_queues_edit(self):
         self.login()
         ready=self.state/'lock-ready'
@@ -702,10 +755,10 @@ with m.workbook_lock(sys.argv[2]):
             self.assertEqual(wb.active.cell(2,6).value,'Phone queued note')
             wb.close()
             # Entire UI path uses a fake provider and fictional evidence, never a live call.
-            self.app.ai.bank_loader=lambda:{'rules':'Fictional only','entries':{'E-999':{'level':'stated','text':'Fictional skill'}}}
+            self.app.ai.bank_loader=lambda:{'rubric_version':'v3.2','rules':'Fictional only','entries':{'E-999':{'level':'stated','text':'Fictional skill'}}}
             def fake_runner(prompt,kind,folder,images):
                 if kind=='analyze':return {'is_job_posting':True,'readable':True,'company':'Example Company','role':'Example Role','link':'','posting_text':'',
-                                          'score':3.5,'verdict':'CONSIDER','summary':'Fictional result only','location_ok':'unclear','matches':[],'gaps':[],'flags':[]}
+                                          'rubric_version':'v3.2','analysis':__import__('lead_policy_fixtures').fictional_analysis(),'summary':'Fictional result only','location_ok':'unclear','matches':[],'gaps':[],'flags':[]}
                 if kind=='letter':return {'cover_letter_markdown':'Dear Example Company team,\n\nFictional skill.\n\nKind regards,\nAlex Example',
                                           'sources':['E-999'],'flags':[],'claims':[{'text':'Fictional skill.','evidence':['E-999']}]}
                 return {'cv_markdown':'# Fictional CV\nFictional skill.','sources':['E-999'],'flags':[],

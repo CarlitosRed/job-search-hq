@@ -15,10 +15,29 @@
 @media (max-width:900px){.pc-acts{flex:1 1 100%}.pc-acts .btn{flex:1 1 0;justify-content:center}.cvl .pc-dl{margin-left:auto}}
 /* Allow fractional flex shrink: intrinsic label widths plus gaps can exceed the
    phone strip by a pixel. Otherwise viewShown() scrolls it when tabs change.
-   The shared 44px minimum still preserves each button's touch target. */
+   The shared 44px minimum still preserves each button's touch target.
+   Merged with private Search styles. */
 @media (max-width:560px){.seg button{flex:1 1 auto;padding:7px 4px;gap:4px}}
+/* Live company-board search. */
+.pc-search-help{margin:-6px 0 0;font-size:12px;line-height:1.5}
+.pc-search-check{display:flex;align-items:center;gap:10px;min-height:44px;font-size:14px;cursor:pointer}
+.pc-search-check input{width:19px;height:19px;accent-color:var(--blue)}
+.pc-search .rq-h h3{margin:0;font-size:15px;line-height:1.4;overflow-wrap:anywhere}
+.pc-search-message{font-size:13px;line-height:1.5;margin:10px 0}
+.pc-results{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:10px}
+.pc-results>li{border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0;background:var(--card);overflow-wrap:anywhere}
+.pc-result-head{display:flex;align-items:flex-start;gap:10px;justify-content:space-between}
+.pc-result-head .t{min-width:0}
+.pc-result-head h4{font-size:15px;line-height:1.4;margin:0 0 4px;color:var(--ink)}
+.pc-result-head p{font-size:13px;line-height:1.5;margin:0;color:var(--ink2)}
+.pc-result-head .chip{flex:none}
+.pc-result-summary{font-size:13px;line-height:1.5;margin:10px 0}
+.pc-result-source{font-size:12px;line-height:1.5;margin:8px 0 10px}
+.pc-result-actions{display:flex;flex-wrap:wrap;gap:8px}
+.pc-result-actions .btn{text-decoration:none;min-height:40px;justify-content:center}
+@media (max-width:560px){.pc-result-head{flex-wrap:wrap}.pc-result-actions .btn{flex:1 1 120px;min-height:44px}.pc-results>li{padding:12px}}
 
-/* PC save notices. Signed: Codex (builder), 2026-11-07. */
+/* PC save notices. */
 #pc-saves{flex-wrap:wrap;align-items:center;margin:10px 16px;opacity:1;transition:opacity 180ms ease}
 #pc-saves>span{flex:1 1 240px;min-width:0;overflow-wrap:anywhere}
 #pc-saves .btn{color:inherit;border:1px solid currentColor;min-height:44px;white-space:normal}

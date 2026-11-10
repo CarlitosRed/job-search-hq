@@ -18,8 +18,14 @@ import sqlite3
 import subprocess
 import threading
 import uuid
+import sys
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import lead_policy as policy
+RUBRIC_VERSION = 'v3.2'  #
+if RUBRIC_VERSION != policy.RUBRIC_VERSION:
+    raise ValueError('Rubric version mismatch: AI worker')
 ROOT = HERE.parents[1]
 EXCLUDED = set()  # evidence IDs that must never be used, even if marked verified
 
@@ -53,7 +59,7 @@ def evidence_bank(root=ROOT):
                               'limits':limits[1] if limits else 'Do not infer anything beyond the CV-ready wording.'}
     if not entries:
         raise ValueError('No eligible evidence is available.')
-    return {'rules':rules,'entries':entries}
+    return {'rubric_version':RUBRIC_VERSION,'rules':rules,'entries':entries}
 
 
 _cleaner=None
@@ -75,12 +81,13 @@ def word_count(text):
 
 
 def schema(kind):
+    #
     strings={'type':'array','items':{'type':'string'}}
     if kind=='analyze':
         fields={'is_job_posting':{'type':'boolean'},'readable':{'type':'boolean'},'company':{'type':'string'},'role':{'type':'string'},
-                'link':{'type':'string'},'posting_text':{'type':'string'},'score':{'type':'number'},'verdict':{'type':'string'},
+                'link':{'type':'string'},'posting_text':{'type':'string'},'rubric_version':{'type':'string','enum':[RUBRIC_VERSION]},'analysis':policy.extraction_schema(),
                 'summary':{'type':'string'},'location_ok':{'type':'string'},'gaps':strings,'flags':strings,
-                'matches':{'type':'array','items':{'type':'object','properties':{k:{'type':'string'} for k in ('requirement','importance','evidence','level')},'required':['requirement','importance','evidence','level'],'additionalProperties':False}}}
+                'matches':{'type':'array','items':policy.obj({k:({'type':'string','enum':['must','nice']} if k=='importance' else {'type':'string'}) for k in ('requirement','importance','evidence','level','clause','rationale','unsupported_scope')})}}
     else:
         fields={('cv_markdown' if kind=='cv' else 'cover_letter_markdown'):{'type':'string'},'sources':strings,'flags':strings,
                 'claims':{'type':'array','items':{'type':'object','properties':{'text':{'type':'string'},'evidence':strings},'required':['text','evidence'],'additionalProperties':False}}}
@@ -88,8 +95,11 @@ def schema(kind):
 
 
 def prompt_for(kind, posting, bank, sentiment='', without=False):
-    instruction=('Analyze only. Do not write a CV or letter. Score using the rubric. Transcribe attached posting images faithfully into posting_text. '
-                 'Report source IDs per requirement, gaps honestly, and no assumed qualifications.') if kind=='analyze' else (
+    # Private fit/Want/packet metadata never leaves the caller, including drafting steps.
+    posting={k:posting[k] for k in ('company','role','link','text') if k in posting}
+    instruction=('Analyze only. Do not write a CV or letter. '+policy.SCORING_PROMPT+' Transcribe attached posting images faithfully into posting_text. '
+                 'Report source IDs per requirement, gaps honestly, and no assumed qualifications. '
+                 'In each match, evidence is only eligible E-### IDs from the bank separated by commas, or an empty string when nothing supports it: never other words such as None or Unknown.') if kind=='analyze' else (
                  'Write one ATS-friendly one-page English CV: at most 520 words, at most 3 bullets per recent role and 1 to 2 for older roles. A recruiter spends under a minute on it. Use **bold** only, no italics or backticks.' if kind=='cv' else
                  'Write one English cover letter, 180 to 250 words, as plain business-letter paragraphs: greeting, body, a closing such as "Kind regards," and the applicant name from the evidence bank on its own last line. '
                  'No title or heading lines, no lines starting with #, > or ---, no bold.')
@@ -109,6 +119,14 @@ EVIDENCE BANK JSON\n{json.dumps(bank['entries'],ensure_ascii=False)}
 UNTRUSTED POSTING JSON\n{json.dumps(posting,ensure_ascii=False)}
 UNTRUSTED SENTIMENT JSON\n{json.dumps(sentiment,ensure_ascii=False)}
 Return exactly the requested JSON schema.'''
+
+
+def read_link(link):
+    """Best-effort read of a posting link on the server (Codex itself keeps web access off)."""
+    spec=importlib.util.spec_from_file_location('hq_link_fetch',HERE/'link_fetch.py')
+    module=importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.fetch_posting_text(link)
 
 
 def run_codex(prompt, kind, folder, images):
@@ -136,12 +154,12 @@ def run_codex(prompt, kind, folder, images):
 
 
 class Tasks:
-    def __init__(self,state,runner=run_codex,bank_loader=evidence_bank):
+    def __init__(self,state,runner=run_codex,bank_loader=evidence_bank,link_reader=read_link):
         self.state=Path(state)
         self.folder=self.state/'ai-tasks'
         self.folder.mkdir(exist_ok=True)
         self.db_path=self.state/'career-tasks.sqlite3'
-        self.runner,self.bank_loader=runner,bank_loader
+        self.runner,self.bank_loader,self.link_reader=runner,bank_loader,link_reader
         self.lock=threading.RLock()
         self.stop_event=threading.Event()
         self.thread=None
@@ -180,8 +198,8 @@ class Tasks:
                 raise ValueError('Invalid posting.')
             if any(not isinstance(v,str) or len(v)>40000 for v in posting.values()):
                 raise ValueError('Posting fields must be short text.')
-            if len(posting.get('text',''))<200 and not p.get('images'):
-                raise ValueError('Paste the full posting or add a photo.')
+            if len(posting.get('text',''))<200 and not p.get('images') and not posting.get('link'):
+                raise ValueError('Paste the full posting, add a photo or give a link.')
             if posting.get('link') and not posting['link'].startswith(('https://','http://')):
                 raise ValueError('Invalid posting link.')
         else:
@@ -237,25 +255,54 @@ class Tasks:
                 db.execute("UPDATE tasks SET status='running',message='Codex is working.' WHERE id=?",(key,))
             try:
                 bank=self.bank_loader()
+                if bank.get('rubric_version') != RUBRIC_VERSION:
+                    raise ValueError('Rubric version mismatch: evidence bank; nothing analyzed')
                 posting=p['posting'] if kind=='analyze' else self.posting(p['postingId'])
+                link_note=''
+                if kind=='analyze' and posting.get('link') and len(posting.get('text',''))<2000:
+                    try:fetched=self.link_reader(posting['link'])
+                    except Exception:fetched=None
+                    if fetched:
+                        pasted=posting.get('text','')
+                        posting=dict(posting,text=((pasted+chr(10)*2) if pasted else '')+fetched[:40000-len(pasted)-2])
+                        link_note='link'
+                    elif len(posting.get('text',''))<200 and not p.get('images'):
+                        raise ValueError('HQ could not read that link (many sites block automatic readers). Paste the posting text or add a photo.')
+                    elif len(posting.get('text',''))<200:
+                        link_note='failed'
                 folder=self.folder/key
                 out=self.runner(prompt_for(kind,posting,bank,p.get('sentiment',''),p.get('withoutSentiment',False)),kind,folder,[folder/name for name in p.get('images',[])])
                 if not isinstance(out,dict):raise ValueError('Invalid answer.')
                 if kind=='analyze':
                     if not out.get('is_job_posting') or not out.get('readable'):
                         raise ValueError('This is not a readable job posting. Try clearer text or photos.')
-                    score=out.get('score')
-                    if not isinstance(score,(float,int)) or isinstance(score,bool) or not 1<=score<=5 or out.get('verdict') not in ('APPLY','CONSIDER','SKIP'):
-                        raise ValueError('Invalid score from Codex.')
                     matches=out.get('matches',[])
-                    if any(m.get('evidence') and m['evidence'] not in bank['entries'] for m in matches):
-                        raise ValueError('Analysis cited evidence that is not eligible.')
+                    if not isinstance(matches,list) or any(not isinstance(m,dict) for m in matches):
+                        raise ValueError('Invalid answer.')
+                    fixed=0
+                    for m in matches:
+                        cited=re.findall(r'\bE-\d{3}\b',str(m.get('evidence') or ''))
+                        usable=[i for i in dict.fromkeys(cited) if i in bank['entries']]
+                        if len(usable)!=len(set(cited)) or (m.get('evidence') and not cited):fixed+=1
+                        m['evidence']=', '.join(usable)
+                        m['level']=str(m.get('level') or '').strip().lower()
+                        if not usable:
+                            m['level']='gap'
+                    out['flags']=list(out.get('flags') or [])+([f'{fixed} requirement(s) cited evidence HQ cannot use; they are shown without it, and shown as gaps when nothing else supports them.'] if fixed else [])
                     text=posting.get('text') or out.get('posting_text','')
                     if not text:raise ValueError('The photo contained no readable posting text.')
                     record={k:str(posting.get(k) or out.get(k,'') or '')[:500] for k in ('company','role','link')}
                     if not record['link'].startswith(('https://','http://')):record['link']=''
-                    fit={k:out.get(k) for k in ('score','verdict','summary','location_ok','matches','gaps','flags')}
-                    record.update(text=text[:40000],jobId=posting.get('jobId',''),source='photo' if p.get('images') else 'text',fit=fit,reviewed=False,review=None,status='draft',createdAt=now())
+                    fit={k:out.get(k) for k in ('summary','location_ok','matches','gaps','flags','analysis')}
+                    identity=record['link'] or key
+                    wants=policy.read_wants(ROOT/'work'/'lead-wants.json')
+                    # This first analysis has not passed independent packet checks.
+                    previous=[r.get('fit',{}).get('verify_state') for r in self.postings() if r.get('link')==identity]
+                    previous=[s for s in previous if s]
+                    context={'verify_state':min(previous,key=lambda s:policy.instant(s['due_at']))} if previous else {}
+                    fit.update(policy.rank_result(out,identity,record['company'] or 'Unknown employer',context=context,want=wants.get(identity)))
+                    if link_note=='failed':fit['flags']=list(fit.get('flags') or [])+['HQ could not read the posting link, so this review used only the text or photos you gave.']
+                    record.update(text=text[:40000],jobId=posting.get('jobId',''),source='photo' if p.get('images') else 'link' if link_note=='link' else 'text',fit=fit,reviewed=False,review=None,status='draft',createdAt=now())
                     posting_id=key
                 else:
                     record=posting

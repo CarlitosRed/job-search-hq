@@ -2,8 +2,8 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Job Search HQ</title>
 <meta name="color-scheme" content="light dark">
+<!-- Posting link notice. -->
 <!-- Local only: no external requests. -->
-<!-- Posting link notice. Signed: Codex (builder), 2026-11-07. -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%232f6bff'/%3E%3Cpath d='M9 12h14v11a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2z' fill='%23fff'/%3E%3Cpath d='M13 12V9.5A1.5 1.5 0 0 1 14.5 8h3A1.5 1.5 0 0 1 19 9.5V12' stroke='%23fff' stroke-width='2' fill='none'/%3E%3C/svg%3E">
 <style>
 :root{
@@ -19,7 +19,8 @@
  --av-l:92%;--av-s:70%;--av-fl:30%;
  --r:16px;--r-sm:10px;--on-blue:#fff;
 }
-@media (prefers-color-scheme:dark){:root{
+/* Explicit light theme wins over the operating-system preference. */
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
  --bg:#13151a;--card:#1a1d24;--ink:#e8ecf4;--ink2:#c2c9d6;--mute:#8e98aa;--line:#272c38;--soft:#222631;--hover:#262b37;
  --blue:#5b84ff;--blue-ink:#a9c1ff;--blue-soft:#1f2d52;
  --green:#45c98a;--green-ink:#98e6be;--green-soft:#15362a;

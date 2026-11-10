@@ -1,5 +1,5 @@
 """Trim a tailored CV by DELETING lines only, then build the .docx in the shared CV style (cv_layout.py).
-Updated by Claude · CV Layout Builder (Opus), 2026-11-05: new scannable layout, design
+ Updated by Claude · CV Layout Builder (Opus), 2026-11-05: new scannable layout, design
 caps on bullets and summary, one page with 7% slack, posting-related bullets kept first, marker lines dropped.
 
 Nothing is reworded: every kept line or summary sentence is copied verbatim from the source CV, so no new claim

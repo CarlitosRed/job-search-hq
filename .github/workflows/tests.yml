@@ -17,3 +17,4 @@ jobs:
       - run: python -I tools/hq-dashboard/test_ai_tasks.py
       - run: python -I tools/hq-dashboard/test_cv_onepage.py
       - run: python -I tools/hq-dashboard/test_pc_server.py
+      - run: python -I tools/hq-dashboard/test_job_search.py
