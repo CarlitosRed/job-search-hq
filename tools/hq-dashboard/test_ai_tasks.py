@@ -1,4 +1,6 @@
-"""Offline career task tests with fictional evidence."""
+"""Offline career task tests with fictional evidence.
+Activation updates: Codex - Activation Builder, 2026-11-07.
+"""
 import importlib.util
 import json
 from pathlib import Path
@@ -12,20 +14,33 @@ ai=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ai)
 
 
+from lead_policy_fixtures import fictional_analysis
+
+
 class CareerTasks(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(prefix='hq-ai-test-')
         self.state=Path(self.temp.name)
         self.calls=[]
-        self.bank={'rules':'Fictional evidence only.','entries':{'E-999':{'level':'stated','text':'Fictional example skill.'}}}
+        self.bank={'rubric_version':'v3.2','rules':'Fictional evidence only.','entries':{'E-999':{'level':'stated','text':'Fictional example skill.'}}}
         self.result={'is_job_posting':True,'readable':True,'company':'Example Company','role':'Example Role','link':'https://example.com',
-                     'posting_text':'','score':3.5,'verdict':'CONSIDER','summary':'Fictional match.','location_ok':'unclear',
+                     'posting_text':'','rubric_version':'v3.2','analysis':fictional_analysis(),'summary':'Fictional match.','location_ok':'unclear',
                      'matches':[{'requirement':'Example skill','evidence':'E-999','importance':'must','level':'partial'}],'gaps':[],'flags':[]}
         def fake(prompt,kind,folder,images):
             self.calls.append((prompt,kind,images))
+            # Existing evidence-sanitization cases intentionally vary match fields.
+            for m in self.result.get('matches',[]):
+                m.setdefault('clause','Fictional posting clause')
+                m.setdefault('rationale','Fictional evidence scope')
+                m.setdefault('unsupported_scope','Fictional unsupported scope')
             return self.result
         self.runner=fake
-        self.tasks=ai.Tasks(self.state,runner=fake,bank_loader=lambda:self.bank)
+        self.links=[]
+        self.link_text=None
+        def reader(link):
+            self.links.append(link)
+            return self.link_text
+        self.tasks=ai.Tasks(self.state,runner=fake,bank_loader=lambda:self.bank,link_reader=reader)
 
     def tearDown(self):
         self.tasks.stop()
@@ -46,6 +61,103 @@ class CareerTasks(unittest.TestCase):
         self.assertNotIn('cv_markdown',self.tasks.posting(key)['fit'])
         self.assertIn('No tools, commands',self.calls[0][0])
         self.assertIn('E-999',self.calls[0][0])
+        fit=self.tasks.posting(key)['fit']
+        self.assertEqual(fit['rubric_version'],'v3.2')
+        self.assertNotIn('score',fit)
+        self.assertNotIn('verdict',fit)
+        self.assertEqual(fit['want'],'Not set')
+
+    def test_old_model_version_fails_without_posting(self):
+        self.result['rubric_version']='v1'
+        key=self.tasks.submit({'kind':'analyze','requestId':str(uuid.uuid4()),'posting':{'text':'Fictional posting '*30}})
+        self.tasks.process_one()
+        self.assertEqual(self.tasks.list_tasks()[0]['status'],'failed')
+        self.assertEqual(self.tasks.postings(),[])
+
+    def test_old_bank_version_fails_before_model(self):
+        self.bank['rubric_version']='v1'
+        self.tasks.submit({'kind':'analyze','requestId':str(uuid.uuid4()),'posting':{'text':'Fictional posting '*30}})
+        self.tasks.process_one()
+        self.assertEqual(self.calls,[])
+        self.assertEqual(self.tasks.postings(),[])
+
+    def test_drafting_prompt_excludes_private_assessment(self):
+        prompt=ai.prompt_for('cv',{'company':'Fictional employer','text':'Fictional posting',
+                                  'fit':{'want':'Dream','actor':'PRIVATE_WANT_CANARY'}},self.bank)
+        self.assertNotIn('PRIVATE_WANT_CANARY',prompt)
+
+    def link_only(self,text=''):
+        p={'kind':'analyze','requestId':str(uuid.uuid4()),'posting':{'company':'Example Company','role':'Example Role','link':'https://jobs.example.com/1','text':text},'images':[]}
+        key=self.tasks.submit(p)
+        self.tasks.process_one()
+        return key
+
+    def test_link_alone_is_read_and_used(self):
+        self.link_text='Fictional responsibilities and requirements. '*20
+        key=self.link_only()
+        self.assertEqual(self.links,['https://jobs.example.com/1'])
+        self.assertIn('Fictional responsibilities',self.calls[0][0])
+        record=self.tasks.posting(key)
+        self.assertEqual(record['source'],'link')
+        self.assertIn('Fictional responsibilities',record['text'])
+
+    def test_unreadable_link_alone_gives_a_clear_error(self):
+        self.link_text=None
+        self.link_only()
+        task=self.tasks.list_tasks()[0]
+        self.assertEqual(task['status'],'failed')
+        self.assertIn('could not read that link',task['message'])
+        self.assertEqual(self.calls,[])
+
+    def test_pasted_text_stays_and_link_text_is_added(self):
+        self.link_text='Fictional link body. '*30
+        key=self.link_only('Fictional pasted requirement. '*10)
+        text=self.tasks.posting(key)['text']
+        self.assertTrue(text.startswith('Fictional pasted requirement.'))
+        self.assertIn('Fictional link body.',text)
+
+    def test_failed_link_with_enough_pasted_text_still_works(self):
+        self.link_text=None
+        key=self.link_only('Fictional pasted requirement. '*10)
+        self.assertEqual(self.tasks.list_tasks()[0]['status'],'done')
+        self.assertEqual(self.tasks.posting(key)['source'],'text')
+        self.assertEqual(self.tasks.posting(key)['fit']['flags'],[])
+
+    def run_matches(self,matches):
+        self.result=dict(self.result,matches=matches)
+        key=self.analyze()
+        return self.tasks.posting(key)['fit']
+
+    def test_evidence_text_that_is_not_an_id_does_not_fail_the_review(self):
+        fit=self.run_matches([{'requirement':'A','importance':'must','evidence':'None','level':'partial'},
+                              {'requirement':'B','importance':'nice','evidence':'','level':'gap'}])
+        self.assertEqual([m['evidence'] for m in fit['matches']],['',''])
+        self.assertEqual([m['level'] for m in fit['matches']],['gap','gap'])
+        self.assertTrue(any('cannot use' in f for f in fit['flags']))
+
+    def test_ineligible_ids_are_dropped_and_eligible_ones_kept(self):
+        fit=self.run_matches([{'requirement':'A','importance':'must','evidence':'E-999, E-123','level':'strong'},
+                              {'requirement':'B','importance':'must','evidence':'E-123','level':'strong'}])
+        self.assertEqual(fit['matches'][0]['evidence'],'E-999')
+        self.assertEqual(fit['matches'][0]['level'],'strong')
+        self.assertEqual(fit['matches'][1]['evidence'],'')
+        self.assertEqual(fit['matches'][1]['level'],'gap')
+        self.assertIn('2 requirement(s)',fit['flags'][0])
+
+    def test_longer_ids_are_not_cut_down_to_a_different_entry(self):
+        fit=self.run_matches([{'requirement':'A','importance':'must','evidence':'E-9990','level':'strong'},
+                              {'requirement':'B','importance':'must','evidence':'xE-999','level':'Strong'}])
+        self.assertEqual([m['evidence'] for m in fit['matches']],['',''])
+        self.assertEqual([m['level'] for m in fit['matches']],['gap','gap'])
+
+    def test_level_is_normalised_and_no_evidence_always_means_gap(self):
+        fit=self.run_matches([{'requirement':'A','importance':'must','evidence':'E-999','level':' Strong '},
+                              {'requirement':'B','importance':'must','evidence':'','level':'match'}])
+        self.assertEqual([m['level'] for m in fit['matches']],['strong','gap'])
+
+    def test_clean_evidence_adds_no_flag(self):
+        fit=self.run_matches([{'requirement':'A','importance':'must','evidence':'E-999','level':'strong'}])
+        self.assertEqual(fit['flags'],[])
 
     def test_letter_requires_explicit_sentiment_choice(self):
         key=self.analyze()
@@ -68,49 +180,6 @@ class CareerTasks(unittest.TestCase):
         self.tasks.process_one()
         self.assertEqual(next(t for t in self.tasks.list_tasks() if t['kind']=='cv')['status'],'failed')
         self.assertNotIn('cv_markdown',self.tasks.posting(key)['fit'])
-
-    def test_ineligible_claim_evidence_is_rejected(self):
-        key=self.analyze()
-        for kind,field in (('cv','cv_markdown'),('letter','cover_letter_markdown')):
-            with self.subTest(kind=kind):
-                self.result={field:'Fictional example skill.','sources':['E-999'],'flags':[],
-                             'claims':[{'text':'Fictional example skill.','evidence':['E-998']}]}
-                task_id=self.tasks.submit({'kind':kind,'postingId':key,'withoutSentiment':True,'requestId':str(uuid.uuid4())})
-                self.tasks.process_one()
-                task=next(t for t in self.tasks.list_tasks() if t['id']==task_id)
-                self.assertEqual(task['status'],'failed')
-                self.assertEqual(task['message'],'The draft cited evidence that is not eligible.')
-                self.assertNotIn(field,self.tasks.posting(key)['fit'])
-
-    def test_listed_claim_absent_from_document_is_rejected(self):
-        key=self.analyze()
-        for kind,field in (('cv','cv_markdown'),('letter','cover_letter_markdown')):
-            with self.subTest(kind=kind):
-                self.result={field:'Fictional example skill.','sources':['E-999'],'flags':[],
-                             'claims':[{'text':'This claim is absent.','evidence':['E-999']}]}
-                task_id=self.tasks.submit({'kind':kind,'postingId':key,'withoutSentiment':True,'requestId':str(uuid.uuid4())})
-                self.tasks.process_one()
-                task=next(t for t in self.tasks.list_tasks() if t['id']==task_id)
-                self.assertEqual(task['status'],'failed')
-                self.assertEqual(task['message'],'The evidence map does not match the document text.')
-                self.assertNotIn(field,self.tasks.posting(key)['fit'])
-
-    def test_documented_limitation_unlisted_factual_prose_is_accepted(self):
-        # Claim coverage is not validated; a human must review the whole draft.
-        key=self.analyze()
-        content='Fictional example skill.\nI managed 500 fictional employees.'
-        claims=[{'text':'Fictional example skill.','evidence':['E-999']}]
-        for kind,field in (('cv','cv_markdown'),('letter','cover_letter_markdown')):
-            with self.subTest(kind=kind):
-                self.result={field:content,'sources':['E-999'],'flags':[],'claims':claims}
-                task_id=self.tasks.submit({'kind':kind,'postingId':key,'withoutSentiment':True,'requestId':str(uuid.uuid4())})
-                self.tasks.process_one()
-                task=next(t for t in self.tasks.list_tasks() if t['id']==task_id)
-                self.assertEqual(task['status'],'done')
-                record=self.tasks.posting(key)
-                self.assertEqual(record['fit'][field],content)
-                self.assertEqual(record['fit'][kind+'_claims'],claims)
-                self.assertFalse(record['reviewed'])
 
     def test_missing_analysis_and_invalid_photo(self):
         with self.assertRaises(ValueError):

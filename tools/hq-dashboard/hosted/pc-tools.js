@@ -1,9 +1,10 @@
 /* PC career tasks. Server owns prompts and records. */
 let PC_LETTER='',CLS=[],REPORTS=[];
 async function pcState(){
- const data=await pcFetch('/api/ai/state');gotPostings(data.postings||[]);
- const running=data.tasks.find(t=>['queued','running'].includes(t.status));
- $('#requests').textContent=running?running.message:'Your existing daily scan runs on the PC. On-demand searches are awaiting setup.';
+ const data=await pcFetch('/api/ai/state');
+ // Refuse a stale server/page pair.
+ if(data.rubric_version!==RUBRIC_VERSION)throw Error('Rubric version mismatch: restart HQ with the matching page and worker.');
+ gotPostings(data.postings||[]);
  if(CUR){const fresh=POSTINGS.find(p=>p._id===CUR._id);if(fresh){CUR=fresh;renderResult(CUR)}}return data;
 }
 async function pcInit(){
@@ -14,9 +15,11 @@ async function pcInit(){
  }})};
  PH={maxCount:5,maxInputBytes:8*1024*1024,mediaTypes:['image/jpeg','image/png']};
  $('#r-file').accept=PH.mediaTypes.join(',');$('#r-photos').hidden=false;renderThumbs();
- $('#r-go').disabled=false;$('#s-go').disabled=true;$('#s-go').title='On-demand search setup is pending';
+ $('#r-go').disabled=false;$('#s-go').disabled=false;
  /* A server started before the Documents routes existed still lists CVs (the page file is read on every request). */
  const [state,files]=await Promise.all([pcState(),pcFetch('/api/docs').catch(()=>pcFetch('/api/cvs').then(d=>({cvs:d.files})))]);pcDocs(files);
+ await pcSearchState();
+ setInterval(()=>{if(!document.hidden&&(S.view==='search'||PC_SEARCHES.some(s=>['queued','running'].includes(s.status))))pcSearchState()},2500);
  const active=state.tasks.find(t=>['queued','running'].includes(t.status));
  if(active)pcResume(active.id,active.kind).catch(e=>toast(e.message,null,true));
 }
@@ -115,4 +118,55 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-pc-f
  if(t.dataset.pcClose){$('#report-view').hidden=true;return}
  if(t.dataset.pcLetter){const j=byKey(t.dataset.pcLetter);if(j)pcWriteLetter(j);return}
  t.disabled=true;try{pcReport(await pcFetch('/api/reports/'+encodeURIComponent(t.dataset.pcRead)))}catch(x){toast(x.message,null,true)}finally{t.disabled=false}},true);
-$('#f-search').addEventListener('submit',e=>{e.preventDefault();e.stopImmediatePropagation();toast('On-demand searches are awaiting setup. Your daily scan stays in place.',null,true)},true);
+/* On-demand discovery is separate from document tasks. Results never enter the workbook until the owner saves a lead. */
+let PC_SEARCHES=[],PC_SEARCH_BUSY=false,PC_SEARCH_FETCH=false,PC_SEARCH_STAMP='';
+function pcSearchLink(value){try{const u=new URL(String(value||''));return u.protocol==='https:'&&!u.username&&!u.password?u.href:''}catch{return ''}}
+function pcSearchKey(value){const u=pcSearchLink(value);return u?u.replace(/#.*$/,'').replace(/\/$/,''):''}
+function pcSearchJob(result){const link=pcSearchKey(result.link);return link?D.jobs.find(j=>pcSearchKey(j.Link)===link):null}
+function pcSearchError(message){const el=$('#s-err');el.textContent=message;el.hidden=false}
+function pcRenderSearch(data){
+ PC_SEARCHES=Array.isArray(data.searches)?data.searches:[];
+ const sources=Array.isArray(data.sources)?data.sources:[],scope=$('#s-sources');
+ if(scope)scope.textContent=sources.length?'Searches these company boards: '+sources.map(s=>s.label).join(', ')+'. Other employers are not included.':'Searches the configured company boards. Other employers are not included.';
+ const stamp=JSON.stringify([PC_SEARCHES,D.jobs.map(j=>[j._id,j.Link])]);if(stamp===PC_SEARCH_STAMP)return;PC_SEARCH_STAMP=stamp;
+ const active=PC_SEARCHES.some(s=>['queued','running'].includes(s.status));$('#s-go').disabled=PC_SEARCH_BUSY||active;
+ $('#s-go').textContent=active?'Search running…':'Search now';
+ const labels={queued:['Queued','a'],running:['Searching','b'],completed:['Finished','g'],failed:['Failed','r'],interrupted:['Interrupted','a']};
+ $('#requests').innerHTML=PC_SEARCHES.length?PC_SEARCHES.map(s=>{const label=labels[s.status]||['Status unavailable','a'],results=Array.isArray(s.results)?s.results:[],errors=Array.isArray(s.sourceErrors)?s.sourceErrors:[];
+  return `<article class="rq pc-search"><div class="rq-h"><h3>${esc(s.query||'Job search')}</h3><span class="chip ${label[1]}"><i class="dot"></i>${label[0]}</span></div>
+   <p class="d-meta">${[s.location,s.remote?'Remote only':'',pcDate(s.created)].filter(Boolean).map(x=>`<span>${esc(x)}</span>`).join('')}</p>
+   <p class="pc-search-message" role="status">${esc(s.message||'Waiting for an update.')}</p>
+   ${Number.isInteger(s.sourcesChecked)&&Number.isInteger(s.sourcesTotal)?`<p class="mut">Company boards checked: ${s.sourcesChecked} of ${s.sourcesTotal}.</p>`:''}
+   ${errors.length?'<p class="banner a">Some company boards could not be checked. These results cover only the boards that responded; try again later.</p>':''}
+   ${s.truncated?'<p class="banner a">Only the first matching jobs are shown. Add a more specific role keyword or location to narrow your search.</p>':''}
+   ${results.length?`<p class="mut">${results.length} result${results.length===1?'':'s'} · No fit score yet. Check each posting for eligible countries and requirements.</p><ul class="pc-results">${results.map(r=>{const job=pcSearchJob(r),link=pcSearchLink(r.link);return `<li><div class="pc-result-head"><div class="t"><h4>${esc(r.role||'Role not listed')}</h4><p><b>${esc(r.company||'Company not listed')}</b>${r.location?' · '+esc(r.location):''}</p></div>${job?'<span class="chip g">In your tracker</span>':''}</div>
+    ${r.summary?`<p class="pc-result-summary">${esc(r.summary)}</p>`:''}<p class="mut pc-result-source">Source: ${esc(r.source||'Company job board')}${r.checkedAt?' · Checked '+esc(pcDate(r.checkedAt)):''}</p>
+    <div class="pc-result-actions">${link?`<a class="btn ghost" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open posting<span class="sr"> (opens a new tab)</span></a>`:'<span class="mut">Posting link unavailable</span>'}<button class="btn" type="button" data-pc-search="${esc(s.id)}" data-pc-result="${esc(r.id)}"${!link?' disabled':''}>${job?'View in tracker':'Add to tracker'}</button></div></li>`}).join('')}</ul>`:s.status==='completed'?'<p class="mut">No matching jobs on these boards. Try fewer role keywords, clear the location, or turn off Remote only.</p>':''}
+   ${['failed','interrupted'].includes(s.status)?`<button class="btn ghost" type="button" data-pc-retry="${esc(s.id)}">Use this search again</button>`:''}</article>`}).join(''):'<p class="mut">No searches yet. Search now to check the listed company boards; results stay here until you choose to add a lead.</p>';
+}
+async function pcSearchState(){if(PC_SEARCH_FETCH)return;PC_SEARCH_FETCH=true;
+ try{const data=await pcFetch('/api/search/state');pcRenderSearch(data);if($('#s-err').dataset.connection==='1'){$('#s-err').hidden=true;delete $('#s-err').dataset.connection}return data}
+ catch(e){$('#s-err').dataset.connection='1';pcSearchError(e.message+' Your previous results are kept. Reload or try again when the server is available.');if(!PC_SEARCH_STAMP)$('#requests').textContent='Search results could not be loaded.'}
+ finally{PC_SEARCH_FETCH=false}}
+async function pcSubmitSearch(){if(PC_SEARCH_BUSY)return;const query=$('#s-what').value.trim(),location=$('#s-where').value.trim();$('#s-err').hidden=true;
+ if(query.length<2){pcSearchError('Add a role keyword, such as analyst or automation.');$('#s-what').focus();return}
+ PC_SEARCH_BUSY=true;$('#s-go').disabled=true;$('#s-msg').textContent='Starting your search…';
+ try{await pcFetch('/api/search/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,location,remote:$('#s-remote').checked,requestId:crypto.randomUUID()})});
+  $('#s-msg').textContent='Search started. You can close the page and return later. Nothing is added to the tracker yet.';await pcSearchState()}
+ catch(e){pcSearchError(e.message);$('#s-msg').textContent='Search was not confirmed. Check Your searches below before trying again.'}
+ finally{PC_SEARCH_BUSY=false;$('#s-go').disabled=PC_SEARCHES.some(s=>['queued','running'].includes(s.status));$('#s-go').textContent=$('#s-go').disabled?'Search running…':'Search now'}
+}
+$('#f-search').addEventListener('submit',e=>{e.preventDefault();e.stopImmediatePropagation();pcSubmitSearch()},true);
+$('#requests').setAttribute('aria-live','polite');
+$('#requests').addEventListener('click',e=>{const retry=e.target.closest('[data-pc-retry]');if(retry){const s=PC_SEARCHES.find(x=>x.id===retry.dataset.pcRetry);if(s){$('#s-what').value=s.query||'';$('#s-where').value=s.location||'';$('#s-remote').checked=!!s.remote;$('#s-msg').textContent='Search loaded. Tap Search now to run it again.';$('#f-search').scrollIntoView({block:'start'})}return}
+ const b=e.target.closest('[data-pc-result]');if(!b)return;const s=PC_SEARCHES.find(x=>x.id===b.dataset.pcSearch),r=s?.results?.find(x=>x.id===b.dataset.pcResult);if(!r)return;
+ const job=pcSearchJob(r);if(job){openJob(job._id);return}
+ if(!READY||!D.sheets.length){toast('Your job lists are not available yet. Reload the spreadsheet first.',null,true);return}
+ if(PC_WAITING){toast('An edit is waiting. Check the save message at the top before adding another lead.',null,true);return}
+ openAdd();if(!$('#addDlg').open)return;const f=$('#addForm'),put=(name,value)=>{const el=f.elements.namedItem(name);if(el)el.value=String(value||'')};
+ put('Company',r.company);put('Role',r.role);put('Where',r.location);put('Link',pcSearchLink(r.link));put('Source',r.source||'Company job board');
+ put('My status',D.statuses.includes('Suggested (not applied)')?'Suggested (not applied)':D.statuses[0]);
+ put('Notes','Source: '+(r.source||'Company job board')+'\nChecked: '+pcDate(r.checkedAt)+'\nNext step: Read the posting and check the eligible countries before applying.');
+ $('#addErr').textContent='Check the list and details, then tap Add lead to save this job.';$('#addErr').hidden=false;
+});
+$('.seg').addEventListener('click',e=>{if(e.target.closest('[data-v="search"]'))pcSearchState()});

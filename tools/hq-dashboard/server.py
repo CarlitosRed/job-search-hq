@@ -1,6 +1,7 @@
 """Password protected PC hosting with durable saves.
 
-No directory serving, shell execution or AI calls. Only the listed routes exist.
+Only the listed routes exist: no directory serving or arbitrary shell endpoint.
+Typed AI tasks run through the restricted worker; search reads bounded public job boards.
 Secrets and login throttle state live outside the checkout, in LOCALAPPDATA.
 """
 import argparse
@@ -25,6 +26,7 @@ from urllib.parse import urlsplit, parse_qs
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 DEFAULT_STATE = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'JobSearchHQ'
+# Private state path with public request limits.
 REQUEST_DEADLINE_SECONDS = 30
 AI_UPLOAD_DEADLINE_SECONDS = 600
 MAX_REQUEST_WORKERS = 32
@@ -111,7 +113,14 @@ class App:
         self.tracker.Conflict.hq_conflict = True
         self.queue = load_queue()(self.state, self.write)
         self.scan_log_dir = ROOT / 'work' / 'logs'
-        self.ai = load_component('ai_tasks').Tasks(self.state)
+        ai_module = load_component('ai_tasks')
+        self.ai = ai_module.Tasks(self.state)
+        self.rubric_version = ai_module.RUBRIC_VERSION
+        # Worker imports/checks the canonical v3.2 policy before serving analysis.
+        #
+        # Public employer-board discovery has its own durable journal and never
+        # writes to the tracker.
+        self.search = load_component('job_search').Searches(self.state)
         self.files = load_component('pc_files')
         self.cv_work = ROOT/'work'
 
@@ -321,7 +330,9 @@ def handler(app):
                 if self.path == '/api/health':
                     return self.send(200, app.health())
                 if self.path == '/api/ai/state':
-                    return self.send(200, {'tasks':app.ai.list_tasks(),'postings':app.ai.postings()})
+                    return self.send(200, {'rubric_version':app.rubric_version,'tasks':app.ai.list_tasks(),'postings':app.ai.postings()})
+                if self.path == '/api/search/state':
+                    return self.send(200, app.search.state())
                 if self.path == '/api/cvs':
                     return self.send(200, {'files':app.files.existing(app.cv_work)})
                 if self.path.startswith('/api/cvs/'):
@@ -395,13 +406,18 @@ def handler(app):
                     with app.auth_lock:
                         app.sessions.pop(app.session_key(self.headers.get('Cookie', '')), None)
                     return self.send(200, {'ok': True}, headers={'Set-Cookie': 'hq_session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0'})
-                if self.path not in ('/api/add', '/api/update', '/api/writes/dismiss','/api/ai/submit','/api/ai/link','/api/ai/export'):
+                if self.path not in ('/api/add', '/api/update', '/api/writes/dismiss','/api/ai/submit','/api/ai/link','/api/ai/export','/api/search/submit'):
                     return self.send(404)
                 if content_type != 'application/json':
                     return self.send(415)
                 payload = json.loads(raw)
                 if not isinstance(payload, dict):
                     return self.send(400)
+                if self.path=='/api/search/submit':
+                    try:
+                        return self.send(202, {'id': app.search.submit(payload)})
+                    except ValueError as error:
+                        return self.send(400, {'error': str(error)})
                 if self.path=='/api/ai/submit':
                     return self.send(202,{'id':app.ai.submit(payload)})
                 if self.path=='/api/ai/link':
@@ -465,12 +481,14 @@ def main():
         server = BoundedHTTPServer(('127.0.0.1', a.port), handler(app))
         app.queue.start()
         app.ai.start()
+        app.search.start()
         try:
             server.serve_forever()
         finally:
             server.server_close()
             app.queue.stop()
             app.ai.stop()
+            app.search.stop()
 
 
 if __name__ == '__main__':

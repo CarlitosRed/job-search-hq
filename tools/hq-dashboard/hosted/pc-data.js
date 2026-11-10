@@ -6,7 +6,7 @@ const use=()=>Promise.resolve(null);
 function pcDate(value){const s=String(value||'');if(!/^\d{16,20}$/.test(s))return s;const d=new Date(Number(s)/1e6);return Number.isNaN(d.getTime())?'Date unavailable':d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})}
 let PC_WAITING=false,PC_LAST_WRITE='';
 async function pcHealth(){try{const h=await pcFetch('/api/health');let el=document.getElementById('pc-health');if(!el){el=document.createElement('small');el.id='pc-health';el.style.display='block';$('#sync').after(el)}el.textContent=h.scan?.message||'Scan status unavailable.'}catch{}}
-// Signed: Codex (builder), 2026-11-07. Save notices are UI state only.
+// Save notices are UI state only.
 let PC_SAVE_STAMP='',PC_SAVE_TIMER,PC_SAVE_FADE,PC_SAVE_ERROR=false,PC_SAVE_POINTER=false;
 function pcSaveHold(box){return PC_SAVE_POINTER||box.contains(document.activeElement)}
 function pcSaveStop(box){clearTimeout(PC_SAVE_TIMER);clearTimeout(PC_SAVE_FADE);box.classList.remove('pc-save-fade')}
