@@ -18,3 +18,7 @@ jobs:
       - run: python -I tools/hq-dashboard/test_cv_onepage.py
       - run: python -I tools/hq-dashboard/test_pc_server.py
       - run: python -I tools/hq-dashboard/test_job_search.py
+      - run: python -I tools/hq-dashboard/test_lead_policy.py
+      - run: python -I tools/hq-dashboard/test_lead_ranker.py
+      - run: python -I tools/hq-dashboard/test_link_fetch.py
+      - run: node tools/hq-dashboard/test_importance.js
