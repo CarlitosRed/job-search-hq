@@ -30,6 +30,8 @@ Follow [SETUP step 3](SETUP.md#3-fictional-demo-data-in-60-seconds). Use only fi
 
 ## Before you open a pull request
 
+A secret scan runs on every PR; a red `gitleaks` check means remove the secret and rotate it.
+
 1. Run the three test commands in the README. They must pass without a live model.
 2. Keep the change to UI files. Describe the change and attach desktop and 375 px screenshots with fictional data, including affected drawers or dialogs. See the quickstart for capture instructions on Windows and Mac.
 3. Open a pull request against `main`. The owner reviews and merges; nothing is merged without that.
