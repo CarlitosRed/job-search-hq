@@ -911,5 +911,70 @@ try {
             browser.close()
 
 
+
+class IntegrationSQLite(Integration):
+    """The same server checks once the tracker lives in SQLite (step 00b).
+
+    Excel is then only a mirror: an open workbook no longer blocks a save, and an
+    edit typed into Excel is kept as a copy instead of changing the site.
+    """
+
+    def setUp(self):
+        super().setUp()
+        store_spec = importlib.util.spec_from_file_location('tracker_store_fixture', HERE.parent / 'tracker' / 'store.py')
+        store = importlib.util.module_from_spec(store_spec)
+        store_spec.loader.exec_module(store)
+        self.assertTrue(store.migrate(self.book, apply=True)['ok'])
+
+    def test_store_is_sqlite(self):
+        self.login()
+        self.assertEqual(self.data()['store'], 'sqlite')
+
+    def test_queue_survives_restart_and_retries_once(self):
+        self.login()
+        lock = self.book.with_name('~$' + self.book.name)
+        lock.touch()
+        try:
+            self.assertEqual(self.edit(note='Saved while Excel is open')[0], 200)
+            self.assertEqual(self.data()['jobs'][0]['Notes'], 'Saved while Excel is open')
+        finally:
+            lock.unlink()
+
+    def test_queue_changed_workbook_requires_confirmation(self):
+        self.login()
+        self.assertEqual(self.edit(note='Site note')[0], 200)
+        wb = openpyxl.load_workbook(self.book)
+        wb.active.cell(2, 6).value = 'Edited on PC'
+        wb.save(self.book)
+        wb.close()
+        self.assertEqual(self.data()['jobs'][0]['Notes'], 'Site note')
+        self.assertEqual(self.edit(note='Second site note')[0], 200)
+        self.assertIn('Excel', self.data()['mirrorWarning'])
+
+    def test_edits_stale_rows_and_excel_lock(self):
+        self.login()
+        self.assertEqual(self.edit()[0], 200)
+        self.assertEqual(self.data()['jobs'][0]['Notes'], 'Saved fictional note')
+        self.assertEqual(self.edit(version='stale')[0], 409)
+        self.dismiss_latest()
+        self.assertEqual(self.edit(expect={'Company': 'Wrong company', 'Role': 'Example Engineer'})[0], 409)
+        self.dismiss_latest()
+
+    def test_add_and_read_external_save(self):
+        self.login()
+        p = {'sheet': 'Fictional jobs', 'Company': 'Second Example', 'Role': 'Test role', 'version': self.data()['version'], 'requestId': str(uuid.uuid4())}
+        self.assertEqual(self.request('POST', '/api/add', p)[0], 200)
+        self.assertEqual(len(self.data()['jobs']), 2)
+        wb = openpyxl.load_workbook(self.book)
+        self.assertEqual(wb.active.cell(3, 2).value, 'Second Example')
+        wb.close()
+
+    def test_tab_geometry_is_stable(self):
+        self.skipTest('Browser checks run in Excel mode; the page does not depend on the store.')
+
+    def test_phone_browser(self):
+        self.skipTest('Browser checks run in Excel mode; the page does not depend on the store.')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

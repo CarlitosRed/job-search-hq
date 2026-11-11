@@ -1,14 +1,14 @@
 # Job Search HQ tracker: local server.
-# Serves index.html and reads/writes work/applications-tracker.xlsx (the xlsx stays the source of truth,
-# so the daily rerun and this page edit the same file). Local only (127.0.0.1). Never applies anywhere.
+# Serves index.html using SQLite when present, otherwise the Excel workbook.
+# Local only (127.0.0.1). Never applies anywhere.
 #
 # Env vars (optional, for testing against a copy):
 #   TRACKER_XLSX  path to the workbook   (default: work/applications-tracker.xlsx in the data folder)
 #   TRACKER_PORT  port to listen on      (default: 8765)
 #
-# Writes are safe: the workbook is saved to a temp file next to it, re-opened to verify, then swapped in
-# with os.replace. One backup per day is kept in .tracker-backups/ beside the workbook (last 7 days).
-import json, os, re, shutil, sys, threading, webbrowser
+# Excel writes use a verified temporary file and seven daily backups. SQLite writes
+# commit first, then rebuild Excel as a mirror, preserving external edits as copies.
+import json, os, re, shutil, sqlite3, sys, threading, webbrowser
 from copy import copy
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,12 +17,16 @@ from pathlib import Path
 import openpyxl
 import importlib.util
 import unicodedata
+from contextlib import contextmanager
 
 # Shared Windows writer lock.
 _lock_spec = importlib.util.spec_from_file_location('tracker_workbook_lock', Path(__file__).with_name('workbook_lock.py'))
 _lock_module = importlib.util.module_from_spec(_lock_spec)
 _lock_spec.loader.exec_module(_lock_module)
 workbook_lock = _lock_module.workbook_lock
+_store_spec = importlib.util.spec_from_file_location('tracker_store', Path(__file__).with_name('store.py'))
+store = importlib.util.module_from_spec(_store_spec)
+_store_spec.loader.exec_module(store)
 
 HERE = Path(__file__).resolve().parent
 # Render the same settings as the hosted page builder.
@@ -69,8 +73,32 @@ def check_date(col):
     return m.group(0) if m else ""
 
 
+def sqlite_mode():
+    return store.db_path(XLSX).exists()
+
+
 def load():
-    wb = openpyxl.load_workbook(XLSX)
+    if sqlite_mode():
+        storage = store.Store(store.db_path(XLSX))
+        try:
+            with storage.db:
+                storage.db.execute('BEGIN')
+                wb = storage.workbook()
+                warning = storage.meta('mirror_warning') or ''
+                revision = 'db-' + str(storage.meta('revision'))
+        finally:
+            storage.close()
+        mode = 'sqlite'
+    else:
+        wb = openpyxl.load_workbook(XLSX)
+        mode, warning, revision = 'excel', '', version()
+    try:
+        return load_rows(wb, mode, warning, revision)
+    finally:
+        wb.close()
+
+
+def load_rows(wb, mode, warning, revision):
     jobs, contacts, sheets = [], [], []
     for ws in wb:
         head = header(ws)
@@ -94,7 +122,8 @@ def load():
                     d["_row"] = n
                     contacts.append(d)
     return {"jobs": jobs, "contacts": contacts, "sheets": sheets, "statuses": STATUSES,
-            "today": date.today().isoformat(), "version": version(), "file": XLSX.name}
+            "today": date.today().isoformat(), "version": revision, "file": XLSX.name,
+            "store": mode, "mirrorWarning": warning}
 
 
 _CACHE = {"version": None, "body": ""}
@@ -110,6 +139,12 @@ def cached():
 
 
 def version():
+    if sqlite_mode():
+        storage = store.Store(store.db_path(XLSX))
+        try:
+            return 'db-' + str(storage.meta('revision'))
+        finally:
+            storage.close()
     try:
         return str(XLSX.stat().st_mtime_ns)
     except OSError:
@@ -126,6 +161,20 @@ def backup():
     if not today.exists():
         shutil.copy2(XLSX, today)
     olds = sorted(BACKUPS.glob(f"{XLSX.stem}-*{XLSX.suffix}"))
+    for old in olds[:-7]:
+        old.unlink(missing_ok=True)
+
+
+def backup_database(storage):
+    BACKUPS.mkdir(exist_ok=True)
+    today = BACKUPS / f"{XLSX.stem}-{date.today().isoformat()}.sqlite3"
+    if not today.exists():
+        target = sqlite3.connect(today)
+        try:
+            storage.db.backup(target)
+        finally:
+            target.close()
+    olds = sorted(BACKUPS.glob(f"{XLSX.stem}-*.sqlite3"))
     for old in olds[:-7]:
         old.unlink(missing_ok=True)
 
@@ -157,9 +206,33 @@ def expect_row(ws, head, row, p):
             raise Conflict("The spreadsheet changed since this page loaded. Refresh and try again.")
 
 
+@contextmanager
+def editing_workbook():
+    if sqlite_mode():
+        storage = store.Store(store.db_path(XLSX))
+        try:
+            backup_database(storage)
+            with storage.edit() as wb:
+                yield wb
+        finally:
+            storage.close()
+        store.rebuild_mirror(XLSX)
+    else:
+        wb = openpyxl.load_workbook(XLSX)
+        try:
+            yield wb
+            save(wb)
+        finally:
+            wb.close()
+
+
 def update(p):
+    with editing_workbook() as wb:
+        update_row(p, wb)
+
+
+def update_row(p, wb):
     sheet, row = p["sheet"], int(p["row"])
-    wb = openpyxl.load_workbook(XLSX)
     if sheet not in wb.sheetnames:
         raise ValueError("unknown sheet")
     ws = wb[sheet]
@@ -189,12 +262,16 @@ def update(p):
             dst.value = val if val not in ("", None) else None
             if isinstance(val, str) and is_formula_text(val):
                 dst.data_type = "s"
-    save(wb)
 
 
 def add(p):
+    with editing_workbook() as wb:
+        result = add_row(p, wb)
+    return result
+
+
+def add_row(p, wb):
     sheet = p["sheet"]
-    wb = openpyxl.load_workbook(XLSX)
     if sheet not in wb.sheetnames:
         raise ValueError("unknown sheet")
     ws = wb[sheet]
@@ -233,7 +310,7 @@ def add(p):
             if src.has_style:
                 dst._style = copy(src._style)
         v = f.get(str(h), "")
-        if h == "Date applied" and v:
+        if v and h == "Date applied":
             v = date.fromisoformat(v)
         if v not in ("", None):
             dst.value = v
@@ -245,7 +322,6 @@ def add(p):
     for dv in ws.data_validations.dataValidation:
         if any(rng.min_col == rng.max_col == head.index("My status") + 1 for rng in dv.sqref.ranges):
             dv.sqref.add(f"{sc}{new}")
-    save(wb)
     saved = {str(h): cell(ws.cell(new, c).value) for c, h in enumerate(head, start=1) if h}
     return new, saved
 
