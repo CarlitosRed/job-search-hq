@@ -32,6 +32,12 @@ The `pc` backend writes `tools/hq-dashboard/pc-index.html`. It substitutes `pc-d
 
 ## State and persistence
 
+### Keep your data outside the app folder (optional)
+
+Put the app in a folder named `app` inside your data folder, then create an empty `.job-search-hq-data` file in the data folder, or set `JOB_SEARCH_HQ_DATA` to that folder. Your `settings.json`, `rules.md`, `work/` and `evidence/` then live in the data folder; bundled defaults and tools stay in the app folder.
+
+`hq_settings.data_root()` resolves private data from `JOB_SEARCH_HQ_DATA`, a `.job-search-hq-data` marker above the app, or the app folder; bundled files always use `app_root()`.
+
 | Location | Contents |
 | --- | --- |
 | Repository `work/` | Default `applications-tracker.xlsx`, `.tracker-backups/`, existing `CV_*.docx`, `CL_*.docx`, `report-*.md`, and optional scan logs. Ignored by Git. |

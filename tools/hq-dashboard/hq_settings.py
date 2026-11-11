@@ -1,12 +1,30 @@
 """Owner configuration."""
 import json
+import os
 from pathlib import Path
+
+
+def app_root():
+    """Return the folder containing the bundled settings and tools."""
+    return Path(__file__).resolve().parents[2]
+
+
+def data_root():
+    """Resolve the data folder using the current environment and marker."""
+    override = os.environ.get('JOB_SEARCH_HQ_DATA')
+    if override is not None:
+        return Path(override).resolve()
+    app = app_root()
+    if (app.parent / '.job-search-hq-data').is_file():
+        return app.parent
+    return app
 
 
 def load(root=None):
     """Read neutral defaults and optional private overrides on every call."""
-    root = Path(root) if root is not None else Path(__file__).resolve().parents[2]
-    values = json.loads((root / 'settings.example.json').read_text(encoding='utf-8'))
+    defaults = Path(root) if root is not None else app_root()
+    root = Path(root) if root is not None else data_root()
+    values = json.loads((defaults / 'settings.example.json').read_text(encoding='utf-8'))
     values = {key: value for key, value in values.items() if not key.startswith('_')}
     private = root / 'settings.json'
     if private.is_file():

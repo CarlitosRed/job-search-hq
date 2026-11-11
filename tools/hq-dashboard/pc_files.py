@@ -17,7 +17,7 @@ from pathlib import Path
 import re
 
 HERE=Path(__file__).resolve().parent
-ROOT=HERE.parents[1]
+ROOT=hq_settings.data_root()
 MIME='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 MD_MIME='text/markdown; charset=utf-8'
 PREFIX={kind: SETTINGS['document_prefix']+suffix for kind,suffix in (('cv','CV_'),('cl','CL_'))}
@@ -147,6 +147,8 @@ def export_draft(state,posting_id,kind,record,copy_dir=None):
         temp.replace(path)
     # Content-addressed copies never overwrite a file edited in the synced folder.
     target=copy_dir if copy_dir is not None else (Path(SETTINGS['copy_folder']).expanduser() if SETTINGS['copy_folder'] else None)
+    if target is not None and copy_dir is None:
+        target = ROOT / target
     if target is not None and target.parent.is_dir():
         dest=target/SETTINGS['copy_subfolder']
         dest.mkdir(parents=True,exist_ok=True)

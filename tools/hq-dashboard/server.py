@@ -24,7 +24,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent.parent
+_settings_spec = importlib.util.spec_from_file_location('server_owner_settings', HERE / 'hq_settings.py')
+hq_settings = importlib.util.module_from_spec(_settings_spec)
+_settings_spec.loader.exec_module(hq_settings)
+ROOT = hq_settings.data_root()
+APP = hq_settings.app_root()
 DEFAULT_STATE = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'JobSearchHQ'
 # Private state path with public request limits.
 REQUEST_DEADLINE_SECONDS = 30
@@ -70,7 +74,7 @@ def unlock(state):
 
 
 def load_tracker(workbook):
-    spec = importlib.util.spec_from_file_location('pc_tracker', HERE.parent / 'tracker' / 'server.py')
+    spec = importlib.util.spec_from_file_location('pc_tracker', APP / 'tools' / 'tracker' / 'server.py')
     tracker = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(tracker)
     tracker.XLSX = Path(workbook).resolve()
