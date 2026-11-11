@@ -2,6 +2,7 @@
     "_comment":  "Codex - M4-a Builder, 2026-11-10; Codex - M4-b Builder, 2026-11-10 (retired legacy copy option)",
     "owner_name":  "",
     "document_prefix":  "",
+    "cv_blocked_terms":  ["BOM", "UTF-16", "UTF-8"],
     "copy_folder":  "",
     "copy_subfolder":  "Drafts from HQ",
     "home_places_pattern":  "",

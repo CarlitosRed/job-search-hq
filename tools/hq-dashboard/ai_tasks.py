@@ -57,6 +57,7 @@ def evidence_bank(root=ROOT):
     else:
         rules=rules_path.read_text(encoding='utf-8')
     entries={}
+    needs_fixing=[]
     for path in sorted((root/'evidence').glob('E-*.md')):
         evidence_id=path.name[:5]
         text=path.read_text(encoding='utf-8')
@@ -70,13 +71,22 @@ def evidence_bank(root=ROOT):
         bullets=match[1].strip()
         if not bullets or bullets.lower().startswith(('not cv-ready','unknown')):
             continue
+        problems=readability_problems(bullets,settings['cv_blocked_terms'])
+        if bullets.lower().startswith('none'):
+            problems.insert(0,'Add a checked CV-ready description of the work; this entry currently says "none".')
+        if problems:
+            needs_fixing.append({'id':evidence_id,'note':' '.join(problems)})
+            continue
         conditions=re.search(r'^- public-safe: (.*)$',text,re.M)
         limits=re.search(r'^- limit: (.*)$',text,re.M)
         entries[evidence_id]={'level':level[1],'text':bullets,'publicationConditions':conditions[1],
                               'limits':limits[1] if limits else 'Do not infer anything beyond the CV-ready wording.'}
-    if not entries:
-        raise ValueError('No eligible evidence is available.')
-    return {'rubric_version':RUBRIC_VERSION,'rules':rules,'entries':entries}
+    return {'rubric_version':RUBRIC_VERSION,'rules':rules,'entries':entries,'needs_fixing':needs_fixing}
+
+
+def evidence_notes(root=ROOT):
+    try:return evidence_bank(root)['needs_fixing']
+    except Exception:return []
 
 
 _cleaner=None
@@ -91,6 +101,11 @@ def draft_problem(text,kind):
         spec.loader.exec_module(module)
         _cleaner=module
     return _cleaner.draft_problem(text,kind)
+
+
+def readability_problems(text,blocked_terms=()):
+    if _cleaner is None:draft_problem('', 'cv')
+    return _cleaner.readability_problems(text,blocked_terms)
 
 
 def word_count(text):
@@ -274,6 +289,8 @@ class Tasks:
                 bank=self.bank_loader()
                 if bank.get('rubric_version') != RUBRIC_VERSION:
                     raise ValueError('Rubric version mismatch: evidence bank; nothing analyzed')
+                if not bank['entries']:
+                    raise ValueError('No eligible evidence is available.')
                 posting=p['posting'] if kind=='analyze' else self.posting(p['postingId'])
                 link_note=''
                 if kind=='analyze' and posting.get('link') and len(posting.get('text',''))<2000:
@@ -334,6 +351,9 @@ class Tasks:
                     problem=draft_problem(content,kind)
                     if problem:
                         raise ValueError(problem)
+                    problems=readability_problems(content,SETTINGS['cv_blocked_terms'])
+                    if problems:
+                        raise ValueError(' '.join(problems))
                     if any(s not in bank['entries'] for s in sources) or any(not c.get('evidence') or any(s not in sources for s in c['evidence']) for c in claims):
                         raise ValueError('The draft cited evidence that is not eligible.')
                     if any(not isinstance(c.get('text'),str) or not c['text'].strip() or c['text'] not in content for c in claims):

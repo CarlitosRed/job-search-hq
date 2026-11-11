@@ -108,8 +108,8 @@ def main():
     h = sub(h, '<span class="chip ${j._open==="open"?"g":j._open==="closed"?"r":""}"><i class="dot"></i>${esc(j._check)}</span>',
             '<span class="chip ${j._open==="open"?"g":j._open==="closed"?"r":""}" title="${esc(j._check)}"><i class="dot"></i>${esc(checkText(j))}</span>')
     h = sub(h, 'No link saved</span>`}</div>',
-            'No link saved</span>`}${cvFor(j)?`<button class="btn ghost" data-cv="${esc(cvFor(j).id)}">${IC.dl}${cvSameRole(j,cvFor(j))?"Download CV (.docx)":"CV made for another role here"}</button>`:""}'
-            '<button class="btn ghost" data-act="review" data-id="${esc(j._id)}">${IC.star}Review fit + draft CV</button></div>')
+            'No link saved</span>`}'
+            '<button class="btn ghost" data-act="review" data-id="${esc(j._id)}">${IC.star}Check fit and create CV</button></div>')
     h = sub(h, 'if(v==="add")openAdd();', 'if(v==="add")openAdd();if(v==="review"){const j=byKey(a.dataset.id);if(j)reviewFromJob(j)}')
     h = sub(h, "note-${j._row}", "note-${esc(j._id)}", count=2)
     h = sub(h, '"Saved to the spreadsheet · ":"Saved to the Notes column · "', '"Saved · syncs at {{SCAN_TIME}}":"Notes"', count=2)
@@ -194,8 +194,9 @@ def main():
                 '  <h3 class="doc-sec">CVs</h3><div id="cvs"><p class="mut">Loading…</p></div>\n'
                 '  <h3 class="doc-sec">Cover letters</h3><div id="cls"><p class="mut">Loading…</p></div>\n'
                 '  <h3 class="doc-sec">Reports</h3><div id="reports"><p class="mut">Loading…</p></div>\n'
+                '  <section id="evidence-notes" class="banner a" hidden></section>\n'
                 '  <article id="report-view" class="report" hidden></article></div>')
-        h = sub(h, '${IC.star}Review fit + draft CV</button></div>', '${IC.star}Review fit + draft CV</button>${pcJobDocs(j)}</div>')
+        h = sub(h, '<button class="btn ghost" data-act="review"', '${pcJobDocs(j)}<button class="btn ghost" data-act="review"')
         h = sub(h, '</style>', read('pc.css') + '</style>')
         h = h.replace('Claude reads it, scores it against your evidence bank and shows the fit.',
                       'Codex reads it, scores it against your evidence bank and shows the fit.')

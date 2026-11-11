@@ -25,5 +25,6 @@ jobs:
       - run: python -I tools/hq-dashboard/test_profile.py
       - run: python -I tools/hq-dashboard/test_rubric_versions.py
       - run: python -I tools/hq-dashboard/test_data_root.py
+      - run: python -I tools/hq-dashboard/test_cv_quality.py
       - run: python -I tools/tracker/test_store.py
       - run: python -I tools/tracker/test_stages.py

@@ -37,6 +37,13 @@
 .pc-result-actions .btn{text-decoration:none;min-height:40px;justify-content:center}
 @media (max-width:560px){.pc-result-head{flex-wrap:wrap}.pc-result-actions .btn{flex:1 1 120px;min-height:44px}.pc-results>li{padding:12px}}
 
+/* Document origins in the job drawer. */
+.pc-job-docs{flex:1 1 100%;min-width:0;overflow-wrap:anywhere}
+.pc-job-file{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0}
+.pc-job-file>span{flex:1 1 220px;min-width:0}
+.pc-job-file .btn{white-space:normal;max-width:100%}
+.pc-older p{margin:12px 0 8px;font-weight:600}
+#evidence-notes{overflow-wrap:anywhere}
 /* PC save notices. */
 #pc-saves{flex-wrap:wrap;align-items:center;margin:10px 16px;opacity:1;transition:opacity 180ms ease}
 #pc-saves>span{flex:1 1 240px;min-width:0;overflow-wrap:anywhere}

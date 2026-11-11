@@ -63,35 +63,38 @@ async function pcDownload(url,fallback,button){if(PCDL.has(url))return;PCDL.add(
   const blob=await r.blob(),href=URL.createObjectURL(blob),a=document.createElement('a');a.href=href;a.download=(/filename="([^"]+)"/.exec(r.headers.get('Content-Disposition')||'')||[])[1]||fallback;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(href),30000)}
  catch(x){toast(x.message||'Could not download this file.',null,true)}finally{PCDL.delete(url);if(button)button.disabled=false}}
 downloadCv=async function(id){return pcDownload('/api/cvs/'+encodeURIComponent(id),'CV.docx',null)};
-/* "Review fit + draft CV" never inherits a pending "Write a cover letter". */
+/* "Check fit and create CV" never inherits a pending "Write a cover letter". */
 const pcReviewFromJob=reviewFromJob;reviewFromJob=function(j){PC_LETTER='';return pcReviewFromJob(j)};
 docBlock=function(title,which,text,extra=''){return `<section class="sec" data-sec="${which}"><div class="doc-h"><h3>${title}</h3><button class="btn ghost" type="button" data-doc="${which}" data-do="copy">Copy</button><button class="btn ghost" type="button" data-pc-doc="${which}">Download draft .docx</button></div><pre class="doc">${esc(text)}</pre>${extra}</section>`};
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-pc-doc]');if(!b||!CUR)return;e.stopImmediatePropagation();b.disabled=true;
  try{const r=await fetch('/api/ai/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:CUR._id,kind:b.dataset.pcDoc==='cv'?'cv':'letter'})});
- if(!r.ok)throw Error('Could not export this draft. Sign in again if your session ended.');
+ if(!r.ok){const error=await r.json().catch(()=>({}));throw Error(error.error||'Could not export this draft. Sign in again if your session ended.')}
  const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=(/filename="([^"]+)"/.exec(r.headers.get('Content-Disposition')||'')||[])[1]||'HQ_DRAFT.docx';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
+ pcDocs(await pcFetch('/api/docs'));
  }catch(x){toast(x.message,null,true)}finally{b.disabled=false}},true);
 /* ---------- Documents tab: CVs, cover letters, reports. Claude · HQ Builder (Opus), 2026-11-05. ----------
    Lists come from /api/docs (allowlisted files in work/). Downloads are fetched and saved as blobs; a report is
    read as data blocks and built here with textContent only, never innerHTML of file content. */
 const pcPairs=()=>new Set([...CVS,...CLS].map(d=>d.kind+':'+d.pair));
 function pcDocRow(d,other){const has=pcPairs().has(other+':'+d.pair);
- return `<li>${av(d.company,'sm')}<span class="t"><b>${esc(d.title)}</b><small>${esc(pcDate(d.updated))}${has?` · <span class="chip g">${other==='cl'?'Has a cover letter':'Has a CV'}</span>`:''}${d.clean===false?` · <span class="chip a" title="A line such as Sentiment:, Signed : or [DRAFT] is in this file. Check it before sending.">Has notes</span>`:''}</small></span><button class="btn pc-dl" type="button" data-pc-file="${esc(d.id)}" data-kind="${esc(d.kind)}" aria-label="Download ${esc(d.title)} ${d.kind==='cl'?'cover letter':'CV'}">${IC.dl}<span>Download</span></button></li>`}
+ return `<li>${av(d.company,'sm')}<span class="t"><b>${esc(d.title)}</b><small>${esc(pcDate(d.created||d.updated))} · <span class="chip">${d.made_by==='site'?'Made by the site':'Made outside the site'}</span>${has?` · <span class="chip g">${other==='cl'?'Has a cover letter':'Has a CV'}</span>`:''}${d.clean===false?` · <span class="chip a" title="A line such as Sentiment:, Signed : or [DRAFT] is in this file. Check it before sending.">Has notes</span>`:''}</small></span><button class="btn pc-dl" type="button" data-pc-file="${esc(d.id)}" data-kind="${esc(d.kind)}" aria-label="Download ${esc(d.title)} ${d.kind==='cl'?'cover letter':'CV'}">${IC.dl}<span>Download</span></button></li>`}
 function pcDocs(data){
  CVS=(Array.isArray(data.cvs)?data.cvs:[]).slice().sort((a,b)=>String(b.updated).localeCompare(String(a.updated))||String(a.title).localeCompare(String(b.title)));
  CLS=(Array.isArray(data.letters)?data.letters:[]).slice().sort((a,b)=>String(b.updated).localeCompare(String(a.updated))||String(a.title).localeCompare(String(b.title)));
  REPORTS=Array.isArray(data.reports)?data.reports:[];
+ const notes=Array.isArray(data.evidence_notes)?data.evidence_notes:[],box=$('#evidence-notes');
+ box.replaceChildren();box.hidden=!notes.length;
+ if(notes.length){const h=document.createElement('b');h.textContent='Evidence that needs fixing';box.append(h);const list=document.createElement('ul');for(const note of notes){const li=document.createElement('li');li.textContent=String(note.id||'')+': '+String(note.note||'');list.append(li)}box.append(list)}
  $('#cvs').innerHTML=CVS.length?`<ul class="cvl">${CVS.map(d=>pcDocRow(d,'cl')).join('')}</ul>`:'<p class="mut">No CV files yet.</p>';
  $('#cls').innerHTML=CLS.length?`<ul class="cvl">${CLS.map(d=>pcDocRow(d,'cv')).join('')}</ul>`:'<p class="mut">No cover letter files yet.</p>';
  $('#reports').innerHTML=REPORTS.length?`<ul class="cvl">${REPORTS.map(r=>`<li><span class="t"><b>${esc(r.title)}</b><small>${esc(pcDate(r.updated))}</small></span><span class="pc-acts"><button class="btn" type="button" data-pc-read="${esc(r.id)}">Read</button><button class="btn ghost pc-dl" type="button" data-pc-report="${esc(r.id)}" data-fmt="md">${IC.dl}<span>.md</span></button><button class="btn ghost pc-dl" type="button" data-pc-report="${esc(r.id)}" data-fmt="docx">${IC.dl}<span>.docx</span></button></span></li>`).join('')}</ul>`:'<p class="mut">No reports yet.</p>';
  if(READY&&($('#drawer').classList.contains('on')||S.view==='list'))render()}
 gotCvs=function(files){pcDocs({cvs:files,letters:CLS,reports:REPORTS})};
-/* A job's cover letter: same company rule as its CV (first word of the file suffix), and the CV's own pair first. */
-function clFor(j){const k=c=>alnum(c.company),cv=cvFor(j);
- const hits=CLS.filter(c=>k(c)&&alnum(j.Company).startsWith(k(c)));
- return hits.find(c=>cv&&c.pair===cv.pair)||hits.sort((a,b)=>cvMatch(j,b)-cvMatch(j,a))[0]}
-function pcJobDocs(j){const cl=clFor(j);
- return `${cl?`<button class="btn ghost" type="button" data-pc-file="${esc(cl.id)}" data-kind="cl">${IC.dl}Download cover letter (.docx)</button>`:''}<button class="btn ghost" type="button" data-pc-letter="${esc(j._id)}">Write a cover letter</button>`}
+function pcJobDocs(j){const docs=[...CVS,...CLS],newest=(a,b)=>String(b.created||b.updated).localeCompare(String(a.created||a.updated));
+ const site=docs.filter(d=>d.made_by==='site'&&d.job_id===j._id).sort(newest);
+ const outside=docs.filter(d=>d.made_by!=='site'&&alnum(d.company)&&alnum(j.Company).startsWith(alnum(d.company))).sort(newest);
+ const button=(d,label,aria=label)=>`<button class="btn ghost" type="button" data-pc-file="${esc(d.id)}" data-kind="${esc(d.kind)}" aria-label="${esc(aria)}">${IC.dl}${esc(label)}</button>`;
+ return `<div class="pc-job-docs">${site.map(d=>`<div class="pc-job-file"><span>${d.kind==='cl'?'Cover letter':'CV'} for this role, made by the site on ${esc(pcDate(d.created))}</span>${button(d,d.kind==='cl'?'Download cover letter (.docx)':'Download CV (.docx)')}</div>`).join('')}${outside.length?`<section class="pc-older"><p>Older files for ${esc(j.Company)} (made outside the site)</p>${outside.map(d=>`<div class="pc-job-file"><span>${esc(d.title)} · ${esc(pcDate(d.created||d.updated))}</span>${button(d,'Download '+(d.kind==='cl'?'cover letter':'CV'),'Download '+d.title+' '+(d.kind==='cl'?'cover letter':'CV')+' (made outside the site)')}</div>`).join('')}</section>`:''}</div><button class="btn ghost" type="button" data-pc-letter="${esc(j._id)}">Write a cover letter</button>`}
 function pcWriteLetter(j){
  const done=POSTINGS.filter(p=>p.jobId===j._id).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')))[0];
  if(done){if($('#drawer').classList.contains('on')&&closeDrawers()===false)return;S.view='review';render();CUR=done;openSent();return}

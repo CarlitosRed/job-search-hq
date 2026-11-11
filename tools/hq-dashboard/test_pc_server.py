@@ -5,6 +5,7 @@ import hashlib
 import http.client
 import importlib.util
 import json
+import os
 from pathlib import Path
 import secrets
 import socket
@@ -283,7 +284,7 @@ class Integration(unittest.TestCase):
                 shutil.copyfile(source, Path(fixture.name) / name)
         # Keep the server's existing HERE-based module loading in the fixture tree.
         for source, target in ((HERE, dashboard), (HERE.parent / 'tracker', tracker)):
-            for path in source.glob('*.py'):
+            for path in [*source.glob('*.py'), *source.glob('*.json')]:  # stages.json: the store reads it (step 05a)
                 shutil.copyfile(path, target / path.name)
         page_spec = importlib.util.spec_from_file_location('pc_page_fixture', HERE / 'port_tracker.py')
         page = importlib.util.module_from_spec(page_spec)
@@ -952,9 +953,12 @@ try {
             page.click('.seg [data-v="list"]')
             page.evaluate('() => openJob(D.jobs[0]._id)')
             drawer = page.locator('#drawer')
-            expect(drawer.get_by_role('button', name='Download CV (.docx)')).to_be_visible()
+            # Step 05a: with no document record (Excel mode) a file is never offered as this job's CV.
+            expect(drawer).to_contain_text('Older files for Example Company (made outside the site)')
+            expect(drawer.get_by_role('button', name='Download CV (.docx)')).to_have_count(0)
+            expect(drawer.get_by_role('button', name='Download Example Engineer CV (made outside the site)')).to_be_visible()
             with page.expect_download() as download:
-                drawer.get_by_role('button', name='Download cover letter (.docx)').click()
+                drawer.get_by_role('button', name='Download Example Engineer cover letter (made outside the site)').click()
             self.assertEqual(download.value.suggested_filename, (self.app.files.SETTINGS['document_prefix'] + 'CL_Example_Engineer.docx'))
             drawer.get_by_role('button', name='Write a cover letter', exact=True).click()
             expect(page.locator('#v-review')).to_be_visible()
@@ -1057,6 +1061,99 @@ class IntegrationSQLite(Integration):
 
     def test_board_stages_browser(self):
         self.skipTest('Browser checks run in Excel mode; the page does not depend on the store.')
+
+    def posting(self, cv, job_id=None):
+        key = str(uuid.uuid4())
+        record = {'company': 'Example Company', 'role': 'Example Engineer', 'jobId': job_id or self.app.data()['jobs'][0]['_id'],
+                  'fit': {'cv_markdown': cv, 'sources': ['E-999']}, 'reviewed': False, 'status': 'draft'}
+        with self.app.ai.connect() as db, db:
+            db.execute('INSERT INTO postings VALUES(?,?)', (key, json.dumps(record)))
+        return key
+
+    def test_export_records_and_blocks(self):
+        """Step 05a: a site CV is saved in work/ with its record; a CV that reads like internal notes is refused."""
+        self.login()
+        prefix = self.app.files.SETTINGS['document_prefix']
+        bad = self.posting('# Alex Example\n## Experience\n- Shipped PR #77 (github.com/example-user/review-tool/pull/77).')
+        status, _, body = self.request('POST', '/api/ai/export', {'id': bad, 'kind': 'cv'})
+        self.assertEqual(status, 400)
+        self.assertIn('#77', json.loads(body)['error'])
+        self.assertEqual(list(self.state.glob('*.docx')), [])
+        good = self.posting('# Alex Example\n## Experience\n- Reviewed 21 merged PRs for a fictional team.')
+        status, headers, body = self.request('POST', '/api/ai/export', {'id': good, 'kind': 'cv'})
+        self.assertEqual(status, 200)
+        name = prefix + 'CV_Example_Company_Example_Engineer.docx'
+        self.assertIn(name, headers['Content-Disposition'])
+        self.assertEqual((self.state / name).read_bytes(), body)
+        self.assertFalse((self.state / 'generated-documents').exists())
+        listing = json.loads(self.request('GET', '/api/docs')[2])
+        cv = next(d for d in listing['cvs'] if d['name'] == name)
+        self.assertEqual((cv['made_by'], cv['job_id']), ('site', self.app.data()['jobs'][0]['_id']))
+        self.assertIsInstance(listing['evidence_notes'], list)
+
+    def test_documents_drawer_browser(self):
+        """Step 05a: the job's site-made CV is listed first; a file made outside the site is labelled and never the job's CV."""
+        from playwright.sync_api import sync_playwright, expect
+        import docx
+        store_spec = importlib.util.spec_from_file_location('tracker_store_drawer', HERE.parent / 'tracker' / 'store.py')
+        store = importlib.util.module_from_spec(store_spec)
+        store_spec.loader.exec_module(store)
+        prefix = self.app.files.SETTINGS['document_prefix']
+        outside = self.state / (prefix + 'CV_Example_Company_Example_Engineer.docx')
+        d = docx.Document()
+        d.add_paragraph('Fictional CV made outside the site')
+        d.save(outside)
+        self.assertEqual(store.backfill_documents(self.book, self.state, prefix=prefix, apply=True)['added'], 1)
+        job = self.app.data()['jobs'][0]
+        record = {'company': 'Example Company', 'role': 'Example Engineer', 'jobId': job['_id'],
+                  'fit': {'cv_markdown': '# Alex Example\n## Experience\n- Reviewed 21 merged PRs for a fictional team.', 'sources': ['E-999']}}
+        site = self.app.files.export_draft(self.app.state, str(uuid.uuid4()), 'cv', record, work=self.state,
+                                           store_path=store.db_path(self.book))
+        self.assertEqual(site.name, prefix + 'CV_Example_Company_Example_Engineer_2.docx')
+        self.serve_tls()
+        shots = os.environ.get('HQ_SHOT_DIR')
+        first = """() => {
+            const d = document.querySelector('#drawer'), b = [...d.querySelectorAll('button')];
+            const mine = b.find(x => x.textContent.includes('Download CV (.docx)'));
+            const older = b.find(x => (x.getAttribute('aria-label') || '').includes('(made outside the site)'));
+            return !!(mine && older && (mine.compareDocumentPosition(older) & Node.DOCUMENT_POSITION_FOLLOWING));
+        }"""
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            for name, options in (('desktop', {'viewport': {'width': 1440, 'height': 900}}), ('phone', p.devices['iPhone 15'])):
+                context = browser.new_context(**options, ignore_https_errors=True, accept_downloads=True)
+                page = context.new_page()
+                errors = []
+                page.on('pageerror', lambda e: errors.append(str(e)))
+                self.browser_login(page)
+                expect(page.locator('#sync')).to_contain_text('1 job', timeout=10000)
+                self.assertNotIn('Review fit + draft CV', page.content())
+                page.click('.seg [data-v="review"]')
+                expect(page.locator('#cvs li', has_text='Example Company Example Engineer 2')).to_contain_text('Made by the site')
+                expect(page.locator('#cvs li', has_text='Example Company Example Engineer').filter(has_not_text='Engineer 2')).to_contain_text('Made outside the site')
+                page.click('.seg [data-v="board"]')  # on a wide screen the list selects a card instead of opening the drawer
+                page.evaluate('(id) => openJob(id)', job['_id'])
+                drawer = page.locator('#drawer')
+                expect(drawer).to_contain_text('CV for this role, made by the site on')
+                expect(drawer).to_contain_text('Older files for Example Company (made outside the site)')
+                mine = drawer.get_by_role('button', name='Download CV (.docx)')
+                expect(mine).to_have_count(1)
+                older = drawer.get_by_role('button', name='Download Example Company Example Engineer CV (made outside the site)')
+                expect(older).to_have_count(1)
+                self.assertTrue(page.evaluate(first), 'the site file is listed first')
+                expect(drawer.get_by_role('button', name='Check fit and create CV')).to_be_visible()
+                if shots:
+                    page.wait_for_timeout(1000)
+                    page.screenshot(path=str(Path(shots) / f'05a-drawer-{name}.png'), full_page=False)
+                with page.expect_download() as download:
+                    mine.click()
+                self.assertEqual(download.value.suggested_filename, site.name)
+                with page.expect_download() as download:
+                    older.click()
+                self.assertEqual(download.value.suggested_filename, outside.name)
+                self.assertEqual(errors, [], name)
+                context.close()
+            browser.close()
 
 
 if __name__ == '__main__':
