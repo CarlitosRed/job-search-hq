@@ -1,6 +1,6 @@
 # Architecture
 
-Job Search HQ uses an Excel workbook as the tracker source of truth. A generated browser page reads it through a protected loopback server. Optional analysis and drafting run through a separate task journal and Codex CLI. The application never applies for jobs or sends messages.
+Job Search HQ uses SQLite as the tracker source of truth when a database exists beside the workbook, and otherwise uses Excel. A generated browser page reads it through a protected loopback server. Optional analysis and drafting run through a separate task journal and Codex CLI. The application never applies for jobs or sends messages.
 
 ```mermaid
 flowchart LR
@@ -32,6 +32,8 @@ The `pc` backend writes `tools/hq-dashboard/pc-index.html`. It substitutes `pc-d
 
 ## State and persistence
 
+`tools/tracker/store.py` preserves ordered sheet layouts, typed rows and original row numbers in a neighboring `.sqlite3` file; `migrate_to_sqlite.py` offers a disk-free dry run and a backed-up, count-checked migration. The server selects storage on each call, uses database revisions for caching, and commits row changes and status history together. In SQLite mode Excel becomes a read-only mirror rebuilt through a verified temporary file: an Excel lock defers rebuilding until a later write, external Excel edits are copied into `logs/` with a warning, and a missing mirror is recreated. Daily `.tracker-backups` copies and workbook modification-time conflicts apply only in Excel mode; the existing writer mutex still coordinates both modes.
+
 ### Keep your data outside the app folder (optional)
 
 Put the app in a folder named `app` inside your data folder, then create an empty `.job-search-hq-data` file in the data folder, or set `JOB_SEARCH_HQ_DATA` to that folder. Your `settings.json`, `rules.md`, `work/` and `evidence/` then live in the data folder; bundled defaults and tools stay in the app folder.
@@ -45,9 +47,9 @@ Put the app in a folder named `app` inside your data folder, then create an empt
 | `%LOCALAPPDATA%\JobSearchHQ` by default | Salted scrypt password hash, persistent login throttle, pending write journal, career task journal, uploaded images/task files, generated Word exports, and optional startup settings/logs. `--state` must be outside the repository. |
 | Browser | Session cookie; localStorage for theme/filter preferences, an unfinished posting form, and sentiment. Photos remain in memory until submitted; submitted photos are stored with tasks. |
 
-`write_queue.py` accepts one unresolved workbook edit at a time and deduplicates request IDs. Before writing, the server checks the workbook version and expected row identity under a Windows mutex. Excel or another writer holding the file leaves the edit waiting; retries run every five seconds. A changed workbook becomes a conflict rather than a silent merge. An interrupted applying operation becomes `needs_check`; a human must inspect the workbook before dismissal or repetition.
+`write_queue.py` accepts one unresolved tracker edit at a time and deduplicates request IDs. Before writing, the server checks the tracker version and expected row identity under a Windows mutex. In Excel mode, Excel or another writer holding the file leaves the edit waiting; retries run every five seconds. A changed tracker version becomes a conflict rather than a silent merge. An interrupted applying operation becomes `needs_check`; a human must inspect the tracker before dismissal or repetition.
 
-The writer saves a neighboring temporary workbook, reopens it to check sheet names, makes a daily backup, and atomically replaces the original. It retains seven backup files. These backups do not cover evidence or state. The mutex coordinates cooperating writers only; it is not a general lock on Excel reading.
+In Excel mode the writer saves a neighboring temporary workbook, reopens it to check sheet names, makes a daily backup, and atomically replaces the original. It retains seven backup files. These backups do not cover evidence or state. The mutex coordinates cooperating writers only; it is not a general lock on Excel reading.
 
 ## Trust boundaries
 
