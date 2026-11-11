@@ -37,6 +37,15 @@ def decode(raw):
             for v in json.loads(raw).values()]
 
 
+def layout_shape(ws, head):
+    status_col = head.index('My status') + 1 if 'My status' in head else 0
+    validation = any(dv.type == 'list' and any(
+        rng.min_col <= status_col <= rng.max_col for rng in dv.sqref.ranges)
+        for dv in ws.data_validations.dataValidation)
+    return (encode(head), json.dumps({k: v.width for k, v in ws.column_dimensions.items()}),
+            str(ws.freeze_panes) if ws.freeze_panes else None, int(validation), ws.max_row)
+
+
 def digest(path):
     with Path(path).open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
@@ -139,15 +148,8 @@ class Store:
         try:
             for position, ws in enumerate(wb):
                 head = [c.value for c in ws[1]]
-                status_col = head.index('My status') + 1 if 'My status' in head else 0
-                validation = any(dv.type == 'list' and any(
-                    rng.min_col <= status_col <= rng.max_col for rng in dv.sqref.ranges)
-                    for dv in ws.data_validations.dataValidation)
                 self.db.execute('INSERT INTO layouts VALUES (?,?,?,?,?,?,?,?)',
-                                (source, ws.title, position, encode(head),
-                                 json.dumps({k: v.width for k, v in ws.column_dimensions.items()}),
-                                 str(ws.freeze_panes) if ws.freeze_panes else None,
-                                 int(validation), ws.max_row))
+                                (source, ws.title, position, *layout_shape(ws, head)))
                 table = self.table(source, ws.title, head)
                 for number, values in enumerate(ws.iter_rows(min_row=2, values_only=True), 2):
                     if any(v is not None for v in values):
@@ -216,6 +218,19 @@ class Store:
                 yield wb
                 for ws in wb:
                     head = [c.value for c in ws[1]]
+                    layout = self.db.execute(
+                        "SELECT header FROM layouts WHERE source='main' AND sheet=?",
+                        (ws.title,)).fetchone()
+                    if layout is None:
+                        position = self.db.execute(
+                            "SELECT COALESCE(MAX(position), -1) + 1 FROM layouts WHERE source='main'"
+                        ).fetchone()[0]
+                        self.db.execute('INSERT INTO layouts VALUES (?,?,?,?,?,?,?,?)',
+                                        ('main', ws.title, position, *layout_shape(ws, head)))
+                    elif decode(layout['header']) != head:
+                        self.db.execute("""UPDATE layouts SET header=?, widths=?, freeze=?,
+                            validation=?, max_row=? WHERE source='main' AND sheet=?""",
+                                        (*layout_shape(ws, head), ws.title))
                     table = self.table('main', ws.title, head)
                     for number, values in enumerate(ws.iter_rows(min_row=2, values_only=True), 2):
                         if any(v is not None for v in values):
