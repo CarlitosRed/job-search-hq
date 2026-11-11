@@ -101,6 +101,8 @@ class WriteQueue:
                     status, message = 'conflict', 'The spreadsheet changed. Reload, check the entry, then enter your edit again.'
                 elif isinstance(e, (ValueError, KeyError, TypeError)):
                     status, message = 'failed', 'This edit has invalid fields. Check it before trying again.'
+                    if path == '/api/rounds' and isinstance(e, ValueError):
+                        message = str(e)
                 else:
                     # A failure after an atomic workbook replacement can be ambiguous.
                     status, message = 'needs_check', 'This save could not be confirmed. Check the spreadsheet before trying again.'

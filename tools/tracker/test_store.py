@@ -265,7 +265,7 @@ class Writes(Base):
         wb = self.mirror()
         self.assertEqual(wb.sheetnames, ['Jobs', 'New (2026-01-06)', 'Contacts', 'Read me'])
         ws = wb['Jobs']
-        self.assertEqual([c.value for c in ws[1]], JOB_HEAD)
+        self.assertEqual([c.value for c in ws[1]], JOB_HEAD + ['Interview rounds'])  # 01b: the copy shows rounds in one column
         self.assertEqual(ws.cell(6, 8).value, 'Offer')
         self.assertEqual(ws.cell(2, 2).value, 'Example Co')
         self.assertIsInstance(ws.cell(2, 5).value, datetime)  # dates stay dates
@@ -411,7 +411,7 @@ class EditSavesShape(Base):
         wb = openpyxl.load_workbook(self.xlsx)
         self.assertEqual(wb.sheetnames, ['Jobs', 'New (2026-01-06)', 'Contacts', 'Read me', 'New (2026-01-09)'])
         ws = wb['New (2026-01-09)']
-        self.assertEqual([c.value for c in ws[1]], ['#', 'Company', 'Role', 'My status', 'Link', 'Notes'])
+        self.assertEqual([c.value for c in ws[1]], ['#', 'Company', 'Role', 'My status', 'Link', 'Notes', 'Interview rounds'])  # 01b column
         self.assertEqual(ws.cell(2, 2).value, 'Scan Example')
         self.assertEqual(ws.column_dimensions['B'].width, 27)
         self.assertEqual(ws.freeze_panes, 'A2')
@@ -448,7 +448,7 @@ class EditSavesShape(Base):
         self.assertEqual(first['_check'], 'OPEN (fictional check)')
         store.rebuild_mirror(self.xlsx)
         ws = openpyxl.load_workbook(self.xlsx)['Jobs']
-        self.assertEqual([c.value for c in ws[1]], JOB_HEAD + ['Open check 2026-01-09'])
+        self.assertEqual([c.value for c in ws[1]], JOB_HEAD + ['Open check 2026-01-09', 'Interview rounds'])  # 01b column stays last
         self.assertEqual(ws.cell(6, 2).value, 'Demo Inc')  # other rows untouched
 
     def test_an_edit_that_fails_saves_nothing(self):

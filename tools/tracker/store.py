@@ -104,6 +104,26 @@ class Store:
     def close(self):
         self.db.close()
 
+    def rounds(self):
+        result = {}
+        for row in self.db.execute('SELECT * FROM interview_rounds ORDER BY job_id, round'):
+            item = dict(row)
+            result.setdefault(item.pop('job_id'), []).append(item)
+        return result
+
+    def add_round(self, job_id, date, type, note):
+        number = self.db.execute('SELECT COALESCE(MAX(round), 0) + 1 FROM interview_rounds WHERE job_id=?',
+                                 (job_id,)).fetchone()[0]
+        row = self.db.execute('INSERT INTO interview_rounds(job_id, round, date, type, note) VALUES (?,?,?,?,?)',
+                              (job_id, number, date, type, note))
+        return row.lastrowid
+
+    def edit_round(self, round_id, job_id, date, type, note):
+        row = self.db.execute('UPDATE interview_rounds SET date=?, type=?, note=? WHERE id=? AND job_id=?',
+                              (date, type, note, round_id, job_id))
+        if not row.rowcount:
+            raise ValueError('Unknown round for this job.')
+
     def create(self):
         self.db.executescript('''
             CREATE TABLE meta (key TEXT PRIMARY KEY, value);
@@ -167,6 +187,12 @@ class Store:
                 VALUES ({','.join('?' for _ in range(15))})''',
                 (title, number, *named, '', date.today().isoformat() if history else None,
                  row.get('My status'), fields))
+        if (history and table == 'jobs' and row.get('My status') == 'Interview'
+                and (not previous or previous['status'] != 'Interview')):
+            job_id = self.db.execute('SELECT id FROM jobs WHERE sheet=? AND row=?',
+                                     (title, number)).fetchone()[0]
+            if not self.db.execute('SELECT 1 FROM interview_rounds WHERE job_id=?', (job_id,)).fetchone():
+                self.add_round(job_id, date.today().isoformat(), '', '')
 
     def import_workbook(self, path, source):
         wb = openpyxl.load_workbook(path)
@@ -205,16 +231,24 @@ class Store:
                     result['contacts'] += 1
         return result
 
-    def workbook(self):
+    def workbook(self, mirror=False):
         wb = openpyxl.Workbook()
         wb.remove(wb.active)
+        rounds = self.rounds() if mirror else {}
         for layout in self.db.execute("SELECT * FROM layouts WHERE source='main' ORDER BY position"):
             ws = wb.create_sheet(layout['sheet'])
             head = decode(layout['header'])
             rows = [(1, head)]
             table = self.table('main', ws.title, head)
-            rows.extend((r['row'], decode(r['fields'])) for r in self.db.execute(
-                f'SELECT row, fields FROM {table} WHERE sheet=? ORDER BY row', (ws.title,)))
+            for record in self.db.execute(f'SELECT id, row, fields FROM {table} WHERE sheet=? ORDER BY row', (ws.title,)):
+                values = decode(record['fields'])
+                if mirror and table == 'jobs':
+                    values = values[:len(head)] + [None] * max(0, len(head) - len(values))
+                    values.append('\n'.join(' · '.join([f"Round {r['round']}"] +
+                        [r[k] for k in ('date', 'type', 'note') if r[k]]) for r in rounds.get(record['id'], [])))
+                rows.append((record['row'], values))
+            if mirror and table == 'jobs':
+                head.append('Interview rounds')
             for number, values in rows:
                 for column, value in enumerate(values, 1):
                     dst = ws.cell(number, column)
@@ -382,7 +416,7 @@ def rebuild_mirror(xlsx):
             with storage.db:
                 storage.set_meta('mirror_warning', "Your spreadsheet was changed in Excel. The site's data was kept; "
                                  f'your Excel copy is saved as {saved.name}.')
-        wb = storage.workbook()
+        wb = storage.workbook(mirror=True)
         fd, temporary = tempfile.mkstemp(prefix=f'.{xlsx.stem}-saving-', suffix='.xlsx', dir=xlsx.parent)
         os.close(fd)
         wb.save(temporary)

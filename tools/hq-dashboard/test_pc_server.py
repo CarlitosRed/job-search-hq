@@ -994,6 +994,30 @@ try {
             page.wait_for_selector('#password')
             browser.close()
 
+    # Step 01b: interview rounds
+    def round_request(self, **extra):
+        d = self.data()
+        p = dict(sheet='Fictional jobs', row=2, version=d['version'], action='add',
+                 expect={'Company': 'Example Company', 'Role': 'Example Engineer'}, requestId=str(uuid.uuid4()))
+        p.update(extra)
+        return self.request('POST', '/api/rounds', p)
+
+    def login_and_move_to_interview(self):
+        self.login()
+        for stage in ('Apply', 'Applied', 'Interview'):
+            self.assertEqual(self.edit(status=stage, note=None)[0], 200)
+
+    def test_rounds_api(self):
+        """Step 01b, Excel only: a round is refused with a plain message; moves still work."""
+        self.login_and_move_to_interview()
+        status, _, body = self.round_request()
+        self.assertEqual(status, 400)
+        self.assertIn('database', json.loads(body)['error'])
+        self.dismiss_latest()
+        self.assertEqual(self.data()['jobs'][0]['_rounds'], [])
+
+    def test_rounds_browser(self):
+        self.skipTest('Rounds need the database; the browser check runs in IntegrationSQLite.')
 
 
 class IntegrationSQLite(Integration):
@@ -1155,6 +1179,86 @@ class IntegrationSQLite(Integration):
                 context.close()
             browser.close()
 
+
+    def test_rounds_api(self):
+        """Step 01b: rounds are added and edited through the write queue, with the same checks as other edits."""
+        self.login()
+        self.assertEqual(self.round_request()[0], 400)  # still in Review
+        self.dismiss_latest()
+        for stage in ('Apply', 'Applied', 'Interview'):
+            self.assertEqual(self.edit(status=stage, note=None)[0], 200)
+        job = self.data()['jobs'][0]
+        self.assertEqual([r['round'] for r in job['_rounds']], [1])
+        status, _, body = self.round_request(type='Recruiter call', note='Fictional note', date='2026-02-10')
+        self.assertEqual(status, 200, body)
+        rounds = self.data()['jobs'][0]['_rounds']
+        self.assertEqual([(r['round'], r['date'], r['type'], r['note']) for r in rounds][1],
+                         (2, '2026-02-10', 'Recruiter call', 'Fictional note'))
+        status, _, body = self.round_request(action='edit', id=rounds[1]['id'], type='Panel', note='', date='2026-02-11')
+        self.assertEqual(status, 200, body)
+        self.assertEqual(self.data()['jobs'][0]['_rounds'][1]['type'], 'Panel')
+        self.assertEqual(self.round_request(version='stale')[0], 409)
+        self.dismiss_latest()
+        self.assertEqual(self.round_request(expect={'Company': 'Wrong company', 'Role': 'Example Engineer'})[0], 409)
+        self.dismiss_latest()
+        self.assertEqual(self.round_request(type='=1+1')[0], 400)
+        self.dismiss_latest()
+        self.assertEqual(len(self.data()['jobs'][0]['_rounds']), 2)
+
+    def test_rounds_browser(self):
+        """Step 01b: the Interview card shows "Round N of ?"; the drawer lists, adds and edits rounds (desktop, then phone)."""
+        from playwright.sync_api import sync_playwright, expect
+        self.login_and_move_to_interview()
+        self.serve_tls()
+        shots = os.environ.get('HQ_SHOT_DIR')
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            for name, options in (('desktop', {'viewport': {'width': 1440, 'height': 900}}), ('phone', p.devices['iPhone 15'])):
+                context = browser.new_context(**options, ignore_https_errors=True)
+                page = context.new_page()
+                errors = []
+                page.on('pageerror', lambda e: errors.append(str(e)))
+                self.browser_login(page)
+                expect(page.locator('#sync')).to_contain_text('1 job', timeout=10000)
+                page.click('.seg [data-v="board"]')
+                wanted = 1 if name == 'desktop' else 2
+                expect(page.locator('.bcard-round').first).to_have_text(f'Round {wanted} of ?')
+                job = self.app.data()['jobs'][0]
+                page.evaluate('(id) => openJob(id)', job['_id'])
+                drawer = page.locator('#drawer')
+                expect(drawer.locator('.rounds')).to_contain_text('Interview rounds')
+                if name == 'desktop':
+                    expect(drawer.locator('.round')).to_have_count(1)
+                    drawer.get_by_role('button', name='Add round').click()
+                    expect(drawer.locator('.round')).to_have_count(2, timeout=10000)
+                    second = drawer.locator('.round[data-round="2"]')
+                    second.locator('input[data-field="type"]').fill('Recruiter call')
+                    second.locator('input[data-field="note"]').fill('Fictional note')
+                    second.get_by_role('button', name='Save round 2').click()
+                    rounds = []
+                    for _ in range(100):
+                        rounds = self.app.data()['jobs'][0]['_rounds']
+                        if len(rounds) == 2 and rounds[1]['type'] == 'Recruiter call':
+                            break
+                        time.sleep(0.1)
+                    self.assertEqual([(r['round'], r['type'], r['note']) for r in rounds],
+                                     [(1, '', ''), (2, 'Recruiter call', 'Fictional note')])
+                    page.evaluate('closeDrawers()')
+                    expect(page.locator('.bcard-round').first).to_have_text('Round 2 of ?')
+                else:
+                    expect(drawer.locator('.round')).to_have_count(2)
+                    expect(drawer.locator('.round[data-round="2"] input[data-field="type"]')).to_have_value('Recruiter call')
+                    expect(drawer.get_by_role('button', name='Add round')).to_be_visible()
+                if shots:
+                    page.wait_for_timeout(1000)
+                    page.screenshot(path=str(Path(shots) / f'01b-board-{name}.png'), full_page=False)
+                    page.evaluate('(id) => openJob(id)', job['_id'])
+                    page.locator('#drawer .rounds').scroll_into_view_if_needed()
+                    page.wait_for_timeout(1000)
+                    page.screenshot(path=str(Path(shots) / f'01b-drawer-{name}.png'), full_page=False)
+                self.assertEqual(errors, [], name)
+                context.close()
+            browser.close()
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

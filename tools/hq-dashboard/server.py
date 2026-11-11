@@ -198,7 +198,8 @@ class App:
             if payload.get('version') != t.version():
                 raise t.Conflict('The spreadsheet changed. Reload before saving this edit.')
             # Reject formula injection and silent Excel truncation before calling the existing writer.
-            allowed = set(t.ADD_FIELDS) if path == '/api/add' else {'status', 'date', 'note'}
+            allowed = (set(t.ADD_FIELDS) if path == '/api/add' else
+                       {'date', 'type', 'note'} if path == '/api/rounds' else {'status', 'date', 'note'})
             for field in allowed:
                 value = payload.get(field)
                 if value is not None and not isinstance(value, str):
@@ -207,12 +208,12 @@ class App:
                     raise ValueError('That text is too long for a spreadsheet cell.')
                 if isinstance(value, str) and t.is_formula_text(value):
                     raise ValueError('Text cannot start with an equals sign. Add a word before it.')
-            if path == '/api/update':
+            if path in ('/api/update', '/api/rounds'):
                 expected = payload.get('expect')
-                keys = ('Person',) if payload.get('sheet') == 'Contacts' else ('Company', 'Role')
+                keys = ('Person',) if path == '/api/update' and payload.get('sheet') == 'Contacts' else ('Company', 'Role')
                 if not isinstance(expected, dict) or any(not expected.get(k) for k in keys):
                     raise ValueError('Reload this entry before editing it.')
-                t.update(payload)
+                (t.rounds if path == '/api/rounds' else t.update)(payload)
                 return {'ok': True, 'version': t.version()}
             row, saved = t.add(payload)
             return {'ok': True, 'row': row, 'id': payload['sheet'] + '|' + str(row), 'saved': saved, 'version': t.version()}
@@ -417,7 +418,7 @@ def handler(app):
                     with app.auth_lock:
                         app.sessions.pop(app.session_key(self.headers.get('Cookie', '')), None)
                     return self.send(200, {'ok': True}, headers={'Set-Cookie': 'hq_session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0'})
-                if self.path not in ('/api/add', '/api/update', '/api/writes/dismiss','/api/ai/submit','/api/ai/link','/api/ai/export','/api/search/submit'):
+                if self.path not in ('/api/add', '/api/update', '/api/rounds', '/api/writes/dismiss','/api/ai/submit','/api/ai/link','/api/ai/export','/api/search/submit'):
                     return self.send(404)
                 if content_type != 'application/json':
                     return self.send(415)

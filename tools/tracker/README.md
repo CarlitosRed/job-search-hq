@@ -42,6 +42,12 @@ A second run changes zero statuses. Rebuild the PC page and restart the server.
 
 ## SQLite store
 
+Interview rounds are database only. Entering Interview adds Round 1 with today's
+date if the job has no rounds yet. The drawer lets each round's date, type and
+short note be edited in any stage; Add round is available while in Interview.
+The Excel mirror has a last `Interview rounds` column on each job sheet, with
+one readable line per round. This column is never read back into the tracker.
+
 When a neighboring `applications-tracker.sqlite3` exists, it becomes the tracker
 store automatically. Without that file, the tracker continues to use Excel.
 Try migration on a disposable copy first, checking every input/output count:

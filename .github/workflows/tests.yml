@@ -28,3 +28,4 @@ jobs:
       - run: python -I tools/hq-dashboard/test_cv_quality.py
       - run: python -I tools/tracker/test_store.py
       - run: python -I tools/tracker/test_stages.py
+      - run: python -I tools/tracker/test_rounds.py

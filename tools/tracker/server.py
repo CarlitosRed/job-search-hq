@@ -81,6 +81,7 @@ def sqlite_mode():
 
 
 def load():
+    job_rounds = {}
     if sqlite_mode():
         storage = store.Store(store.db_path(XLSX))
         try:
@@ -89,6 +90,9 @@ def load():
                 wb = storage.workbook()
                 warning = storage.meta('mirror_warning') or ''
                 revision = 'db-' + str(storage.meta('revision'))
+                by_job = storage.rounds()
+                job_rounds = {(r['sheet'], r['row']): by_job.get(r['id'], [])
+                              for r in storage.db.execute('SELECT id, sheet, row FROM jobs')}
         finally:
             storage.close()
         mode = 'sqlite'
@@ -96,7 +100,10 @@ def load():
         wb = openpyxl.load_workbook(XLSX)
         mode, warning, revision = 'excel', '', version()
     try:
-        return load_rows(wb, mode, warning, revision)
+        data = load_rows(wb, mode, warning, revision)
+        for job in data['jobs']:
+            job['_rounds'] = job_rounds.get((job['_sheet'], job['_row']), [])
+        return data
     finally:
         wb.close()
 
@@ -232,6 +239,70 @@ def editing_workbook():
 def update(p):
     with editing_workbook() as wb:
         update_row(p, wb)
+
+
+def rounds(p):
+    if not sqlite_mode():
+        raise ValueError('Interview rounds are saved once the tracker uses the database.')
+    if p.get('action') not in ('add', 'edit'):
+        raise ValueError('Unknown round action.')
+    storage = store.Store(store.db_path(XLSX))
+    wb = None
+    try:
+        backup_database(storage)
+        with storage.db:
+            storage.db.execute('BEGIN IMMEDIATE')
+            wb = storage.workbook()
+            sheet, row = p.get('sheet'), p.get('row')
+            if sheet not in wb.sheetnames:
+                raise ValueError('unknown sheet')
+            try:
+                row = int(row)
+            except (ValueError, TypeError):
+                raise ValueError('bad row')
+            ws = wb[sheet]
+            head = header(ws)
+            if 'My status' not in head:
+                raise ValueError('not a job sheet')
+            if row < 2 or row > ws.max_row:
+                raise ValueError('bad row')
+            expect_row(ws, head, row, p)
+            job = storage.db.execute('SELECT id, status, company FROM jobs WHERE sheet=? AND row=?',
+                                     (sheet, row)).fetchone()
+            if not job or not job['company']:
+                raise ValueError('bad row')
+            values = {'date': date.today().isoformat(), 'type': '', 'note': ''}
+            if p['action'] == 'add':
+                if job['status'] != 'Interview':
+                    raise ValueError('Add a round while the job is in Interview.')
+            else:
+                old = storage.db.execute('SELECT date, type, note FROM interview_rounds WHERE id=? AND job_id=?',
+                                         (p.get('id'), job['id'])).fetchone()
+                if old is None:
+                    raise ValueError('Unknown round for this job.')
+                values = dict(old)
+            for field, limit in (('date', 10), ('type', 60), ('note', 280)):
+                if field not in p:
+                    continue
+                value = p[field]
+                if not isinstance(value, str) or len(value) > limit or is_formula_text(value):
+                    raise ValueError(f'Invalid round {field}.')
+                if field == 'date' and value:
+                    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', value):
+                        raise ValueError('date must be YYYY-MM-DD')
+                    date.fromisoformat(value)
+                values[field] = value
+            if p['action'] == 'add':
+                storage.add_round(job['id'], values['date'] or date.today().isoformat(), values['type'], values['note'])
+            else:
+                storage.edit_round(p.get('id'), job['id'], values['date'], values['type'], values['note'])
+            storage.set_meta('revision', int(storage.meta('revision')) + 1)
+            storage.set_meta('mirror_stale', 1)
+    finally:
+        if wb is not None:
+            wb.close()
+        storage.close()
+    store.rebuild_mirror(XLSX)
 
 
 def update_row(p, wb):
@@ -371,13 +442,13 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?")[0]
-        if path not in ("/api/update", "/api/add") or not self.local():
+        if path not in ("/api/update", "/api/add", "/api/rounds") or not self.local():
             return self.send(404, "not found", "text/plain")
         try:
             p = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
             with LOCK, workbook_lock(XLSX):
-                if path == "/api/update":
-                    update(p)
+                if path in ("/api/update", "/api/rounds"):
+                    (rounds if path == "/api/rounds" else update)(p)
                     out = {"ok": True}
                 else:
                     row, saved = add(p)
