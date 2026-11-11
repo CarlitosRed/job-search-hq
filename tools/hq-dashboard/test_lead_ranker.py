@@ -1,3 +1,4 @@
+# Fictional fixtures and settings-aware expectations.
 """Fictional, offline acceptance fixtures; not posting/evidence verification.
 
 
@@ -18,10 +19,27 @@ from datetime import datetime, timedelta, timezone, date
 from fractions import Fraction
 from pathlib import Path
 import runpy
+import json
+import shutil
+import tempfile
 import unittest
 
 
-api = runpy.run_path(str(Path(__file__).with_name("lead_ranker.py")))
+# Arithmetic fixtures own their sourced tenure settings.
+with tempfile.TemporaryDirectory(prefix='fictional-ranker-settings-') as folder:
+    root = Path(folder)
+    dashboard = root / 'tools' / 'hq-dashboard'
+    dashboard.mkdir(parents=True)
+    for name in ('lead_ranker.py', 'hq_settings.py'):
+        shutil.copyfile(Path(__file__).with_name(name), dashboard / name)
+    shutil.copyfile(Path(__file__).resolve().parents[2] / 'settings.example.json', root / 'settings.example.json')
+    fictional_years = {'analyst': 2, 'operations': 2, 'consulting': 2, 'support': 3, 'agent': 0}
+    (root / 'settings.json').write_text(json.dumps({
+        'documented_relevant_years': fictional_years,
+        'documented_years_sources': {domain: 'Fictional documented same-scope tenure' for domain in fictional_years},
+        'documented_years_labels': {'agent': 'under 1'},
+    }), encoding='utf-8')
+    api = runpy.run_path(str(dashboard / 'lead_ranker.py'))
 Lead = api["Lead"]
 Requirement = api["Requirement"]
 Exposure = api["Exposure"]
@@ -44,7 +62,7 @@ def fictional_lead(key="fictional", ratings="SSSSPT", work="2", growth="2", **ch
                   groups=groups(tuple("Fictional task " + str(i) for i in range(6)), ratings),
                   work=None if work is None else F(work),
                   growth=None if growth is None else F(growth), owner_check_complete=True,
-                  want_actor="Fictional the owner", want_at=NOW,
+                  want_actor="Fictional Alex", want_at=NOW,
                   source_open=True, source_checked_at=NOW, eligibility_clear=True,
                   requirements_complete=True, packet_assessed=True,
                   base_cv_version="fictional-base-business-v1", cv_keyword_passed=True,
@@ -53,57 +71,57 @@ def fictional_lead(key="fictional", ratings="SSSSPT", work="2", growth="2", **ch
     return Lead(**fields)
 
 
-def benchmark(historical_want=False, historical_pavago=False):
+def benchmark(historical_want=False, historical_placement=False):
     """All TEN records are FICTIONAL analogues, never live recommendations.
 
-    Current Pavago uses requested English with adjudication pending. The
-    historical_pavago overlay exists only for the labelled historical test.
-    Pre-application Example Cloud/ClickHouse are intentional arithmetic snapshots.
+    Current Example Placement uses requested English with adjudication pending. The
+    historical_placement overlay exists only for the labelled historical test.
+    Pre-application Example Cloud/Example Database are intentional arithmetic snapshots.
     """
     rows = (
         ("Technical BA", "SSSPPT", "4", "4.5",
          ("discovery", "QA", "client coordination", "integration", "AI-assisted work", "ERP/accounting")),
-        ("Pavago", "SSSPPT", "2.5", "3",
+        ("Example Placement", "SSSPPT", "2.5", "3",
          ("follow-up", "issues", "documentation", "coordination", "improvement", "workforce scheduling")),
         ("AI Workflow", "SSPPTT", "5", "4.5",
          ("discovery", "validation", "AI direction", "user docs", "business rollout", "integration")),
-        ("SupportYourApp", "SSPPPT", "2.5", "3",
+        ("Example Helpdesk", "SSPPPT", "2.5", "3",
          ("issues", "docs", "reporting", "improvement", "bilingual operations", "creator/fraud")),
-        ("Whippy", "SSSPPT", "2", "2.5",
+        ("Example Recruiting", "SSSPPT", "2", "2.5",
          ("records", "follow-up", "docs", "reporting", "recruiting coordination", "sourcing/founder-voice writing")),
-        ("Thermo Fisher", "SSSPTT", "3", "3.5",
+        ("Example Lab", "SSSPTT", "3", "3.5",
          ("reporting", "requirements", "coordination", "proposals", "clinical budgeting", "negotiation")),
         ("Example Cloud", "SSPPPT", "5", "5",
          ("requirements", "process work", "agent direction", "prompt quality", "data", "production platform/RAG")),
-        ("ClickHouse", "SSPPPT", "5", "5",
+        ("Example Database", "SSPPPT", "5", "5",
          ("governance", "docs", "workflow", "evaluation", "spend", "API/pipeline/cloud")),
-        ("6sense", "SSSPPT", "4.5", "5",
+        ("Example Revenue", "SSSPPT", "4.5", "5",
          ("requirements", "validation", "operations", "Salesforce", "AI implementation", "Workato/Copilot Studio")),
-        ("Moody's", "SSSSPT", "2", "2",
+        ("Example Ratings", "SSSSPT", "2", "2",
          ("updates", "quality", "inquiries", "deadlines", "AI awareness", "ratings/instruments/disclosures")),
     )
     result = []
     for name, ratings, work, growth, names in rows:
         lead = fictional_lead(name, ratings, work, growth, groups=groups(names, ratings))
-        if name in ("Pavago", "SupportYourApp", "Whippy"):
+        if name in ("Example Placement", "Example Helpdesk", "Example Recruiting"):
             lead = replace(lead, english_clause="Fictional requirement: excellent written and verbal English",
                            english_force="required")
         if name in ("Technical BA", "AI Workflow"):
             lead = replace(lead, eligibility_clear=False,
                            verify_action="Check the application form's country list")
         if name == "Example Cloud":
-            lead = replace(lead, want="Dream", want_actor="Fictional the owner", want_at=NOW)
-        elif historical_want and name in ("Technical BA", "AI Workflow", "ClickHouse", "6sense"):
+            lead = replace(lead, want="Dream", want_actor="Fictional Alex", want_at=NOW)
+        elif historical_want and name in ("Technical BA", "AI Workflow", "Example Database", "Example Revenue"):
             lead = replace(lead, want="Yes", want_actor="Fictional explicit sensitivity input", want_at=NOW)
-        if name == "6sense":
+        if name == "Example Revenue":
             lead = replace(lead, preparation_clear=False,
                            preparation_holds=("Implementation-scope packet review",))
-        if name == "SupportYourApp":
+        if name == "Example Helpdesk":
             lead = replace(lead, preparation_clear=False, preparation_holds=("Equipment/network unknown",),
                            source_type="provisional-placement")
-        if name == "Pavago":
-            lead = replace(lead, source_type="placement", placing_agency="Fictional Pavago")
-            if not historical_pavago:
+        if name == "Example Placement":
+            lead = replace(lead, source_type="placement", placing_agency="Fictional Example Placement")
+            if not historical_placement:
                 lead = replace(lead, english_force="requested", english_adjudication_pending=True,
                                english_clause="Fictional clause: excellent written and verbal English is requested")
         result.append(lead)
@@ -142,7 +160,7 @@ class BenchmarkTests(unittest.TestCase):
         for lead, ten, twenty in zip(benchmark(), corrected, corrected_twenty):
             self.assertEqual(api["compute_q"](lead, NOW), F(ten))
             self.assertEqual(api["compute_q"](lead, NOW, F(".2")), F(twenty))
-        expected = ["Example Cloud", "Moody's", "6sense", "ClickHouse", "Thermo Fisher", "Pavago", "SupportYourApp", "Whippy", "Technical BA", "AI Workflow"]
+        expected = ["Example Cloud", "Example Ratings", "Example Revenue", "Example Database", "Example Lab", "Example Placement", "Example Helpdesk", "Example Recruiting", "Technical BA", "AI Workflow"]
         for weight in (F(0), F(".1"), F(".2")):
             self.assertEqual([i.lead.key for i in api["ordered"](benchmark(), NOW, weight)], expected)
         ready = [i for i in api["ordered"](benchmark(), NOW) if i.lane == "Ready"]
@@ -151,8 +169,8 @@ class BenchmarkTests(unittest.TestCase):
         self.assertIn("Work model: Unknown", ready[1].why)
         self.assertIn("tailoring optional", ready[1].why)
 
-    def test_historical_pavago_required_english_assumption(self):
-        historical = benchmark(historical_pavago=True)[1]
+    def test_historical_placement_required_english_assumption(self):
+        historical = benchmark(historical_placement=True)[1]
         self.assertEqual(api["compute_a"](historical), (F(4), F("3.75")))
         for weight, expected in (("0", "3.295"), (".1", "3.2155"), (".2", "3.136")):
             self.assertEqual(api["compute_q"](historical, NOW, F(weight)), F(expected))
@@ -165,7 +183,7 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(api["compute_q"](pavago, NOW), F(6701, 2000))
 
     def test_requested_english_is_not_required_and_needs_adjudication(self):
-        # Fictional exact-clause alternative to historical Pavago assumption.
+        # Fictional exact-clause alternative to historical Example Placement assumption.
         pavago = replace(benchmark()[1], english_clause="Excellent written and verbal English is requested",
                          english_force="requested", english_adjudication_pending=True)
         self.assertEqual(api["compute_a"](pavago), (F(4), F(4)))
@@ -178,15 +196,15 @@ class BenchmarkTests(unittest.TestCase):
     def test_benchmark_primary_excludes_applied_and_weekly_prepares(self):
         # Fictional post-application snapshot; no live tracker read.
         pool = [replace(i, applied=True, applied_at=date(2026, 11, 6))
-                if i.key in ("Example Cloud", "ClickHouse") else i for i in benchmark()]
+                if i.key in ("Example Cloud", "Example Database") else i for i in benchmark()]
         selection = api["daily_five"](pool, NOW)
         self.assertEqual([i.lead.key for i in selection.primary],
-                         ["Moody's", "6sense", "Thermo Fisher", "Pavago", "SupportYourApp"])
+                         ["Example Ratings", "Example Revenue", "Example Lab", "Example Placement", "Example Helpdesk"])
         self.assertEqual(selection.follow_up[0].lead.key, "Example Cloud")
         self.assertEqual(selection.follow_up[0].strip, "Follow-up")
         self.assertEqual(selection.follow_up[0].label, "Applied 2026-11-06")
         advice = api["weekly_advice"](pool, NOW).entries
-        self.assertEqual([i.lead.key for i, label in advice], ["Moody's", "6sense", "Thermo Fisher"])
+        self.assertEqual([i.lead.key for i, label in advice], ["Example Ratings", "Example Revenue", "Example Lab"])
         self.assertEqual([label for i, label in advice], ["apply now", "prepare/review", "prepare/review"])
 
 
@@ -208,7 +226,7 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(api["assess"](fictional_lead(ratings="SSSPPT"), NOW).lane, "Ready")
 
     def test_exact_tie_before_direction(self):
-        a, b = benchmark()[3], benchmark()[4]  # Fictional SYA/Whippy analogues
+        a, b = benchmark()[3], benchmark()[4]  # Fictional SYA/Example Recruiting analogues
         self.assertEqual(api["compute_q"](a, NOW), F("3.0805"))
         self.assertEqual(api["compute_q"](a, NOW), api["compute_q"](b, NOW))
         self.assertEqual(api["ordered"]([b, a], NOW)[0].lead.key, a.key)
@@ -311,7 +329,7 @@ class GradedYearsTests(unittest.TestCase):
                                                    (6, "HEAVY", F(".75")),
                                                    (7, "SENIORITY MISMATCH", F(0)),
                                                    (10, "SENIORITY MISMATCH", F(0))):
-            lead = fictional_lead(required_years=required, years_domain="analyst", relevant_years=2, relevant_years_source="Fictional documented analyst tenure")
+            lead = fictional_lead(required_years=required, years_domain="analyst")
             with self.subTest(required=required):
                 self.assertEqual(api["years_rule"](lead)[:3],
                                  (classification, F(required - 2), penalty))
@@ -323,7 +341,7 @@ class GradedYearsTests(unittest.TestCase):
                          "asks for 4 years; you have about 2 in the relevant work")
 
     def test_labelled_generic_candidate_five_relevant_years(self):
-        # Generic candidate only: this is NOT the owner's tenure.
+        # Generic candidate only: this is NOT the fictional candidate's tenure.
         self.assertEqual(api["years_rule"](self.lead(8, 5))[:3], ("HEAVY", F(3), F(".75")))
 
     def test_real_support_and_agent_tiers(self):
@@ -335,8 +353,7 @@ class GradedYearsTests(unittest.TestCase):
                                                   ("agent", 3, "HEAVY"),
                                                   ("agent", 5, "SENIORITY MISMATCH")):
             self.assertEqual(api["years_rule"](fictional_lead(required_years=required,
-                                                              years_domain=domain, relevant_years=3 if domain == "support" else 0,
-                                                              relevant_years_source="Fictional documented same-scope tenure"))[0], classification)
+                                                              years_domain=domain))[0], classification)
 
     def test_title_extraction_and_title_gap_boundaries(self):
         for title, expected in (("Senior Analyst", True), ("AI Workflow Lead", True),
@@ -351,7 +368,7 @@ class GradedYearsTests(unittest.TestCase):
         senior = self.lead(3, 2, title_seniority=api["seniority_title"]("Senior Analyst"))
         self.assertEqual(api["years_rule"](senior)[0], "TEACHABLE")
         self.assertEqual(api["assess"](senior, NOW).lane, "Ready")
-        workflow = fictional_lead(required_years=8, years_domain="agent", relevant_years=0, relevant_years_source="Fictional documented agent tenure", want="Dream",
+        workflow = fictional_lead(required_years=8, years_domain="agent", want="Dream",
                                   title_seniority=api["seniority_title"]("AI Workflow Lead"))
         item = api["assess"](workflow, NOW)
         self.assertEqual(item.lane, "Monitor")
@@ -400,18 +417,14 @@ class GradedYearsTests(unittest.TestCase):
         self.assertEqual(api["assess"](replace(heavy, hard_blockers=("Fictional closure confirmed",)), NOW).lane, "Archive")
 
     def test_documented_defaults_unknowns_and_no_inflation(self):
-        self.assertEqual(api["DOCUMENTED_RELEVANT_YEARS"], {})
-        self.assertEqual(api["DOCUMENTED_YEARS_SOURCES"], {})
-        fictional_years = {"analyst": 2, "operations": 2, "consulting": 2, "support": 3, "agent": 0}
-        for domain, relevant in fictional_years.items():
+        expected = {"analyst": 2, "operations": 2, "consulting": 2, "support": 3, "agent": 0}
+        self.assertEqual(api["DOCUMENTED_RELEVANT_YEARS"], expected)
+        for domain, relevant in expected.items():
             lead = fictional_lead(required_years=4, years_domain=domain)
-            self.assertEqual(api["years_rule"](lead)[0], "UNKNOWN")
-            self.assertEqual(api["assess"](lead, NOW).lane, "Verify")
-            sourced = replace(lead, relevant_years=relevant,
-                              relevant_years_source="Fictional documented same-scope tenure")
-            self.assertEqual(api["years_rule"](sourced)[1], F(4 - relevant))
-        agent = fictional_lead(required_years=1, years_domain="agent", relevant_years=0, relevant_years_source="Fictional documented agent tenure")
-        self.assertIn("you have about 0", api["assess"](agent, NOW).why)
+            self.assertEqual(api["years_rule"](lead)[1], F(4 - relevant))
+            self.assertTrue(api["DOCUMENTED_YEARS_SOURCES"][domain])
+        agent = fictional_lead(required_years=1, years_domain="agent")
+        self.assertIn("you have under 1", api["assess"](agent, NOW).why)
         unknown = fictional_lead(required_years=3)
         self.assertEqual(api["assess"](unknown, NOW).lane, "Verify")
         self.assertIn("Confirm documented years", api["assess"](unknown, NOW).next_action)
@@ -427,7 +440,7 @@ class GradedYearsTests(unittest.TestCase):
         # both historical and F4 overlays, and all three Want weights exactly.
         for historical in (False, True):
             for lead in benchmark(historical_want=historical):
-                met = replace(lead, required_years=2, years_domain="analyst", relevant_years=2, relevant_years_source="Fictional documented analyst tenure")
+                met = replace(lead, required_years=2, years_domain="analyst")
                 self.assertEqual(api["years_rule"](lead)[0], "NONE")
                 for function in ("compute_c", "compute_a", "compute_d"):
                     self.assertEqual(api[function](lead), api[function](met))
@@ -560,7 +573,7 @@ class AcceptedReviewFixTests(unittest.TestCase):
                          api["order_key"](api["assess"](replace(lead, source_checked_at=NOW), NOW), NOW))
 
     def test_legal_floor_is_verify_until_conflict_confirmed(self):
-        lower_bound = fictional_lead(required_years=3, years_domain="analyst", relevant_years=2, relevant_years_source="Fictional documented analyst tenure", legal_minimum=True)
+        lower_bound = fictional_lead(required_years=3, years_domain="analyst", legal_minimum=True)
         self.assertEqual(api["years_rule"](lower_bound)[0], "UNKNOWN")
         self.assertEqual(api["assess"](lower_bound, NOW).lane, "Verify")
         self.assertIn("confirm exact tenure", api["assess"](lower_bound, NOW).next_action)
@@ -589,7 +602,7 @@ class AcceptedReviewFixTests(unittest.TestCase):
 
     def test_distinct_years_scopes_take_most_restrictive_once(self):
         Clause = api["YearsClause"]
-        clauses = (Clause(4, "analyst", 2, "Fictional analyst tenure"), Clause(6, "support", 3, "Fictional support tenure"), Clause(2, "agent", 0, "Fictional agent tenure"))
+        clauses = (Clause(4, "analyst"), Clause(6, "support"), Clause(2, "agent"))
         lead = fictional_lead(want="Dream", years_clauses=clauses)
         self.assertEqual(api["years_rule"](lead)[:3], ("HEAVY", F(3), F(".75")))
         self.assertEqual(api["compute_a"](lead)[1], F("3.5"))
@@ -598,7 +611,7 @@ class AcceptedReviewFixTests(unittest.TestCase):
                          api["years_rule"](lead))
         unknown = replace(lead, years_clauses=clauses + (Clause(3, "speciality"),))
         self.assertEqual(api["assess"](unknown, NOW).lane, "Verify")
-        mismatch = replace(lead, years_clauses=clauses + (Clause(7, "analyst", 2, "Fictional analyst tenure"),))
+        mismatch = replace(lead, years_clauses=clauses + (Clause(7, "analyst"),))
         self.assertEqual(api["assess"](mismatch, NOW).lane, "Monitor")
         legal = Clause(3, "analyst", 2, "Fictional confirmed exact tenure", legal_minimum=True,
                        legal_conflict_confirmed=True)
@@ -611,19 +624,19 @@ class AcceptedReviewFixTests(unittest.TestCase):
     def test_reviewed_range_preference_and_tool_scope_inputs(self):
         # Input-contract fixtures, NOT a claim that this module parses prose.
         # Reviewed "3-5 analyst years" supplies lower endpoint 3, not 5.
-        ranged = fictional_lead(required_years=3, years_domain="analyst", relevant_years=2, relevant_years_source="Fictional documented analyst tenure")
+        ranged = fictional_lead(required_years=3, years_domain="analyst")
         self.assertEqual(api["years_rule"](ranged)[:3], ("TEACHABLE", F(1), F(".25")))
         # "5 years preferred" supplies no required minimum.
         preferred = fictional_lead()
         self.assertEqual(api["years_rule"](preferred)[0], "NONE")
         # General support tenure cannot establish years in a particular tool.
         Clause = api["YearsClause"]
-        tool = fictional_lead(years_clauses=(Clause(3, "support", 3, "Fictional support tenure"), Clause(2, "specific-tool")))
+        tool = fictional_lead(years_clauses=(Clause(3, "support"), Clause(2, "specific-tool")))
         self.assertEqual(api["assess"](tool, NOW).lane, "Verify")
         self.assertEqual(api["assess"](replace(ranged, requirements_complete=False), NOW).lane, "Verify")
 
     def test_owner_check_completion_never_silently_demotes_stretch(self):
-        low = fictional_lead(ratings="SSSTTT", required_years=4, years_domain="analyst", relevant_years=2, relevant_years_source="Fictional documented analyst tenure",
+        low = fictional_lead(ratings="SSSTTT", required_years=4, years_domain="analyst",
                              english_force="required", english_clause="Fluent English required")
         self.assertEqual(api["compute_a"](low)[1], F(3))
         # Ordinary low coverage is already Monitor before the owner check.
@@ -707,10 +720,10 @@ class AcceptedReviewFixTests(unittest.TestCase):
             self.assertEqual(len(selection.primary), 5)
             self.assertEqual(selection.verify[0].lead.key, lead.key)
 
-    def test_heavy_example_cloud_and_moodys_analogues(self):
+    def test_heavy_example_cloud_and_ratings_analogues(self):
         leads = {lead.key: lead for lead in benchmark()}
-        dream = replace(leads["Example Cloud"], required_years=5, years_domain="analyst", relevant_years=2, relevant_years_source="Fictional documented analyst tenure")
-        safe = replace(leads["Moody's"], required_years=5, years_domain="analyst", relevant_years=2, relevant_years_source="Fictional documented analyst tenure")
+        dream = replace(leads["Example Cloud"], required_years=5, years_domain="analyst")
+        safe = replace(leads["Example Ratings"], required_years=5, years_domain="analyst")
         self.assertEqual(api["compute_a"](leads["Example Cloud"])[1], F("3.75"))
         self.assertEqual(api["assess"](dream, NOW).lane, "Stretch")
         self.assertEqual(api["compute_d"](safe), F(2))
@@ -733,7 +746,7 @@ class AcceptedReviewFixTests(unittest.TestCase):
         # only a gap above 2 can escalate based on the reviewed title flag.
         for title in ("Lead Generation Specialist", "Account Manager"):
             self.assertTrue(api["seniority_title"](title))
-            lead = fictional_lead(required_years=4, years_domain="analyst", relevant_years=2, relevant_years_source="Fictional documented analyst tenure",
+            lead = fictional_lead(required_years=4, years_domain="analyst",
                                   title_seniority=api["seniority_title"](title))
             self.assertEqual(api["years_rule"](lead)[0], "TEACHABLE")
             self.assertEqual(api["assess"](lead, NOW).lane, "Ready")
@@ -790,7 +803,7 @@ class AcceptedReviewFixTests(unittest.TestCase):
         high_q = fictional_lead("fictional-z", ratings="SSSSSS", work="0", growth="0")
         high_d = fictional_lead("fictional-a", ratings="SSSPPT", work="1", growth="1")
         self.assertEqual(api["ordered"]([high_d, high_q], NOW)[0].lead.key, high_q.key)
-        # Equal Q; Direction wins despite lower A (SYA/Whippy fixture).
+        # Equal Q; Direction wins despite lower A (SYA/Example Recruiting fixture).
         sya, whippy = benchmark()[3:5]
         self.assertEqual(api["ordered"]([whippy, sya], NOW)[0].lead.key, sya.key)
         # Equal Q and D: A4.25/U2.5 beats A4/U4, despite later/unknown deadline.
@@ -826,9 +839,9 @@ class ActivationContract(unittest.TestCase):
     """"""
     def test_active_version_and_under_one_agent_scope_boundary(self):
         self.assertEqual(api['RUBRIC_VERSION'],'v3.2')
-        small = fictional_lead(required_years=2,years_domain='agent',relevant_years=0,relevant_years_source='Fictional documented agent tenure',title_seniority=True)
+        small = fictional_lead(required_years=2,years_domain='agent',title_seniority=True)
         self.assertEqual(api['years_rule'](small)[:3],('TEACHABLE',F(2),F('0.25')))
-        self.assertIn('about 0',api['years_rule'](small)[3])
+        self.assertIn('under 1',api['years_rule'](small)[3])
         # A senior title only escalates when the relevant years gap exceeds two.
         larger=replace(small,required_years=3)
         self.assertEqual(api['assess'](larger,NOW).lane,'Monitor')

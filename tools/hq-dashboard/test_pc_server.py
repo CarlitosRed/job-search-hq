@@ -1,3 +1,4 @@
+# Fictional fixtures and settings-aware expectations.
 # Activation updates: Codex - Activation Builder, 2026-11-07.
 """Synthetic integration checks; no real workbook or AI calls."""
 import hashlib
@@ -275,6 +276,11 @@ class Integration(unittest.TestCase):
         tracker = dashboard.parent / 'tracker'
         dashboard.mkdir(parents=True)
         tracker.mkdir()
+        # Include the fixture's settings dependencies.
+        for name in ('settings.example.json', 'settings.json'):
+            source = HERE.parents[1] / name
+            if source.is_file():
+                shutil.copyfile(source, Path(fixture.name) / name)
         # Keep the server's existing HERE-based module loading in the fixture tree.
         for source, target in ((HERE, dashboard), (HERE.parent / 'tracker', tracker)):
             for path in source.glob('*.py'):
@@ -527,7 +533,7 @@ class Integration(unittest.TestCase):
 
     def test_health_requires_completion_marker(self):
         self.assertEqual(self.app.health()['scan']['state'],'unknown')
-        log=self.state/'scan-2026-11-04.log'
+        log=self.state/hq.load_component('hq_settings').load()['scan_log_glob'].replace('*','2026-11-04')
         log.write_text('=== example start ===\n')
         self.assertEqual(self.app.health()['scan']['state'],'unconfirmed')
         log.write_text('=== 2026-11-04T11:38:14+00:00 end (exit 0) ===\n')
@@ -590,6 +596,56 @@ with m.workbook_lock(sys.argv[2]):
                 child.kill()
                 child.communicate(timeout=5)
 
+    def test_scan_launcher_coordinates_without_real_scan(self):
+        root=self.state/'scan-fixture'
+        (root/'work'/'logs').mkdir(parents=True)
+        book=root/'work'/'applications-tracker.xlsx'
+        shutil.copyfile(self.book,book)
+        # Synthetic launcher only; no ignored local script or provider is needed.
+        #
+        launcher=r'''$repo = 'C:\Fictional\JobSearchHQ'
+$book = [IO.Path]::GetFullPath((Join-Path $repo 'work\applications-tracker.xlsx')).ToLowerInvariant()
+$sha = [Security.Cryptography.SHA256]::Create()
+try {
+    $hash = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($book))).Replace('-', '').ToLowerInvariant()
+} finally { $sha.Dispose() }
+$mutex = New-Object Threading.Mutex($false, ('Global\JobSearchHQ-Workbook-' + $hash.Substring(0, 24)))
+$owned = $false
+try {
+    try { $owned = $mutex.WaitOne(0) }
+    catch [Threading.AbandonedMutexException] { $owned = $true }
+    if (-not $owned) { exit 1 }
+    $result = claude
+    $code = $global:LASTEXITCODE
+    $log = Join-Path $repo 'work\logs\scan-fictional.log'
+    @($result, "=== fictional end (exit $code) ===") | Set-Content -LiteralPath $log -Encoding UTF8
+    exit $code
+} finally {
+    if ($owned) { $mutex.ReleaseMutex() }
+    $mutex.Dispose()
+}
+'''
+        old="$repo = 'C:\\Fictional\\JobSearchHQ'"
+        self.assertEqual(launcher.count(old),1)
+        launcher=launcher.replace(old,"$repo = '"+str(root).replace("'","''")+"'")
+        # A function shadows the provider executable. This fixture never invokes AI.
+        fake='''function global:claude {
+    $global:LASTEXITCODE = 0
+    '{"result":"Synthetic scan only","subtype":"success","total_cost_usd":0,"num_turns":0,"duration_ms":1,"is_error":false}'
+}
+'''
+        script=self.state/'synthetic-scan.ps1'
+        script.write_text(fake+launcher,encoding='utf-8-sig')
+        command=['powershell','-NoProfile','-File',str(script)]
+        with self.app.tracker.workbook_lock(book):
+            blocked=subprocess.run(command,capture_output=True,text=True,timeout=15)
+        self.assertEqual(blocked.returncode,1,blocked.stderr)
+        self.assertFalse(list((root/'work'/'logs').glob('*.log')))
+        run=subprocess.run(command,capture_output=True,text=True,timeout=15)
+        self.assertEqual(run.returncode,0,run.stderr)
+        logs=list((root/'work'/'logs').glob('*.log'))
+        self.assertEqual(len(logs),1)
+        self.assertIn('end (exit 0)',logs[0].read_text(encoding='utf-8-sig'))
 
     # Documents tab: fictional files only, in the temporary work folder. Claude · HQ Builder (Opus), 2026-11-05.
     REPORT = ('# Fictional shortlist\nIntro with **bold** and [a link](https://example.com/x).\n'
@@ -601,7 +657,7 @@ with m.workbook_lock(sys.argv[2]):
         for kind in ('CV', 'CL'):
             d = docx.Document()
             d.add_paragraph(f'Fictional {kind} for Example Company')
-            d.save(self.state / f'{kind}_Example_Engineer.docx')
+            d.save(self.state / (self.app.files.SETTINGS['document_prefix'] + f'{kind}_Example_Engineer.docx'))
         (self.state / 'report-fictional-shortlist-2026-11-05.md').write_bytes(self.REPORT.encode('utf-8'))
         return {d['kind']: d for d in self.app.files.documents(self.state)}, self.app.files.reports(self.state)[0]
 
@@ -617,7 +673,7 @@ with m.workbook_lock(sys.argv[2]):
         self.assertEqual([d['kind'] for d in json.loads(self.request('GET', '/api/cvs')[2])['files']], ['cv'])
         status, headers, body = self.request('GET', '/api/docs/' + docs['cl']['id'])
         self.assertEqual(status, 200)
-        self.assertIn('CL_Example_Engineer.docx', headers['Content-Disposition'])
+        self.assertIn((self.app.files.SETTINGS['document_prefix'] + 'CL_Example_Engineer.docx'), headers['Content-Disposition'])
         self.assertEqual(self.request('GET', '/api/cvs/' + docs['cl']['id'])[0], 404, 'the CV route serves CVs only')
         view = json.loads(self.request('GET', '/api/reports/' + report['id'])[2])
         self.assertIn('<script>window.PWNED=1</script>', json.dumps(view['blocks']).replace('\\u003c', '<'))
@@ -626,7 +682,7 @@ with m.workbook_lock(sys.argv[2]):
         self.assertEqual((status, headers['Content-Type']), (200, self.app.files.MIME))
         # Unknown ids, traversal, wrong format, files outside the patterns, oversize and links are refused.
         (self.state / 'notes.md').write_text('private', encoding='utf-8')
-        (self.state / 'CL_Huge.docx').write_bytes(b'0' * (5 * 1024 * 1024 + 1))
+        (self.state / (self.app.files.SETTINGS['document_prefix'] + 'CL_Huge.docx')).write_bytes(b'0' * (5 * 1024 * 1024 + 1))
         (self.state / 'report-huge.md').write_text('x' * (1024 * 1024 + 1), encoding='utf-8')
         (self.state / 'sub').mkdir()
         (self.state / 'sub' / 'report-nested.md').write_text('nested', encoding='utf-8')
@@ -634,18 +690,18 @@ with m.workbook_lock(sys.argv[2]):
         for path in ('/api/docs/' + '0' * 24, '/api/docs/..%2F..%2Fserver.py', '/api/docs/../../server.py', '/api/reports/' + '0' * 24,
                      '/api/reports/' + report['id'] + '/exe', '/api/reports/..%2Fnotes.md', '/api/docs/' + hashlib.sha256(b'notes.md').hexdigest()[:24],
                      '/api/reports/' + hashlib.sha256(b'report-huge.md').hexdigest()[:24],
-                     '/api/docs/' + hashlib.sha256(b'CL_Huge.docx').hexdigest()[:24]):
+                     '/api/docs/' + hashlib.sha256(((self.app.files.SETTINGS['document_prefix'] + 'CL_Huge.docx').encode())).hexdigest()[:24]):
             self.assertEqual(self.request('GET', path)[0], 404, path)
         names = {d['name'] for d in self.app.files.documents(self.state)} | {r['name'] for r in self.app.files.reports(self.state)}
-        self.assertEqual(names, {'CV_Example_Engineer.docx', 'CL_Example_Engineer.docx',
+        self.assertEqual(names, {(self.app.files.SETTINGS['document_prefix'] + 'CV_Example_Engineer.docx'), (self.app.files.SETTINGS['document_prefix'] + 'CL_Example_Engineer.docx'),
                                  'report-fictional-shortlist-2026-11-05.md'})
         # A symbolic link is refused. Windows needs a privilege to create one, so the link check is simulated if needed.
-        link = self.state / 'CL_Linked.docx'
+        link = self.state / (self.app.files.SETTINGS['document_prefix'] + 'CL_Linked.docx')
         try:
-            link.symlink_to(self.state / 'CL_Example_Engineer.docx')
+            link.symlink_to(self.state / (self.app.files.SETTINGS['document_prefix'] + 'CL_Example_Engineer.docx'))
         except OSError:
             from unittest import mock
-            shutil.copyfile(self.state / 'CL_Example_Engineer.docx', link)
+            shutil.copyfile(self.state / (self.app.files.SETTINGS['document_prefix'] + 'CL_Example_Engineer.docx'), link)
             real = Path.is_symlink
             with mock.patch.object(Path, 'is_symlink', lambda p: p.name == link.name or real(p)):
                 self.assertNotIn(link.name, {d['name'] for d in self.app.files.documents(self.state)})
@@ -713,7 +769,7 @@ with m.workbook_lock(sys.argv[2]):
         import docx
         noted = docx.Document()
         noted.add_paragraph('Sentiment: fictional note left in the file')
-        noted.save(self.state / 'CL_Other_Noted.docx')
+        noted.save(self.state / (self.app.files.SETTINGS['document_prefix'] + 'CL_Other_Noted.docx'))
         self.serve_tls()
         with sync_playwright() as p:
             browser = p.webkit.launch()
@@ -786,14 +842,14 @@ with m.workbook_lock(sys.argv[2]):
             expect(page.locator('#reports')).to_contain_text('Fictional shortlist 2026-11-05')
             with page.expect_download() as download:
                 page.locator('#cls').get_by_role('button', name='Download Example Engineer cover letter').click()
-            self.assertEqual(download.value.suggested_filename, 'CL_Example_Engineer.docx')
+            self.assertEqual(download.value.suggested_filename, (self.app.files.SETTINGS['document_prefix'] + 'CL_Example_Engineer.docx'))
             expect(page.locator('#cls li', has_text='Other Noted')).to_contain_text('Has notes')
             expect(page.locator('#cls li', has_text='Example Engineer')).not_to_contain_text('Has notes')
             # A CV downloads through /api/cvs (served by every HQ version); a failed download keeps the page in place.
             with page.expect_request('**/api/cvs/' + docs['cv']['id']), page.expect_download() as download:
                 page.locator('#cvs').get_by_role('button', name='Download Example Engineer CV').click()
-            self.assertEqual(download.value.suggested_filename, 'CV_Example_Engineer.docx')
-            (self.state / 'CL_Other_Noted.docx').unlink()
+            self.assertEqual(download.value.suggested_filename, (self.app.files.SETTINGS['document_prefix'] + 'CV_Example_Engineer.docx'))
+            (self.state / (self.app.files.SETTINGS['document_prefix'] + 'CL_Other_Noted.docx')).unlink()
             url = page.url
             page.locator('#cls').get_by_role('button', name='Download Other Noted cover letter').click()
             expect(page.locator('#tmsg')).to_contain_text('not available')
@@ -819,7 +875,7 @@ with m.workbook_lock(sys.argv[2]):
             expect(drawer.get_by_role('button', name='Download CV (.docx)')).to_be_visible()
             with page.expect_download() as download:
                 drawer.get_by_role('button', name='Download cover letter (.docx)').click()
-            self.assertEqual(download.value.suggested_filename, 'CL_Example_Engineer.docx')
+            self.assertEqual(download.value.suggested_filename, (self.app.files.SETTINGS['document_prefix'] + 'CL_Example_Engineer.docx'))
             drawer.get_by_role('button', name='Write a cover letter', exact=True).click()
             expect(page.locator('#v-review')).to_be_visible()
             self.assertEqual([page.input_value(f) for f in ('#r-company', '#r-role', '#r-link')], ['Example Company', 'Example Engineer', 'https://example.com/job'])

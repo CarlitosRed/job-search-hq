@@ -3,6 +3,21 @@
 param([string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+# Settings keys follow the shared loader contract.
+$ownerSettings = @{}
+foreach ($settingsFile in @('settings.example.json', 'settings.json')) {
+    $settingsPath = Join-Path $repository $settingsFile
+    if (Test-Path -LiteralPath $settingsPath) {
+        $settingsObject = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($property in $settingsObject.PSObject.Properties) {
+            if ($property.Name.StartsWith('_')) { continue }
+            if ($settingsFile -eq 'settings.json' -and -not $ownerSettings.ContainsKey($property.Name)) { throw ('Unknown setting: ' + $property.Name) }
+            $ownerSettings[$property.Name] = $property.Value
+        }
+    }
+}
+$taskAuthor = [Security.SecurityElement]::Escape($ownerSettings.task_author)
+$taskPrincipal = [Security.SecurityElement]::Escape($ownerSettings.task_principal)
 $stateDirectory = Join-Path $env:LOCALAPPDATA 'JobSearchHQ'
 $tailscale = Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe'
 if (-not (Test-Path -LiteralPath $tailscale)) { throw 'Install and sign in to Tailscale first.' }
@@ -26,11 +41,11 @@ $xml = @"
 <?xml version="1.0" encoding="UTF-16"?>
 <!-- No credential is stored in this file. -->
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
- <RegistrationInfo><Author>Job Search HQ</Author><Description>Job Search HQ on this PC. Password-protected loopback server behind Tailscale.</Description><URI>\JobSearchHQ-Server</URI></RegistrationInfo>
+ <RegistrationInfo><Author>$taskAuthor</Author><Description>Job Search HQ on this PC. Password-protected loopback server behind Tailscale.</Description><URI>\JobSearchHQ-Server</URI></RegistrationInfo>
  <Triggers><BootTrigger><Enabled>true</Enabled><Delay>PT30S</Delay></BootTrigger></Triggers>
- <Principals><Principal id="User"><UserId>$sid</UserId><LogonType>Password</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+ <Principals><Principal id="$taskPrincipal"><UserId>$sid</UserId><LogonType>Password</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
  <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><StartWhenAvailable>true</StartWhenAvailable><AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><Hidden>true</Hidden><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><RestartOnFailure><Interval>PT1M</Interval><Count>3</Count></RestartOnFailure></Settings>
- <Actions Context="User"><Exec><Command>$pythonCommand</Command><Arguments>$arguments</Arguments><WorkingDirectory>$workingDirectory</WorkingDirectory></Exec></Actions>
+ <Actions Context="$taskPrincipal"><Exec><Command>$pythonCommand</Command><Arguments>$arguments</Arguments><WorkingDirectory>$workingDirectory</WorkingDirectory></Exec></Actions>
 </Task>
 "@
 $taskFile = Join-Path $OutputDirectory 'JobSearchHQ-Server.xml'

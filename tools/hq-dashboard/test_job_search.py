@@ -1,3 +1,4 @@
+# Fictional fixtures and settings-aware expectations.
 """Fictional offline job discovery checks."""
 from concurrent.futures import ThreadPoolExecutor
 import importlib.util

@@ -1,0 +1,54 @@
+{
+    "_comment":  "Codex - M4-a Builder, 2026-11-10; Codex - M4-b Builder, 2026-11-10 (retired legacy copy option)",
+    "owner_name":  "",
+    "document_prefix":  "",
+    "copy_folder":  "",
+    "copy_subfolder":  "Drafts from HQ",
+    "home_places_pattern":  "",
+    "home_country_label":  "Home country",
+    "home_country_icon":  "globe",
+    "cv_cut_order":  [
+
+                     ],
+    "documented_relevant_years":  {
+
+                                  },
+    "documented_years_sources":  {
+
+                                 },
+    "scan_time_label":  "the scheduled time",
+    "scan_log_glob":  "scan-*.log",
+    "timezone_offset":  "+00:00",
+    "excluded_evidence_ids":  [
+
+                              ],
+    "writing_rules_source":  "rules.md",
+    "writing_rules_fallback":  "rules.example.md",
+    "writing_rules_attribute":  "",
+    "task_author":  "Job Search HQ",
+    "task_principal":  "User",
+    "prompt_evidence":  "E-001",
+    "prompt_sources":  [
+                           "E-001"
+                       ],
+    "browser_bank_rule":  "Follow every rule written in the bank.",
+    "browser_role_rule":  "State facts plainly and only as far as the evidence allows.",
+    "page_text":  {
+                      "PROFILE_HELP":  "Your evidence bank isn\u0027t loaded yet. Add entries to the evidence folder first.",
+                      "DRAFT_HELP":  "A draft until a person checks every claim against your evidence. You\u0027re the one who applies.",
+                      "COPY_LABEL":  "your synced folder",
+                      "SCAN_TIME":  "the scheduled time",
+                      "COPY_CVS":  "your synced CVs folder",
+                      "SEARCH_HELP":  "Describe the roles to find. The next scheduled search adds leads to the Board.",
+                      "LOCATION_PLACEHOLDER":  "Remote, your country, Spain…",
+                      "COPY_ROOT":  "your synced folder",
+                      "TRACKER_LOCATION_PLACEHOLDER":  "e.g. your city or Remote"
+                  },
+    "recommendation_hold_reason":  "Owner recommendation hold",
+    "analysis_role":  "job-search assistant",
+    "documented_years_labels":  {
+
+                                },
+    "home_place_example":  "",
+    "owner_short_name":  "the applicant"
+}

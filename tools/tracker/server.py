@@ -1,6 +1,6 @@
 # Job Search HQ tracker: local server.
 # Serves index.html and reads/writes work/applications-tracker.xlsx (the xlsx stays the source of truth,
-# so the scheduled rerun and this page edit the same file). Local only (127.0.0.1). Never applies anywhere.
+# so the daily rerun and this page edit the same file). Local only (127.0.0.1). Never applies anywhere.
 #
 # Env vars (optional, for testing against a copy):
 #   TRACKER_XLSX  path to the workbook   (default: ../../work/applications-tracker.xlsx)
@@ -25,6 +25,10 @@ _lock_spec.loader.exec_module(_lock_module)
 workbook_lock = _lock_module.workbook_lock
 
 HERE = Path(__file__).resolve().parent
+# Render the same settings as the hosted page builder.
+_settings_spec = importlib.util.spec_from_file_location('tracker_owner_settings', HERE.parent/'hq-dashboard'/'hq_settings.py')
+hq_settings = importlib.util.module_from_spec(_settings_spec)
+_settings_spec.loader.exec_module(hq_settings)
 XLSX = Path(os.environ.get("TRACKER_XLSX") or HERE.parent.parent / "work" / "applications-tracker.xlsx").resolve()
 PORT = int(os.environ.get("TRACKER_PORT") or 8765)
 BACKUPS = XLSX.parent / ".tracker-backups"
@@ -146,7 +150,7 @@ def save(wb):
 
 
 def expect_row(ws, head, row, p):
-    """Guard against the scheduled rerun having reordered rows since the page loaded."""
+    """Guard against the daily rerun having reordered rows since the page loaded."""
     exp = p.get("expect") or {}
     for k, v in exp.items():
         if k in head and cell(ws.cell(row, head.index(k) + 1).value) != str(v):
@@ -276,7 +280,7 @@ class H(BaseHTTPRequestHandler):
             elif path == "/api/version":
                 self.send(200, json.dumps({"version": version()}), "application/json")
             elif path in ("/", "/index.html"):
-                self.send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
+                self.send(200, hq_settings.render_page((HERE / "index.html").read_text(encoding="utf-8")).encode("utf-8"), "text/html; charset=utf-8")
             else:
                 self.send(404, "not found", "text/plain")
         except PermissionError:

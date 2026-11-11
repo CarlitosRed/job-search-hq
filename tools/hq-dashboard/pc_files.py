@@ -2,8 +2,15 @@
 Updated by Claude · HQ Builder (Opus), 2026-11-05: cover letters (CL_*.docx) and reports
 (report-*.md) join the allowlist; a CV and its letter share a `pair` key; letters export as plain paragraphs.
 """
+# Resolve settings beside this module under isolated execution.
+import importlib.util as _settings_util
+from pathlib import Path as _SettingsPath
+_settings_spec = _settings_util.spec_from_file_location('hq_owner_settings', _SettingsPath(__file__).with_name('hq_settings.py'))
+hq_settings = _settings_util.module_from_spec(_settings_spec)
+_settings_spec.loader.exec_module(hq_settings)
+SETTINGS = hq_settings.load()
+
 import hashlib
-import os
 import importlib.util
 import io
 from pathlib import Path
@@ -13,7 +20,7 @@ HERE=Path(__file__).resolve().parent
 ROOT=HERE.parents[1]
 MIME='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 MD_MIME='text/markdown; charset=utf-8'
-PREFIX={'cv':'CV_','cl':'CL_'}
+PREFIX={kind: SETTINGS['document_prefix']+suffix for kind,suffix in (('cv','CV_'),('cl','CL_'))}
 DOC_LIMIT,REPORT_LIMIT=5*1024*1024,1024*1024
 _converter=None
 
@@ -119,6 +126,7 @@ def report_docx(key,work=ROOT/'work'):
     return path.stem+'.docx',stream.getvalue()
 
 
+# Callers use the explicit copy_dir option.
 def export_draft(state,posting_id,kind,record,copy_dir=None):
     if not re.fullmatch(r'[0-9a-f-]{36}',posting_id) or kind not in ('cv','letter'):
         raise ValueError('Invalid document request.')
@@ -128,8 +136,8 @@ def export_draft(state,posting_id,kind,record,copy_dir=None):
     convert=converter().md_to_docx if kind=='cv' else converter().letter_to_docx
     digest=hashlib.sha256((posting_id+'\n'+content).encode()).hexdigest()[:12]
     company='_'.join(re.findall(r'[A-Za-z0-9]+',str(record.get('company') or '')))[:40] or 'Posting'
-    # No "DRAFT" in the file name: the file may be sent as is once it has been checked.
-    name=f"{'CV' if kind=='cv' else 'Cover_Letter'}_{company}_{digest}.docx"
+    # No "DRAFT" in the file name: the file may be sent as is once the owner has checked it.
+    name=f"{SETTINGS['document_prefix']}{'CV' if kind=='cv' else 'Cover_Letter'}_{company}_{digest}.docx"
     directory=state/'generated-documents'
     directory.mkdir(exist_ok=True)
     path=directory/name
@@ -137,10 +145,10 @@ def export_draft(state,posting_id,kind,record,copy_dir=None):
         temp=directory/(name+'.new.docx')
         convert(content,temp)
         temp.replace(path)
-    # Optional copy: set HQ_COPY_DIR to a synced folder. Content-addressed copies never overwrite an edited file.
-    target=copy_dir if copy_dir is not None else (Path(os.environ['HQ_COPY_DIR']) if os.environ.get('HQ_COPY_DIR') else None)
+    # Content-addressed copies never overwrite a file edited in the synced folder.
+    target=copy_dir if copy_dir is not None else (Path(SETTINGS['copy_folder']).expanduser() if SETTINGS['copy_folder'] else None)
     if target is not None and target.parent.is_dir():
-        dest=target/'Drafts from HQ'
+        dest=target/SETTINGS['copy_subfolder']
         dest.mkdir(parents=True,exist_ok=True)
         copy=dest/name
         if not copy.exists():copy.write_bytes(path.read_bytes())

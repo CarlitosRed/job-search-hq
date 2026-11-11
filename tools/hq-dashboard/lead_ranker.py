@@ -8,6 +8,14 @@ reviewed clauses, scope, eligibility and packet decisions; this module cannot
 establish those facts. Activation wiring: Codex - Activation Builder, 2026-11-07.
 """
 
+# Resolve settings beside this module under isolated execution.
+import importlib.util as _settings_util
+from pathlib import Path as _SettingsPath
+_settings_spec = _settings_util.spec_from_file_location('hq_owner_settings', _SettingsPath(__file__).with_name('hq_settings.py'))
+hq_settings = _settings_util.module_from_spec(_settings_spec)
+_settings_spec.loader.exec_module(hq_settings)
+SETTINGS = hq_settings.load()
+
 from dataclasses import dataclass, fields, replace
 from datetime import date, datetime, timedelta, timezone
 from fractions import Fraction
@@ -47,9 +55,9 @@ def display(value):
     return f"{sign}{cents // 100}.{cents % 100:02d}"
 
 
-# No personal tenure defaults in the public copy. Supply sourced relevant_years.
-DOCUMENTED_RELEVANT_YEARS = {}
-DOCUMENTED_YEARS_SOURCES = {}
+# Sourced lower bounds supplied by the owner.
+DOCUMENTED_RELEVANT_YEARS = {key: Fraction(value) for key, value in SETTINGS['documented_relevant_years'].items()}
+DOCUMENTED_YEARS_SOURCES = SETTINGS['documented_years_sources']
 # ASSUMED implementation choices; accepted F12 did not set numeric penalties
 # or a high-D threshold. Preserve quarter-point arithmetic, avoid an A cap.
 TEACHABLE_YEARS_PENALTY = Fraction(1, 4)
@@ -242,7 +250,7 @@ def years_rule(lead):
     # Sources remain private inputs/constants; display human-readable decimals.
     required_text = display(required).rstrip("0").rstrip(".")
     relevant_text = display(relevant).rstrip("0").rstrip(".")
-    known = "under 1" if lead.relevant_years is None and lead.years_domain == "agent" else "about " + relevant_text
+    known = SETTINGS["documented_years_labels"].get(lead.years_domain, "about " + relevant_text) if lead.relevant_years is None else "about " + relevant_text
     reason = f"asks for {required_text} years; you have {known} in the relevant work"
     if gap <= 0:
         return "TEACHABLE" if gap == 0 else "MET", gap, Fraction(0), ""
@@ -371,7 +379,7 @@ def assess(lead, now):
         lane, reason = "Archive", "Confirmed restriction: " + "; ".join(
             lead.hard_blockers + ((years_reason,) if years_class == "HARD" else ()))
     elif lead.owner_hold or lead.want == "No":
-        lane, reason = "Monitor", "the owner's recommendation hold"
+        lane, reason = "Monitor", SETTINGS['recommendation_hold_reason']
     elif years_class == "SENIORITY MISMATCH":
         lane, reason = "Monitor", "Seniority mismatch: " + years_reason
     elif (not lead.source_open or not source_fresh or not lead.eligibility_clear
