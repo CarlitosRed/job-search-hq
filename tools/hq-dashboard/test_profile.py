@@ -24,6 +24,8 @@ class EvidenceProfile(unittest.TestCase):
             for name in ("profile_builder.py", "ai_tasks.py", "lead_policy.py", "lead_ranker.py",
                          "hq_settings.py", "docx_export.py", "cv_layout.py"):
                 shutil.copyfile(HERE / name, scripts / name)
+            (root / "tools" / "tracker").mkdir()
+            shutil.copyfile(HERE.parent / "tracker" / "stages.json", root / "tools" / "tracker" / "stages.json")
             shutil.copyfile(HERE.parents[1] / "settings.example.json", root / "settings.example.json")
             (root / "settings.json").write_text(
                 json.dumps({"excluded_evidence_ids": ["E-013"]}), encoding="utf-8")

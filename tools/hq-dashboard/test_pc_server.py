@@ -563,7 +563,7 @@ class Integration(unittest.TestCase):
         self.assertEqual(len(self.data()['jobs']),1,'Discovery must not silently add a tracker row')
         result=item['results'][0]
         add={'sheet':'Fictional jobs','Company':result['company'],'Role':result['role'],'Link':result['link'],
-             'My status':'Suggested (not applied)','version':self.data()['version'],'requestId':str(uuid.uuid4())}
+             'My status':'Tracked','version':self.data()['version'],'requestId':str(uuid.uuid4())}
         self.assertEqual(self.request('POST','/api/add',add)[0],200)
         self.assertEqual(len(self.data()['jobs']),2)
         self.assertEqual(self.request('POST','/api/search/submit',{**payload,'query':'AI','url':'http://localhost/private'})[0],400)
@@ -805,8 +805,9 @@ try {
                 menu = lambda stage: page.eval_on_selector_all(f'.col[data-stage="{stage}"] .bcard-move-item', 'xs => xs.map(x => x.dataset.moveto)')
                 self.assertNotIn('rejected', menu('review'))
                 self.assertIn('skipped', menu('review'))
-                self.assertIn('rejected', menu('applied'))
-                self.assertNotIn('skipped', menu('applied'))
+                if name == 'desktop':  # the phone board renders the cards of one column at a time
+                    self.assertIn('rejected', menu('applied'))
+                    self.assertNotIn('skipped', menu('applied'))
                 result = page.evaluate('trackerSelfTest()')
                 self.assertTrue(result['ok'], result['lines'] if 'lines' in result else result)
                 if name == 'desktop':
