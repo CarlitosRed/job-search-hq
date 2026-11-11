@@ -34,7 +34,8 @@ import lead_policy as policy
 RUBRIC_VERSION = 'v3.2'  #
 if RUBRIC_VERSION != policy.RUBRIC_VERSION:
     raise ValueError('Rubric version mismatch: AI worker')
-ROOT = HERE.parents[1]
+ROOT = hq_settings.data_root()
+APP = hq_settings.app_root()
 EXCLUDED = set(SETTINGS['excluded_evidence_ids'])
 
 
@@ -43,10 +44,11 @@ def now():
 
 
 def evidence_bank(root=ROOT):
-    settings = hq_settings.load(root) if (root/'settings.example.json').is_file() else hq_settings.load()
+    defaults = root if root != ROOT and (root/'settings.example.json').is_file() else APP
+    settings = hq_settings.load(root) if defaults != APP else hq_settings.load()
     rules_path = root/settings['writing_rules_source']
     if not rules_path.is_file():
-        rules_path = root/settings['writing_rules_fallback']
+        rules_path = defaults/settings['writing_rules_fallback']
     if rules_path.suffix == '.py' and settings['writing_rules_attribute']:
         spec=importlib.util.spec_from_file_location('pc_writing_rules',rules_path)
         module=importlib.util.module_from_spec(spec)

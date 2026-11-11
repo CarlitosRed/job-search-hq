@@ -3,7 +3,7 @@
 # so the daily rerun and this page edit the same file). Local only (127.0.0.1). Never applies anywhere.
 #
 # Env vars (optional, for testing against a copy):
-#   TRACKER_XLSX  path to the workbook   (default: ../../work/applications-tracker.xlsx)
+#   TRACKER_XLSX  path to the workbook   (default: work/applications-tracker.xlsx in the data folder)
 #   TRACKER_PORT  port to listen on      (default: 8765)
 #
 # Writes are safe: the workbook is saved to a temp file next to it, re-opened to verify, then swapped in
@@ -29,7 +29,7 @@ HERE = Path(__file__).resolve().parent
 _settings_spec = importlib.util.spec_from_file_location('tracker_owner_settings', HERE.parent/'hq-dashboard'/'hq_settings.py')
 hq_settings = importlib.util.module_from_spec(_settings_spec)
 _settings_spec.loader.exec_module(hq_settings)
-XLSX = Path(os.environ.get("TRACKER_XLSX") or HERE.parent.parent / "work" / "applications-tracker.xlsx").resolve()
+XLSX = Path(os.environ.get("TRACKER_XLSX") or hq_settings.data_root() / "work" / "applications-tracker.xlsx").resolve()
 PORT = int(os.environ.get("TRACKER_PORT") or 8765)
 BACKUPS = XLSX.parent / ".tracker-backups"
 LOCK = threading.Lock()

@@ -24,3 +24,4 @@ jobs:
       - run: node tools/hq-dashboard/test_importance.js
       - run: python -I tools/hq-dashboard/test_profile.py
       - run: python -I tools/hq-dashboard/test_rubric_versions.py
+      - run: python -I tools/hq-dashboard/test_data_root.py

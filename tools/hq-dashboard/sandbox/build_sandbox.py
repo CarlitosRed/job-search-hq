@@ -2,12 +2,17 @@
 # Reads local seed files under work/hq-seed; use fictional data for browser QA.
 # Output is work/sandbox or SANDBOX_OUT. Serve on 127.0.0.1:8799 for the mobile smoke check.
 import json
+import importlib.util
 import os
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
+_settings_spec = importlib.util.spec_from_file_location('sandbox_owner_settings', HERE.parent / 'hq_settings.py')
+hq_settings = importlib.util.module_from_spec(_settings_spec)
+_settings_spec.loader.exec_module(hq_settings)
+ROOT = hq_settings.data_root()
+APP = hq_settings.app_root()
 SEED = ROOT / "work" / "hq-seed"
 OUT = ROOT / (os.environ.get("SANDBOX_OUT") or "work/sandbox")
 
@@ -45,7 +50,7 @@ def main():
                                   "jobId": "", "fit": OLD_FIT, "status": "draft", "reviewed": False, "createdAt": "2026-11-03T13:00:00Z"}
     cols["postings"]["sbx-p2"] = {"company": "Analyzed Only Ltd", "role": "Revenue Operations Analyst", "link": "", "text": POSTING_TEXT, "source": "photo",
                                   "jobId": "", "fit": FIT, "status": "draft", "reviewed": False, "createdAt": "2026-11-03T14:00:00Z"}
-    page = (ROOT / "tools" / "hq-dashboard" / "index.html").read_text(encoding="utf-8")
+    page = (APP / "tools" / "hq-dashboard" / "index.html").read_text(encoding="utf-8")
     seed = json.dumps(cols).replace("</", "<\\/")
     head = ('<!doctype html><html><head><meta charset="utf8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
             "<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}body{margin:0;font:14px system-ui}"

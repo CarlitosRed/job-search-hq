@@ -15,9 +15,13 @@ from pathlib import Path
 import openpyxl
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 
-ROOT = Path(__file__).resolve().parents[2]
+_settings_spec = importlib.util.spec_from_file_location('sync_owner_settings', Path(__file__).with_name('hq_settings.py'))
+hq_settings = importlib.util.module_from_spec(_settings_spec)
+_settings_spec.loader.exec_module(hq_settings)
+ROOT = hq_settings.data_root()
+APP = hq_settings.app_root()
 SEED = ROOT / "work" / "hq-seed"
-_spec = importlib.util.spec_from_file_location("tracker_server", ROOT / "tools" / "tracker" / "server.py")
+_spec = importlib.util.spec_from_file_location("tracker_server", APP / "tools" / "tracker" / "server.py")
 srv = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(srv)
 

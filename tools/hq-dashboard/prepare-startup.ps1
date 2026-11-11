@@ -2,20 +2,21 @@
 [CmdletBinding()]
 param([string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
-$repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-# Settings keys follow the shared loader contract.
-$ownerSettings = @{}
-foreach ($settingsFile in @('settings.example.json', 'settings.json')) {
-    $settingsPath = Join-Path $repository $settingsFile
-    if (Test-Path -LiteralPath $settingsPath) {
-        $settingsObject = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        foreach ($property in $settingsObject.PSObject.Properties) {
-            if ($property.Name.StartsWith('_')) { continue }
-            if ($settingsFile -eq 'settings.json' -and -not $ownerSettings.ContainsKey($property.Name)) { throw ('Unknown setting: ' + $property.Name) }
-            $ownerSettings[$property.Name] = $property.Value
-        }
-    }
-}
+$python = Get-Command python -CommandType Application | Select-Object -First 1 -ExpandProperty Source
+# Use the same roots and settings merge as the running app.
+$resolveSettings = @'
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location('startup_settings', sys.argv[1])
+settings = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(settings)
+print(json.dumps(dict(app=str(settings.app_root()), data=str(settings.data_root()), values=settings.load())))
+'@
+$resolvedJson = & $python -I -B -c $resolveSettings (Join-Path $PSScriptRoot 'hq_settings.py')
+if ($LASTEXITCODE -ne 0) { throw 'Could not load HQ settings.' }
+$resolved = $resolvedJson | ConvertFrom-Json
+$repository = $resolved.app
+$dataRoot = $resolved.data
+$ownerSettings = $resolved.values
 $taskAuthor = [Security.SecurityElement]::Escape($ownerSettings.task_author)
 $taskPrincipal = [Security.SecurityElement]::Escape($ownerSettings.task_principal)
 $stateDirectory = Join-Path $env:LOCALAPPDATA 'JobSearchHQ'
@@ -25,11 +26,10 @@ $network = & $tailscale status --json | ConvertFrom-Json
 if ($network.BackendState -ne 'Running' -or -not $network.Self.DNSName) { throw 'Tailscale is not signed in.' }
 $dnsName = $network.Self.DNSName.TrimEnd('.')
 if ($dnsName -notmatch '^[a-zA-Z0-9.-]+\.ts\.net$') { throw 'Unexpected Tailscale hostname.' }
-$python = Get-Command python -CommandType Application | Select-Object -First 1 -ExpandProperty Source
-$settings = @{ repository = $repository; python = $python; origin = ('https://' + $dnsName) }
+$settings = @{ repository = $repository; data_root = $dataRoot; python = $python; origin = ('https://' + $dnsName) }
 New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
 $settings | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stateDirectory 'server-settings.json') -Encoding UTF8
-if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repository 'work\pc-hosting' }
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path $dataRoot 'work\pc-hosting' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $sid = [Security.SecurityElement]::Escape($identity.User.Value)

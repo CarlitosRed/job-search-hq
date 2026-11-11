@@ -9,11 +9,14 @@ import openpyxl
 #
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import lead_policy as policy
+_settings_spec = importlib.util.spec_from_file_location('profile_owner_settings', Path(__file__).with_name('hq_settings.py'))
+hq_settings = importlib.util.module_from_spec(_settings_spec)
+_settings_spec.loader.exec_module(hq_settings)
 RUBRIC_VERSION = 'v3.2'
 if RUBRIC_VERSION != policy.RUBRIC_VERSION:
     raise ValueError('Rubric version mismatch: profile bank')
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = hq_settings.data_root()
 OUT = ROOT / "work" / "hq-seed"
 STATUS = re.compile(r"\s*(OPEN|CLOSED|REDIRECTED|UNKNOWN)", re.I)
 
