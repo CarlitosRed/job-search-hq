@@ -382,6 +382,84 @@ class Writes(Base):
         self.assertEqual(saved['Posted'], '3 days ago')
 
 
+
+class EditSavesShape(Base):
+    """A writer (such as a scan importer) may add a sheet or a column inside one edit."""
+
+    def setUp(self):
+        super().setUp()
+        self.migrate()
+
+    def edit(self):
+        storage = store.Store(store.db_path(self.xlsx))
+        self.addCleanup(storage.close)
+        return storage.edit()
+
+    def test_new_sheet_is_saved_and_mirrored_last(self):
+        with self.edit() as wb:
+            ws = wb.create_sheet('New (2026-01-09)')
+            ws.append(['#', 'Company', 'Role', 'My status', 'Link', 'Notes'])
+            ws.append(['N0109-01', 'Scan Example', 'Scan Role', 'Suggested (not applied)', 'https://example.com/scan/1', 'Plain note'])
+            ws.column_dimensions['B'].width = 27
+            ws.freeze_panes = 'A2'
+        store.rebuild_mirror(self.xlsx)
+        data = tracker_for(self.xlsx).load()
+        jobs = [j for j in data['jobs'] if j['Company'] == 'Scan Example']
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual((jobs[0]['_sheet'], jobs[0]['_row'], jobs[0]['Notes']), ('New (2026-01-09)', 2, 'Plain note'))
+        self.assertEqual(data['sheets'][-1]['name'], 'New (2026-01-09)')
+        wb = openpyxl.load_workbook(self.xlsx)
+        self.assertEqual(wb.sheetnames, ['Jobs', 'New (2026-01-06)', 'Contacts', 'Read me', 'New (2026-01-09)'])
+        ws = wb['New (2026-01-09)']
+        self.assertEqual([c.value for c in ws[1]], ['#', 'Company', 'Role', 'My status', 'Link', 'Notes'])
+        self.assertEqual(ws.cell(2, 2).value, 'Scan Example')
+        self.assertEqual(ws.column_dimensions['B'].width, 27)
+        self.assertEqual(ws.freeze_panes, 'A2')
+        self.assertFalse(list((self.work / 'logs').glob('*-edited-*')))
+        counts = store.Store(store.db_path(self.xlsx))
+        try:
+            self.assertEqual(counts.counts()['sheets']['New (2026-01-09)'], {'Suggested (not applied)': 1})
+        finally:
+            counts.close()
+
+    def test_new_sheet_survives_a_later_edit(self):
+        with self.edit() as wb:
+            ws = wb.create_sheet('New (2026-01-09)')
+            ws.append(['#', 'Company', 'Role', 'My status'])
+            ws.append(['N1', 'Scan Example', 'Scan Role', 'Suggested (not applied)'])
+        t = tracker_for(self.xlsx)
+        t.update({'sheet': 'New (2026-01-09)', 'row': 2, 'status': 'Skipped', 'expect': {'Company': 'Scan Example'}})
+        jobs = [j for j in t.load()['jobs'] if j['Company'] == 'Scan Example']
+        self.assertEqual(jobs[0]['My status'], 'Skipped')
+        with self.db() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM moves').fetchone()[0], 1)
+
+    def test_new_column_on_an_existing_sheet_is_saved(self):
+        with self.edit() as wb:
+            ws = wb['Jobs']
+            col = ws.max_column + 1
+            ws.cell(1, col).value = 'Open check 2026-01-09'
+            ws.cell(2, col).value = 'OPEN (fictional check)'
+        data = tracker_for(self.xlsx).load()
+        jobs = data['sheets'][0]['columns']
+        self.assertEqual(jobs[-1], 'Open check 2026-01-09')
+        first = [j for j in data['jobs'] if j['Company'] == 'Example Co'][0]
+        self.assertEqual(first['Open check 2026-01-09'], 'OPEN (fictional check)')
+        self.assertEqual(first['_check'], 'OPEN (fictional check)')
+        store.rebuild_mirror(self.xlsx)
+        ws = openpyxl.load_workbook(self.xlsx)['Jobs']
+        self.assertEqual([c.value for c in ws[1]], JOB_HEAD + ['Open check 2026-01-09'])
+        self.assertEqual(ws.cell(6, 2).value, 'Demo Inc')  # other rows untouched
+
+    def test_an_edit_that_fails_saves_nothing(self):
+        before = tracker_for(self.xlsx).load()
+        with self.assertRaises(RuntimeError):
+            with self.edit() as wb:
+                wb.create_sheet('New (2026-01-09)').append(['#', 'Company', 'Role', 'My status'])
+                raise RuntimeError('refuse')
+        self.assertEqual(without_volatile(tracker_for(self.xlsx).load()), without_volatile(before))
+
+
 class HQServerOnSQLite(Base):
     """The phone/PC server keeps its API when the tracker moves to SQLite."""
 
