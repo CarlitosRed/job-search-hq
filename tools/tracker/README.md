@@ -61,3 +61,28 @@ mirror waits for the next site write. Edits made in Excel are preserved in a
 dated `logs/*-edited-*.xlsx` copy on the next rebuild, and the data API includes
 a warning naming that copy. Excel edits are never silently merged into SQLite.
 Keep the database and the workbook backups outside version control.
+
+## Document records
+
+Opening a tracker database adds the missing `documents` table without changing
+job rows, the revision or mirror flags. Site exports save CVs and cover letters
+in `work/`, with their job, evidence sources, file hash and completed checks.
+Names use `<prefix>CV_<Company>_<Role>.docx` or
+`<prefix>CL_<Company>_<Role>.docx`; existing names receive a numeric suffix.
+The marker and readability checks block unsuitable drafts before any file is
+written. They never rewrite the draft.
+
+Register existing documents as made outside the site with this command:
+
+```powershell
+python -I tools/tracker/backfill_documents.py --workbook work/applications-tracker.xlsx --work work --dry-run
+python -I tools/tracker/backfill_documents.py --workbook work/applications-tracker.xlsx --work work --apply
+```
+
+The default is a dry run, which writes nothing. `--work` defaults to the workbook
+folder; `--prefix` defaults to the app's `document_prefix` setting. Apply records
+only unregistered, allowlisted CV and letter files directly in that folder,
+using their existing modified dates and hashes. It never changes their bytes,
+dates or names. Running apply again adds nothing for recorded file names.
+The database must already exist. With Excel alone, files are listed as made
+outside the site because there are no tracker document records.

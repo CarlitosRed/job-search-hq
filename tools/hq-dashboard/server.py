@@ -101,6 +101,7 @@ class App:
         self.state = Path(state).resolve()
         self.credentials = json.loads((self.state / 'password.json').read_text(encoding='utf-8'))
         self.tracker = load_tracker(workbook)
+        self.tracker_db_path = self.tracker.store.db_path(self.tracker.XLSX)
         self.origin = origin.rstrip('/')
         u = urlsplit(self.origin)
         if u.scheme not in ('http', 'https') or u.path or u.query or u.fragment or u.username or u.password:
@@ -119,6 +120,7 @@ class App:
         self.scan_log_dir = ROOT / 'work' / 'logs'
         ai_module = load_component('ai_tasks')
         self.ai = ai_module.Tasks(self.state)
+        self.evidence_notes = ai_module.evidence_notes
         self.rubric_version = ai_module.RUBRIC_VERSION
         # Worker imports/checks the canonical v3.2 policy before serving analysis.
         #
@@ -127,6 +129,10 @@ class App:
         self.search = load_component('job_search').Searches(self.state)
         self.files = load_component('pc_files')
         self.cv_work = ROOT/'work'
+
+    @property
+    def store_path(self):
+        return self.tracker_db_path if self.tracker_db_path.is_file() else None
 
     def health(self):
         scan = {'state': 'unknown', 'message': 'No scan result is available yet.'}
@@ -339,17 +345,17 @@ def handler(app):
                 if self.path == '/api/search/state':
                     return self.send(200, app.search.state())
                 if self.path == '/api/cvs':
-                    return self.send(200, {'files':app.files.existing(app.cv_work)})
+                    return self.send(200, {'files':app.files.existing(app.cv_work,store_path=app.store_path)})
                 if self.path.startswith('/api/cvs/'):
-                    path=app.files.existing_file(self.path.removeprefix('/api/cvs/'),app.cv_work)
+                    path=app.files.existing_file(self.path.removeprefix('/api/cvs/'),app.cv_work,store_path=app.store_path)
                     return self.send(200,path.read_bytes(),app.files.MIME,attachment(path.name))
                 # Documents tab (Claude · HQ Builder (Opus), 2026-11-05): CVs, cover letters and reports, all allowlisted.
                 if self.path == '/api/docs':
-                    docs=app.files.documents(app.cv_work)
+                    docs=app.files.documents(app.cv_work,store_path=app.store_path)
                     return self.send(200,{'cvs':[d for d in docs if d['kind']=='cv'],'letters':[d for d in docs if d['kind']=='cl'],
-                                          'reports':app.files.reports(app.cv_work)})
+                                          'reports':app.files.reports(app.cv_work),'evidence_notes':app.evidence_notes()})
                 if self.path.startswith('/api/docs/'):
-                    path=app.files.existing_file(self.path.removeprefix('/api/docs/'),app.cv_work,('cv','cl'))
+                    path=app.files.existing_file(self.path.removeprefix('/api/docs/'),app.cv_work,('cv','cl'),store_path=app.store_path)
                     return self.send(200,path.read_bytes(),app.files.MIME,attachment(path.name))
                 if self.path.startswith('/api/reports/'):
                     key,_,fmt=self.path.removeprefix('/api/reports/').partition('/')
@@ -434,8 +440,12 @@ def handler(app):
                         db.execute('UPDATE postings SET body=? WHERE id=?',(json.dumps(record),payload['id']))
                     return self.send(200,{'ok':True})
                 if self.path=='/api/ai/export':
-                    record=app.ai.posting(payload.get('id'))
-                    path=app.files.export_draft(app.state,payload['id'],payload.get('kind'),record)
+                    try:
+                        record=app.ai.posting(payload.get('id'))
+                        path=app.files.export_draft(app.state,payload['id'],payload.get('kind'),record,
+                                                    work=app.cv_work,store_path=app.store_path)
+                    except ValueError as error:
+                        return self.send(400,{'error':str(error)})
                     return self.send(200,path.read_bytes(),app.files.MIME,attachment(path.name))
                 if self.path == '/api/writes/dismiss':
                     return self.send(200, {'write': app.queue.dismiss(payload.get('id'))})

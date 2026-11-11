@@ -16,6 +16,7 @@ import sys
 import tempfile
 import time
 import unittest
+from contextlib import closing
 import uuid
 
 import openpyxl
@@ -177,14 +178,14 @@ class Records(unittest.TestCase):
         self.temp.cleanup()
 
     def snapshot(self):
-        with sqlite3.connect(self.db) as db:
+        with closing(sqlite3.connect(self.db)) as db, db:
             rows = db.execute('SELECT * FROM jobs ORDER BY id').fetchall()
             revision = db.execute("SELECT value FROM meta WHERE key='revision'").fetchone()[0]
             tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         return rows, revision, tables
 
     def test_upgrade_adds_documents_table_and_keeps_rows(self):
-        with sqlite3.connect(self.db) as db:  # a database made before 05a has no documents table
+        with closing(sqlite3.connect(self.db)) as db, db:  # a database made before 05a has no documents table
             db.execute('DROP TABLE IF EXISTS documents')
         rows, revision, tables = self.snapshot()
         self.assertNotIn('documents', tables)
@@ -193,7 +194,7 @@ class Records(unittest.TestCase):
         after_rows, after_revision, after_tables = self.snapshot()
         self.assertIn('documents', after_tables)
         self.assertEqual((after_rows, after_revision), (rows, revision))
-        with sqlite3.connect(self.db) as db:
+        with closing(sqlite3.connect(self.db)) as db, db:
             columns = [r[1] for r in db.execute('PRAGMA table_info(documents)')]
         self.assertEqual(columns, ['id', 'job_id', 'kind', 'file_name', 'sha256', 'made_by', 'created',
                                    'posting_id', 'evidence_ids', 'checks'])

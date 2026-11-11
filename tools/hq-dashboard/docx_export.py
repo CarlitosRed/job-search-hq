@@ -52,6 +52,28 @@ def draft_problem(text, kind):
     return None
 
 
+def readability_problems(text, blocked_terms=()):
+    """Explain internal references in a draft; never change its wording."""
+    text = str(text or '')
+    notes = []
+    rules = (
+        (r'#\d+|\bpull/\d+', 'a pull request or issue reference'),
+        (r'(?:https?://|\bgithub\.com/)[^\s<>\[\]()]*?/(?:pull|issues|blob|tree|commit)/[^\s<>\[\]()]*',
+         'a link to internal project detail'),
+        (r'\bE-\d{3}\b', 'an evidence identifier'),
+        (r'\b(?:rule|leak)\s*#?\s*\d+\b', 'an internal rule or leak identifier'),
+    )
+    for pattern, reason in rules:
+        for match in re.finditer(pattern, text, re.I):
+            notes.append(f'"{match[0]}" is {reason}; a CV should describe the work in plain words without internal references.')
+    for term in blocked_terms:
+        if not term:
+            continue
+        for match in re.finditer(r'(?<!\w)' + re.escape(term) + r'(?!\w)', text, re.I):
+            notes.append(f'"{match[0]}" is a blocked technical term; a CV should explain the work in words a recruiter can understand.')
+    return notes
+
+
 def clean_text(md):
     # Drops exact marker lines and removes the closed list of tags ([HQ], [DRAFT], ...) inside a line, collapsing
     # the space they leave. Every other bracket and every other word is kept exactly as written.

@@ -284,7 +284,7 @@ class Integration(unittest.TestCase):
                 shutil.copyfile(source, Path(fixture.name) / name)
         # Keep the server's existing HERE-based module loading in the fixture tree.
         for source, target in ((HERE, dashboard), (HERE.parent / 'tracker', tracker)):
-            for path in source.glob('*.py'):
+            for path in [*source.glob('*.py'), *source.glob('*.json')]:  # stages.json: the store reads it (step 05a)
                 shutil.copyfile(path, target / path.name)
         page_spec = importlib.util.spec_from_file_location('pc_page_fixture', HERE / 'port_tracker.py')
         page = importlib.util.module_from_spec(page_spec)
@@ -1131,7 +1131,7 @@ class IntegrationSQLite(Integration):
                 page.click('.seg [data-v="review"]')
                 expect(page.locator('#cvs li', has_text='Example Company Example Engineer 2')).to_contain_text('Made by the site')
                 expect(page.locator('#cvs li', has_text='Example Company Example Engineer').filter(has_not_text='Engineer 2')).to_contain_text('Made outside the site')
-                page.click('.seg [data-v="list"]')
+                page.click('.seg [data-v="board"]')  # on a wide screen the list selects a card instead of opening the drawer
                 page.evaluate('(id) => openJob(id)', job['_id'])
                 drawer = page.locator('#drawer')
                 expect(drawer).to_contain_text('CV for this role, made by the site on')

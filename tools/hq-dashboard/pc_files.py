@@ -13,8 +13,12 @@ SETTINGS = hq_settings.load()
 import hashlib
 import importlib.util
 import io
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 import re
+import tempfile
+import threading
 
 HERE=Path(__file__).resolve().parent
 ROOT=hq_settings.data_root()
@@ -23,6 +27,24 @@ MD_MIME='text/markdown; charset=utf-8'
 PREFIX={kind: SETTINGS['document_prefix']+suffix for kind,suffix in (('cv','CV_'),('cl','CL_'))}
 DOC_LIMIT,REPORT_LIMIT=5*1024*1024,1024*1024
 _converter=None
+_store=None
+_export_lock=threading.RLock()
+
+
+def document_store(path):
+    global _store
+    if _store is None:
+        spec=importlib.util.spec_from_file_location('hq_document_store',HERE.parent/'tracker'/'store.py')
+        _store=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_store)
+    return _store.Store(path)
+
+
+def document_records(store_path):
+    if store_path is None or not Path(store_path).is_file():return []
+    storage=document_store(store_path)
+    try:return storage.documents()
+    finally:storage.close()
 
 
 def converter():
@@ -73,29 +95,34 @@ def is_clean(path):
     return _clean_cache[key]
 
 
-def documents(work=ROOT/'work'):
+def documents(work=ROOT/'work',store_path=None):
     """CVs and cover letters. `pair` is the shared suffix, so CV_X.docx and CL_X.docx link."""
+    work=Path(work)
     out=[]
+    records={r['file_name']:r for r in document_records(store_path)}
     for kind,prefix in PREFIX.items():
         for path in sorted(work.glob(prefix+'*.docx')):
             if not path.name.startswith(prefix) or not _allowed(path,work,DOC_LIMIT):continue
             pair=path.stem.removeprefix(prefix)
             title=pair.replace('_',' ')
+            record=records.get(path.name,{})
             out.append({'id':_key(path.name),'kind':kind,'pair':pair,'name':path.name,'title':title,'company':title.split(' ')[0],
                         'reviewed':False,'updated':str(path.stat().st_mtime_ns),'bytes':path.stat().st_size,'mime':MIME,
+                        'made_by':record.get('made_by','outside'),'job_id':record.get('job_id'),
+                        'created':record.get('created') or datetime.fromtimestamp(path.stat().st_mtime,timezone.utc).isoformat(),
                         'clean':is_clean(path)})
     return out
 
 
-def existing(work=ROOT/'work'):
+def existing(work=ROOT/'work',store_path=None):
     # /api/cvs keeps its old meaning: CVs only.
-    return [d for d in documents(work) if d['kind']=='cv']
+    return [d for d in documents(work,store_path) if d['kind']=='cv']
 
 
-def existing_file(key,work=ROOT/'work',kinds=('cv',)):
-    item=next((item for item in documents(work) if item['id']==key and item['kind'] in kinds),None)
+def existing_file(key,work=ROOT/'work',kinds=('cv',),store_path=None):
+    item=next((item for item in documents(work,store_path) if item['id']==key and item['kind'] in kinds),None)
     if not item:raise ValueError('Unknown document.')
-    return work/item['name']
+    return Path(work)/item['name']
 
 
 def reports(work=ROOT/'work'):
@@ -127,31 +154,96 @@ def report_docx(key,work=ROOT/'work'):
 
 
 # Callers use the explicit copy_dir option.
-def export_draft(state,posting_id,kind,record,copy_dir=None):
+def export_draft(state,posting_id,kind,record,copy_dir=None,work=None,store_path=None,blocked_terms=None):
+    with _export_lock:
+        return _export_draft(state,posting_id,kind,record,copy_dir,work,store_path,blocked_terms)
+
+
+def _export_draft(state,posting_id,kind,record,copy_dir,work,store_path,blocked_terms):
     if not re.fullmatch(r'[0-9a-f-]{36}',posting_id) or kind not in ('cv','letter'):
         raise ValueError('Invalid document request.')
     field='cv_markdown' if kind=='cv' else 'cover_letter_markdown'
     content=record.get('fit',{}).get(field)
     if not content:raise ValueError('Create this draft first.')
+    problems=converter().readability_problems(content,SETTINGS['cv_blocked_terms'] if blocked_terms is None else blocked_terms)
+    if problems:raise ValueError(' '.join(problems))
     convert=converter().md_to_docx if kind=='cv' else converter().letter_to_docx
-    digest=hashlib.sha256((posting_id+'\n'+content).encode()).hexdigest()[:12]
-    company='_'.join(re.findall(r'[A-Za-z0-9]+',str(record.get('company') or '')))[:40] or 'Posting'
-    # No "DRAFT" in the file name: the file may be sent as is once the owner has checked it.
-    name=f"{SETTINGS['document_prefix']}{'CV' if kind=='cv' else 'Cover_Letter'}_{company}_{digest}.docx"
-    directory=state/'generated-documents'
-    directory.mkdir(exist_ok=True)
-    path=directory/name
-    if not path.exists():
-        temp=directory/(name+'.new.docx')
-        convert(content,temp)
-        temp.replace(path)
-    # Content-addressed copies never overwrite a file edited in the synced folder.
+    fingerprint='draft:'+hashlib.sha256(content.encode()).hexdigest()
+    directory=Path(work) if work is not None else ROOT/'work'
+    directory.mkdir(parents=True,exist_ok=True)
+    def words(value):
+        return '_'.join(w[:1].upper()+w[1:] for w in re.findall(r'[^\W_]+',str(value or '').replace("'",'').replace('\u2019','')))
+    company,role=words(record.get('company')) or 'Posting',words(record.get('role'))
+    name=f"{SETTINGS['document_prefix']}{'CV' if kind=='cv' else 'CL'}_{company}"+(('_'+role) if role else '')+'.docx'
+    storage=document_store(store_path) if store_path is not None and Path(store_path).is_file() else None
+    # Excel mode has no tracker records. Keep only an export cache in server state
+    # so a repeated download still reuses its unchanged file after a restart.
+    cache=None
+    if storage is None:
+        key=hashlib.sha256((str(directory.resolve())+'\n'+posting_id+'\n'+kind+'\n'+fingerprint).encode()).hexdigest()
+        cache=Path(state)/'document-exports'/(key+'.json')
+    path=None
+    try:
+        # Serialize record lookup and file creation for concurrent exports of one draft.
+        if storage:storage.db.execute('BEGIN IMMEDIATE')
+        for row in storage.documents() if storage else []:
+            previous=directory/row['file_name']
+            if (row['made_by']=='site' and row['posting_id']==posting_id and row['kind']==kind
+                    and fingerprint in row['checks'] and _allowed(previous,directory,DOC_LIMIT)
+                    and hashlib.sha256(previous.read_bytes()).hexdigest()==row['sha256']):
+                path=previous
+                break
+        if cache and cache.is_file():
+            try:
+                saved=json.loads(cache.read_text(encoding='utf-8'))
+                previous=directory/saved['file_name']
+                if _allowed(previous,directory,DOC_LIMIT) and hashlib.sha256(previous.read_bytes()).hexdigest()==saved['sha256']:
+                    path=previous
+            except (OSError,ValueError,KeyError,TypeError):pass
+        if path is None:
+            # Convert before claiming a listed name; final names are created exclusively.
+            with tempfile.TemporaryFile() as temp:
+                convert(content,temp)
+                temp.seek(0)
+                payload=temp.read()
+            path=_write_unique(directory,name,payload)
+            if storage:
+                storage.add_document(kind,path.name,hashlib.sha256(path.read_bytes()).hexdigest(),'site',
+                                     datetime.now(timezone.utc).isoformat(),job_id=record.get('jobId') or None,
+                                     posting_id=posting_id,evidence_ids=record.get('fit',{}).get('sources',[]),
+                                     checks=['markers','readability',fingerprint])
+            if cache:
+                cache.parent.mkdir(parents=True,exist_ok=True)
+                cache.write_text(json.dumps({'file_name':path.name,'sha256':hashlib.sha256(payload).hexdigest()}),encoding='utf-8')
+        if storage:storage.db.commit()
+    except Exception:
+        if storage:storage.db.rollback()
+        raise
+    finally:
+        if storage:storage.close()
     target=copy_dir if copy_dir is not None else (Path(SETTINGS['copy_folder']).expanduser() if SETTINGS['copy_folder'] else None)
     if target is not None and copy_dir is None:
         target = ROOT / target
     if target is not None and target.parent.is_dir():
         dest=target/SETTINGS['copy_subfolder']
         dest.mkdir(parents=True,exist_ok=True)
-        copy=dest/name
-        if not copy.exists():copy.write_bytes(path.read_bytes())
+        _write_unique(dest,path.name,path.read_bytes(),reuse=True)
     return path
+
+
+def _write_unique(directory,name,payload,reuse=False):
+    stem=Path(name).stem
+    index=1
+    while True:
+        path=directory/(name if index==1 else f'{stem}_{index}.docx')
+        try:stream=path.open('xb')
+        except FileExistsError:
+            if reuse and _allowed(path,directory,DOC_LIMIT) and path.read_bytes()==payload:return path
+            index+=1
+            continue
+        try:
+            with stream:stream.write(payload)
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+        return path

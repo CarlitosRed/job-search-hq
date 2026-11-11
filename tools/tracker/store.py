@@ -78,6 +78,28 @@ class Store:
     def __init__(self, path):
         self.db = sqlite3.connect(str(path))
         self.db.row_factory = sqlite3.Row
+        self.db.execute('''CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY,
+            job_id TEXT, kind TEXT, file_name TEXT, sha256 TEXT, made_by TEXT, created TEXT,
+            posting_id TEXT, evidence_ids TEXT, checks TEXT)''')
+
+    def add_document(self, kind, file_name, sha256, made_by, created, job_id=None,
+                     posting_id=None, evidence_ids=(), checks=()):
+        if kind not in ('cv', 'letter') or made_by not in ('site', 'outside'):
+            raise ValueError('Invalid document kind or origin.')
+        row = self.db.execute('''INSERT INTO documents
+            (job_id, kind, file_name, sha256, made_by, created, posting_id, evidence_ids, checks)
+            VALUES (?,?,?,?,?,?,?,?,?)''', (job_id, kind, file_name, sha256, made_by, created,
+                                           posting_id, json.dumps(list(evidence_ids)), json.dumps(list(checks))))
+        return row.lastrowid
+
+    def documents(self):
+        result = []
+        for row in self.db.execute('SELECT * FROM documents ORDER BY id'):
+            item = dict(row)
+            for key in ('evidence_ids', 'checks'):
+                item[key] = json.loads(item[key])
+            result.append(item)
+        return result
 
     def close(self):
         self.db.close()
@@ -315,6 +337,35 @@ def migrate(xlsx, old=None, apply=False):
             storage.close()
         if temporary:
             Path(temporary).unlink(missing_ok=True)
+
+
+def backfill_documents(xlsx, work, prefix='', apply=False):
+    target, work = db_path(xlsx), Path(work)
+    if not target.is_file():
+        return {'ok': False, 'message': 'The tracker database does not exist. Migrate the workbook first.'}
+    files = sorted(p for p in work.glob('*.docx')
+                   if p.name.startswith((prefix + 'CV_', prefix + 'CL_'))
+                   and not p.is_symlink() and p.is_file() and p.resolve().parent == work.resolve()
+                   and p.stat().st_size <= 5 * 1024 * 1024)
+    added = 0
+    # A dry run must not even upgrade the database schema.
+    if apply:
+        storage = Store(target)
+        try:
+            with storage.db:
+                storage.db.execute('BEGIN IMMEDIATE')
+                recorded = {r['file_name'] for r in storage.documents()}
+                for path in files:
+                    if path.name in recorded:
+                        continue
+                    storage.add_document('cv' if path.name.startswith(prefix + 'CV_') else 'letter',
+                                         path.name, digest(path), 'outside',
+                                         datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat())
+                    recorded.add(path.name)
+                    added += 1
+        finally:
+            storage.close()
+    return {'ok': True, 'found': len(files), 'added': added, 'files': [p.name for p in files]}
 
 
 def rebuild_mirror(xlsx):
