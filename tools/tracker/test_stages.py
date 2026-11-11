@@ -374,6 +374,7 @@ class PhonePage(unittest.TestCase):
         dash = ROOT / 'tools' / 'hq-dashboard'
         self.assertFalse((dash / 'hosted' / 'data.js').exists())
         self.assertFalse((dash / 'sync_page.py').exists())
+        self.assertFalse((dash / 'sandbox').exists())
 
     def test_generator_writes_only_the_main_page(self):
         dash = ROOT / 'tools' / 'hq-dashboard'

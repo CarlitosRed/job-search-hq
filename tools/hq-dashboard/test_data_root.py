@@ -130,7 +130,7 @@ class AppInsideData(Clean):
 
     def test_modules_point_root_at_the_data(self):
         for rel in ('hq-dashboard/ai_tasks.py', 'hq-dashboard/pc_files.py', 'hq-dashboard/server.py',
-                    'hq-dashboard/profile_builder.py', 'hq-dashboard/sync_page.py', 'hq-dashboard/sandbox/build_sandbox.py'):
+                    'hq-dashboard/profile_builder.py'):
             with self.subTest(rel):
                 self.assertEqual(Path(self.module(rel).ROOT).resolve(), self.data)
 
