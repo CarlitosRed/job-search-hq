@@ -340,6 +340,7 @@ body.is-dragging .board .col.over{border-color:var(--blue)}
 .bcard-ro{font-family:'Plus Jakarta Sans',sans-serif;font-size:12.5px;font-weight:700;line-height:1.25;color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 
 .bcard-loc{font-size:11px;color:var(--mute);line-height:1.2;margin-top:-3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bcard-round{font-size:11px;color:var(--mute);line-height:1.2}
 
 /* compact next step box */
 .bcard-next{background:var(--soft);border:1px solid transparent;border-radius:7px;padding:5px 8px;display:flex;flex-direction:column;gap:2px}
@@ -608,6 +609,11 @@ dl.facts dd{margin:0;word-break:break-word;min-width:0}
 #drawer{--dp:14px;right:0;width:min(560px,100%);transform:translateX(105%);padding:var(--dp)}
 #fdrawer{left:0;width:min(300px,92%);transform:translateX(-105%);padding:14px}
 #fdrawer .side{position:static;max-height:none;box-shadow:none}
+.rounds{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px}
+.rounds h4{margin:0 0 12px}
+.round{display:grid;gap:10px;min-width:0;padding:12px 0;border-top:1px solid var(--line)}
+.round .f,.round .inp{min-width:0;max-width:100%;width:100%}
+.round .btn{justify-self:start}
 .dr-close{display:flex;justify-content:flex-end;gap:8px;margin:calc(-1*var(--dp)) calc(-1*var(--dp)) 8px;position:sticky;top:calc(-1*var(--dp));z-index:2;background:var(--bg);padding:12px 14px 8px}
 
 /* empty, toast, dialog */
@@ -883,6 +889,12 @@ setInterval(async()=>{if(document.hidden||busy||$("#addDlg").open||$$("textarea[
  try{const r=await fetch("/api/version",{cache:"no-store"});const v=(await r.json()).version;if(v&&D.version&&v!==D.version)load(true)}catch{}},15000);
 
 /* ---------- writes ---------- */
+async function saveRound(j,button){if(!j)return;const roundKey=key(j);if(PENDING.has(roundKey))return;
+ const p={sheet:j._sheet,row:j._row,version:D.version,requestId:crypto.randomUUID(),expect:{Company:j.Company,Role:j.Role},action:button.dataset.act==="add-round"?"add":"edit"};
+ if(p.action==="edit"){const round=button.closest(".round");p.id=Number(round.dataset.id);round.querySelectorAll("[data-field]").forEach(input=>p[input.dataset.field]=input.value)}
+ PENDING.add(roundKey);busy=true;button.disabled=true;
+ try{if(await post("/api/rounds",p)){await load();toast(p.action==="add"?"Round added":"Round saved")}}
+ finally{PENDING.delete(roundKey);busy=PENDING.size>0;button.disabled=false}}
 const PRE_APPLIED=STAGES.filter(s=>["tracked","review","apply","skipped"].includes(s.id)).map(s=>s.drop),POST_APPLIED=STAGE_DATA.rejected_from;
 const PENDING=new Set();
 /* One change = one save. The page updates at once (optimistic) and rolls back if the save fails. */
@@ -1046,6 +1058,7 @@ function boardCard(j,s){
    </div>
   </div>
   <div class="bcard-loc">${esc(j.Where||place(j)||"Remote, any country")}</div>
+  ${s.id==="interview"?`<div class="bcard-round">Round ${(j._rounds||[]).length||1} of ?</div>`:""}
   <div class="bcard-next ${ns.attn?"attn":""}">
    <div class="bcard-next-label">NEXT STEP</div>
    <div class="bcard-next-title">${esc(ns.title)}</div>
@@ -1160,6 +1173,15 @@ function sidebar(inDrawer){const cnt=(field,val)=>D.jobs.filter(j=>matches(j,fie
  <div><h3>List</h3><div class="opts">${sheets.map(s=>box("sheets",s,s)).join("")}</div></div>
  <div class="opts"><label class="switch">Posting open only<input type="checkbox" data-t="openOnly" ${S.openOnly?"checked":""}></label><label class="switch">Needs attention only<input type="checkbox" data-t="attention" ${S.attention?"checked":""}></label><label class="switch">Hide closed &amp; skipped<input type="checkbox" data-t="hideClosed" ${S.hideClosed?"checked":""}></label></div></aside>`}
 
+function roundSection(j){const rounds=j._rounds||[],interview=stageOf(j).id==="interview";
+ if(!interview&&!rounds.length)return"";
+ return`<section class="rounds"><h4>Interview rounds</h4>${D.store!=="sqlite"?"<p>Interview rounds are saved once the tracker uses the database.</p>":`${rounds.map(r=>`<div class="round" data-round="${r.round}" data-id="${r.id}">
+  <b>Round ${r.round}</b>
+  <label class="f">Date<input class="inp" type="date" data-field="date" value="${esc(r.date)}"></label>
+  <label class="f">Type<input class="inp" type="text" data-field="type" value="${esc(r.type)}" placeholder="recruiter call" maxlength="60"></label>
+  <label class="f">Note<input class="inp" type="text" data-field="note" value="${esc(r.note)}" maxlength="280"></label>
+  <button class="btn" type="button" data-act="save-round" aria-label="Save round ${r.round}">Save</button>
+ </div>`).join("")}${interview?'<button class="btn ghost" type="button" data-act="add-round">Add round</button>':""}`}</section>`}
 function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
  const other=st.id==="other",ad=j["Date applied"];
  const steps=STAGES.filter(s=>s.id!=="other").map(s=>`<li class="${s===st?"cur":""}"><button data-step="${s.id}" title="Move to ${s.label}" ${allowedMove(j,s)?"":"disabled"} ${s===st?'aria-current="step"':""}><span class="b">${s===st?IC.check:STAGES.indexOf(s)+1}</span>${s.step}</button></li>`).join("");
@@ -1192,6 +1214,7 @@ function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
   <div class="form2" style="margin-top:18px"><label class="f">Status<select class="inp" data-status>${D.statuses.filter(name=>allowedMove(j,STAGES.find(s=>s.drop===name))).map(s=>`<option value="${esc(s)}" ${s===j["My status"]?"selected":""}>${esc(sl(s))}</option>`).join("")}${D.statuses.includes(j["My status"])?"":`<option selected>${esc(j["My status"])}</option>`}</select></label>
    <label class="f">Date applied<input class="inp" type="date" data-date value="${esc(j["Date applied"])}" max="${D.today}"></label></div>
  </section>
+ ${roundSection(j)}
  <section class="gd-card gd-notes-card">
   <h4><label for="note-${j._row}">Notes &amp; details</label></h4>
   <textarea class="inp" id="note-${j._row}" data-note rows="${Math.min(12,Math.max(4,Math.ceil((j.Notes||"").length/60)+(j.Notes||"").split("\n").length))}" placeholder="Add a note: who you spoke to, follow-up date, salary range…">${esc(j.Notes)}</textarea>
@@ -1251,6 +1274,7 @@ $("#scrim").onclick=closeDrawers;
 document.addEventListener("click",async e=>{const t=e.target;
  if(!t.closest(".bcard-move-wrap")){$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"))}
  const a=t.closest("[data-act]");if(a){const v=a.dataset.act;if(v==="clear")clearFilters();if(v==="close"||v==="closef")closeDrawers();if(v==="openf")openFilters();if(v==="add")openAdd();if(v==="attn"){S.attention=!S.attention;render()}if(v==="attn-list"){S.attention=true;S.view="list";render()}
+  if(v==="add-round"||v==="save-round"){await saveRound(byKey(a.closest("[data-k]").dataset.k),a);return}
   if(v==="open-move"){const w=a.closest(".bcard-move-wrap"),m=w.querySelector(".bcard-move-menu"),opening=m.hidden;$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"));m.hidden=!opening;a.setAttribute("aria-expanded",String(opening));if(opening){const f=m.querySelector(".bcard-move-item");if(f)f.focus()}else a.focus();return}
   return}
  const mv=t.closest("[data-moveto]");if(mv){const k=mv.dataset.k,keyboard=e.detail===0,j=byKey(k),st=STAGES.find(x=>x.id===mv.dataset.moveto);if(j&&st&&boardMove(j,st)&&stageOf(j)!==st){setStatus(j,dropStatus(j,st)).then(()=>{const card=$(`.card[data-k="${CSS.escape(k)}"]`);if(card)card.focus();})}$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"));return}

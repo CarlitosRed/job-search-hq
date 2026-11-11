@@ -87,6 +87,7 @@ def main():
     h = sub(h, "if(ok){j.Notes=txt;j._noteSaved=true;", "if(ok){j.Notes=txt;j._noteSaved=true;NOTED.add(j._id);{const c=byKey(j._id);if(c){c.Notes=txt;c._noteSaved=true}}")
     h = sub(h, 'const p={sheet:"Contacts",row:c._row,status:t.value,expect:{Person:c.Person}};', 'const p={id:c._id,sheet:"Contacts",status:t.value};')
     h = sub(h, '$("#refresh").onclick=()=>load().then(()=>toast("Reloaded from the spreadsheet"));', '$("#refresh").onclick=reloadJobs;')
+    h = sub(h, 'if(await post("/api/rounds",p)){await load();', 'if(await post("/api/rounds",p)){await reloadJobs(true);')
     h = sub(h, '$("#addDlg").close();await load();if(lost.length)', '$("#addDlg").close();if(lost.length)')
     h = sub(h, 'openJob(p.sheet+"|"+r.row)}', "openSoon(r.id)}")
 
