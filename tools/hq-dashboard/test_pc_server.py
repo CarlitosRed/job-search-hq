@@ -307,7 +307,7 @@ class Integration(unittest.TestCase):
         ws = wb.active
         ws.title = 'Fictional jobs'
         ws.append(['#', 'Company', 'Role', 'My status', 'Date applied', 'Notes', 'Link'])
-        ws.append([1, 'Example Company', 'Example Engineer', 'Suggested (not applied)', '', 'Example only', 'https://example.com/job'])
+        ws.append([1, 'Example Company', 'Example Engineer', 'Review', '', 'Example only', 'https://example.com/job'])
         wb.save(self.book)
         wb.close()
         self.app = hq.App(self.state, self.book, 'http://127.0.0.1')
@@ -563,7 +563,7 @@ class Integration(unittest.TestCase):
         self.assertEqual(len(self.data()['jobs']),1,'Discovery must not silently add a tracker row')
         result=item['results'][0]
         add={'sheet':'Fictional jobs','Company':result['company'],'Role':result['role'],'Link':result['link'],
-             'My status':'Suggested (not applied)','version':self.data()['version'],'requestId':str(uuid.uuid4())}
+             'My status':'Tracked','version':self.data()['version'],'requestId':str(uuid.uuid4())}
         self.assertEqual(self.request('POST','/api/add',add)[0],200)
         self.assertEqual(len(self.data()['jobs']),2)
         self.assertEqual(self.request('POST','/api/search/submit',{**payload,'query':'AI','url':'http://localhost/private'})[0],400)
@@ -760,6 +760,86 @@ try {
                         self.assertTrue(page.locator('.seg').evaluate('(s) => s.scrollWidth <= s.clientWidth'),
                                         f'phone tabs overflow in {view}, allowing viewShown to scroll them')
                 self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), width)
+                context.close()
+            browser.close()
+
+    def test_board_stages_browser(self):
+        """Step 01a: eight stages in order, Rejected only after Applied, move and undo save, same page on the phone."""
+        from playwright.sync_api import sync_playwright, expect
+        ids = ['tracked', 'review', 'apply', 'skipped', 'applied', 'interview', 'offer', 'rejected']
+        wb = openpyxl.load_workbook(self.book)
+        wb.active.append([2, 'Second Company', 'Second Engineer', 'Applied', '2026-01-03', '', 'https://example.com/job2'])
+        wb.save(self.book)
+        wb.close()
+        self.serve_tls()
+
+        def status(company):
+            return next(j['My status'] for j in self.app.data()['jobs'] if j['Company'] == company)
+
+        def wait_status(company, wanted):
+            for _ in range(100):
+                if status(company) == wanted:
+                    return
+                time.sleep(0.1)
+            self.assertEqual(status(company), wanted)
+
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            for name, options in (('desktop', {'viewport': {'width': 1440, 'height': 900}}), ('phone', p.devices['iPhone 15'])):
+                context = browser.new_context(**options, ignore_https_errors=True)
+                page = context.new_page()
+                errors = []
+                page.on('pageerror', lambda e: errors.append(str(e)))
+                self.browser_login(page)
+                expect(page.locator('#sync')).to_contain_text('2 jobs', timeout=10000)
+                page.click('.seg [data-v="board"]')
+                self.assertEqual(page.eval_on_selector_all('.board-cols > .col[data-stage]', 'cs => cs.map(c => c.dataset.stage)'), ids, name)
+                dot = "(stage) => getComputedStyle(document.querySelector(`.col[data-stage='${stage}'] .col-h .dot`)).backgroundColor"
+                colors = {stage: page.evaluate(dot, stage) for stage in ids}
+                gray = {colors[s] for s in ids if s not in ('offer', 'rejected')}
+                self.assertEqual(len(gray), 1, colors)
+                self.assertNotIn(colors['offer'], gray | {colors['rejected']})
+                self.assertNotIn(colors['rejected'], gray)
+                self.assertIn('green', page.evaluate("STAGES.find(s => s.id === 'offer').c"))
+                self.assertIn('red', page.evaluate("STAGES.find(s => s.id === 'rejected').c"))
+                menu = lambda stage: page.eval_on_selector_all(f'.col[data-stage="{stage}"] .bcard-move-item', 'xs => xs.map(x => x.dataset.moveto)')
+                self.assertNotIn('rejected', menu('review'))
+                self.assertIn('skipped', menu('review'))
+                if name == 'desktop':  # the phone board renders the cards of one column at a time
+                    self.assertIn('rejected', menu('applied'))
+                    self.assertNotIn('skipped', menu('applied'))
+                result = page.evaluate('trackerSelfTest()')
+                self.assertTrue(result['ok'], result['lines'] if 'lines' in result else result)
+                if name == 'desktop':
+                    def move(stage, target):
+                        # A save re-renders the board and closes an open menu, so retry the open-and-pick a few times.
+                        for attempt in range(5):
+                            try:
+                                page.click(f'.col[data-stage="{stage}"] [data-act="open-move"]', timeout=3000)
+                                page.click(f'.col[data-stage="{stage}"] .bcard-move-item[data-moveto="{target}"]', timeout=3000)
+                                return
+                            except Exception:
+                                if attempt == 4:
+                                    raise
+                                page.wait_for_timeout(300)
+                    move('review', 'apply')
+                    expect(page.locator('.col[data-stage="apply"]')).to_contain_text('Example Company')
+                    wait_status('Example Company', 'Apply')
+                    page.click('#undoBtn')
+                    expect(page.locator('.col[data-stage="review"]')).to_contain_text('Example Company')
+                    wait_status('Example Company', 'Review')
+                    move('applied', 'rejected')
+                    wait_status('Second Company', 'Rejected')
+                # The Overview keeps its flow chart (Sankey): one node per stage, the possible steps as links.
+                page.click('.seg [data-v="overview"]')
+                keys = page.eval_on_selector_all('#sk .nd[data-key]', 'ns => ns.map(n => n.dataset.key)')
+                self.assertEqual(sorted(keys), sorted(ids), name)
+                links = page.eval_on_selector_all('#sk [data-link]', 'ls => ls.map(l => l.dataset.link)')
+                self.assertEqual(sorted(links), sorted(['Tracked to Review', 'Review to Apply', 'Apply to Skipped', 'Apply to Applied',
+                                                       'Applied to Interview', 'Applied to Rejected', 'Interview to Offer']), name)
+                self.assertTrue(page.eval_on_selector_all('#sk path[data-link]', "ps => ps.every(p => (p.getAttribute('d') || '').includes('C'))"),
+                                'flow links are curves')
+                self.assertEqual(errors, [], name)
                 context.close()
             browser.close()
 
@@ -973,6 +1053,9 @@ class IntegrationSQLite(Integration):
         self.skipTest('Browser checks run in Excel mode; the page does not depend on the store.')
 
     def test_phone_browser(self):
+        self.skipTest('Browser checks run in Excel mode; the page does not depend on the store.')
+
+    def test_board_stages_browser(self):
         self.skipTest('Browser checks run in Excel mode; the page does not depend on the store.')
 
 

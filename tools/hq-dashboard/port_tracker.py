@@ -1,7 +1,4 @@
-# Builds the hosted Job Search HQ page from the local tracker.
-# One UI, two backends: tools/tracker/index.html stays the source of the views; this script swaps its local
-# server calls for the claude.ai page store (hosted/data.js), adds the Search and Review views (hosted/views.html,
-# hosted/tools.js, hosted/hosted.css) and writes tools/hq-dashboard/index.html, which is what gets published.
+# Builds the PC page from the shared tracker source and hosted view pieces.
 # Every replacement must match exactly the expected number of times, so a tracker change that breaks the port fails loudly.
 # Run: python -I tools/hq-dashboard/port_tracker.py
 # Resolve settings beside this module under isolated execution.
@@ -19,7 +16,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SRC = HERE.parent / "tracker" / "index.html"
-OUT = HERE / "index.html"
+OUT = HERE / "pc-index.html"
 ADD = HERE / "hosted"
 
 
@@ -38,14 +35,15 @@ def resub(html, pattern, repl):
 
 
 def main():
-    # Keep the Claude output as the default.
+    # Only the PC page is supported.
     parser = argparse.ArgumentParser()
-    parser.add_argument('--backend', choices=('claude', 'pc'), default='claude')
+    parser.add_argument('--backend', choices=('pc',), default='pc')
     args = parser.parse_args()
     h = SRC.read_text(encoding="utf-8").replace("\r\n", "\n")
+    h = sub(h, "/*{{STAGES_JSON}}*/null", SRC.with_name("stages.json").read_text(encoding="utf-8").replace("<", "\\u003c"))
     read = lambda name: (ADD / name).read_text(encoding="utf-8").replace("\r\n", "\n")
 
-    # The Artifact tool wraps the page in its own document: no doctype/html/head/body here.
+    # Build view fragments first; the PC document wrapper is added below.
     h = resub(h, r"\A.*?(?=<style>)", "<title>Job Search HQ</title>\n\n")
     # Dark tokens also follow the viewer's explicit theme choice.
     m = re.search(r'@media \(prefers-color-scheme:dark\)\{:root(?::not\(\[data-theme="light"\]\))?\{(.*?)\}\}', h, flags=re.S)
@@ -77,8 +75,8 @@ def main():
     h = sub(h, '<main id="main"><div class="loading"><div class="sk-line"></div><div class="sk-line" style="height:280px"></div></div></main>',
             '<main id="main"><div class="loading"><div class="sk-line"></div><div class="sk-line" style="height:280px"></div></div></main>\n' + read("views.html").rstrip())
 
-    # Data: the page store instead of the local server
-    h = resub(h, r"/\* ---------- data ---------- \*/.*?(?=/\* ---------- writes ---------- \*/)", lambda _: read("data.js"))
+    # Data: the PC adapter instead of the plain tracker server
+    h = resub(h, r"/\* ---------- data ---------- \*/.*?(?=/\* ---------- writes ---------- \*/)", lambda _: read("pc-data.js"))
     h = sub(h, 'const key=j=>j._sheet+"|"+j._row;', "const key=j=>j._id;")
     h = sub(h, 'S.q="";S.view="overview";S.attention=false;',
             'S.q="";S.view="overview";S.attention=false;{const v=location.hash.slice(1);if(["overview","list","board","contacts","search","review"].includes(v))S.view=v}')
@@ -123,7 +121,7 @@ def main():
     h = sub(h, """if(dirty&&!confirm("Discard unsaved notes?"))return false;""",
             """if(dirty&&!discardArm){discardArm=true;setTimeout(()=>discardArm=false,6000);toast("Unsaved notes. Save them, or close again to discard.",null,true);return false}discardArm=false;""")
 
-    # Phones (all of this came from the 2026-11-03 phone QA).md, 2026-11-04.
+    # Phone interaction adjustments.
     # Drawer: warn before notes are lost; a dirty note or focused field stays put while the rest refreshes; focus lands on Close.
     h = sub(h, "function openJob(k){const j=byKey(k);if(!j)return;S.sel=k;", "function openJob(k){const j=byKey(k);if(!j||keepNotes(k))return;S.sel=k;")
     h = sub(h, """const dr=$("#drawer");const ta=dr.querySelector("textarea[data-dirty='1']");if(ta&&dr.dataset.k===key(j))return;""", """const dr=$("#drawer");if(keepLive(dr,j))return;""")
@@ -147,23 +145,15 @@ def main():
     h = sub(h, 'bad.push("a score like 3.6");', 'bad.push("a score like 3.6");if(p["Date applied"]>D.today)bad.push("a date applied that isn\'t in the future");')
     # Board: a direct way to move a card by touch, and wording that fits the device.
     h = sub(h, 'Also in ${j._sib.length} place${j._sib.length>1?"s":""}</span>`:""}</div></div>', 'Also in ${j._sib.length} place${j._sib.length>1?"s":""}</span>`:""}</div>${opts.drag?moveSel(j):""}</div>')
-    h = sub(h, '<div class="col-empty">${s.id==="wish"?"No saved jobs":"Drag a card here"}</div>', '<div class="col-empty">${s.id==="wish"?"No saved jobs":`<span class="h-desk">Drag a card here</span><span class="h-touch">Nothing here yet</span>`}</div>')
+    h = sub(h, '<div class="col-empty">${s.id==="tracked"?"No saved jobs":"Drag a card here"}</div>', '<div class="col-empty">${s.id==="tracked"?"No saved jobs":`<span class="h-desk">Drag a card here</span><span class="h-touch">Nothing here yet</span>`}</div>')
     h = sub(h, '<p class="hint">Drag cards between', '<p class="hint h-desk">Drag cards between')
     h = sub(h, 'return`<div class="board" role="list">', 'return`<p class="hint h-touch">Scroll sideways for more stages. Tap a card for details, or use Move… on it.</p><div class="board" role="list">')
     # Help: phones get phone help, not keyboard shortcuts.
     h = sub(h, '<div id="help" popover><h2>Shortcuts</h2><dl>',
             '<div id="help" popover><h2 class="h-desk">Shortcuts</h2><h2 class="h-touch">Help</h2><p class="h-touch">Tap a job to open it. Change its status there, or with Move… on the Board. Scrolled down? Tap the open tab to go back up.</p><dl class="h-desk">')
     h = sub(h, "it never applies or sends anything.</p></div>", 'it never applies or sends anything.</p><button class="btn ghost h-touch" type="button" popovertarget="help" popovertargetaction="hide">Close</button></div>')
-    # Rejected and Skipped tiles show exactly what they count, not the shared closed column.
-    h = sub(h, 'if(skip!=="stages"&&S.stages.length&&!S.stages.includes(stageOf(j).id))return false;', 'if(skip!=="stages"&&S.stages.length&&!S.stages.includes(stageOf(j).id))return false;\n if(skip!=="stages"&&S.bkt&&bucket(j)!==S.bkt)return false;')
-    h = sub(h, "+S.hideClosed+S.attention;", "+S.hideClosed+S.attention+!!S.bkt;")
-    h = sub(h, "hideClosed:false,attention:false});", 'hideClosed:false,attention:false,bkt:""});')
-    h = sub(h, 'S.stages.forEach(s=>add(STAGES.find(x=>x.id===s).label,"stages",s));', 'S.stages.forEach(s=>add(S.bkt?BUCKETS.find(b=>b[0]===S.bkt)[1]:STAGES.find(x=>x.id===s).label,"stages",s));')
-    h = sub(h, 'const rm=t.closest("[data-rm]");if(rm){const f=rm.dataset.rm;', 'const rm=t.closest("[data-rm]");if(rm){const f=rm.dataset.rm;if(f==="stages")S.bkt="";')
-    h = sub(h, 'if(t.dataset.f){const f=t.dataset.f;', 'if(t.dataset.f){const f=t.dataset.f;if(f==="stages")S.bkt="";')
-    h = sub(h, 'S.view="list";if(v!=="all"){S.stages=[BUCKET_STAGE[v]]}render();return}', 'S.view="list";S.bkt="";if(v!=="all"){S.stages=[BUCKET_STAGE[v]];if(BUCKET_STAGE[v]==="closed")S.bkt=v}render();return}')
     # Add lead: the right message before data is in, no keyboard on open on a phone, and the real reason inside the dialog (the toast is behind it).
-    h = sub(h, 'return toast("No job sheets found in the spreadsheet",null,true);', 'return toast(READY?"No job lists found.":$("#sync").textContent==="Not signed in"?"Not signed in. Open this page on claude.ai.":"Still loading your jobs. Try again in a moment.",null,true);')
+    h = sub(h, 'return toast("No job sheets found in the spreadsheet",null,true);', 'return toast(READY?"No job lists found.":$("#sync").textContent==="Not signed in"?"Not signed in. Reload and sign in.":"Still loading your jobs. Try again in a moment.",null,true);')
     h = sub(h, '$("#addDlg").showModal();f.Company.focus()}', '$("#addDlg").showModal();if(wide())f.Company.focus();else{const d=$("#addDlg");d.tabIndex=-1;d.focus();d.scrollTop=0}}')
     h = sub(h, 'err.textContent="Not saved. See the message at the bottom of the screen."', 'err.textContent=$("#tmsg").textContent||"Not saved. Try again in a moment.";err.scrollIntoView({block:"center"})')
     h = sub(h, 'err.textContent="Please add "+bad.join(", ")+".";return}', 'err.textContent="Please add "+bad.join(", ")+".";err.scrollIntoView({block:"center"});return}')
@@ -179,13 +169,13 @@ def main():
     h = sub(h, 'function boardCard(j,s){', 'function boardCard(j,s){const v=j._v;')
     h = sub(h, 'Fit score ${esc(sc.raw)} of 5', '${["READY","STRETCH","VERIFY","MONITOR","ARCHIVE"].includes(v.key)?"Attainability":"Previous fit score"} ${esc(sc.raw)} of 5', count=4)
 
+    local_checks = h.replace(read('pc-data.js'), '')
     for bad in ("fetch(", "confirm(", "/api/data", "/api/version", "await load("):
-        if bad in h:
+        if bad in local_checks:
             raise SystemExit(f"port: leftover local-server call {bad!r}")
     target = OUT
     if args.backend == 'pc':
         h = sub(h, '<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>\n', '')
-        h = sub(h, read('data.js'), read('pc-data.js'))
         h = h.replace('Every change saves online at once and reaches the spreadsheet at the daily {{SCAN_TIME}} sync.',
                       'Every saved change goes straight into your spreadsheet.')
         h = h.replace('Saved here now and added to the spreadsheet at the next {{SCAN_TIME}} sync.', 'Adds a row directly to your spreadsheet.')
@@ -193,7 +183,7 @@ def main():
         h = h.replace('Saved · syncs at {{SCAN_TIME}}', 'Saved to spreadsheet')
         h = h.replace('Draft: truth review at {{SCAN_TIME}}', 'Draft: awaiting separate truth review')
         h = sub(h, 'esc(c.updated)', 'esc(pcDate(c.updated))')
-        # Documents tab (Claude · HQ Builder (Opus), 2026-11-05): CVs, cover letters and reports; a job links its files.
+        # Documents tab: CVs, cover letters and reports.
         h = sub(h, '<span class="l">CVs</span></button>\n </nav>', '<span class="l">Documents</span></button>\n </nav>')
         h = sub(h, '<dd>Overview, List, Board, Contacts, Search, CVs</dd>', '<dd>Overview, List, Board, Contacts, Search, Documents</dd>')
         h = sub(h, ' <div class="panel"><div class="panel-h"><h2>Your CVs</h2></div>\n'

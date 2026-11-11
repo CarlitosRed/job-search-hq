@@ -283,7 +283,7 @@ class Writes(Base):
         row, saved = self.t.add({'sheet': 'New (2026-01-06)', 'Company': 'Added Example', 'Role': 'Added Role', 'Link': 'https://example.com/added'})
         self.assertEqual(row, 4)
         self.assertEqual(saved['#'], 'N3')
-        self.assertEqual(saved['My status'], 'Suggested (not applied)')
+        self.assertEqual(saved['My status'], 'Tracked')
         self.assertEqual(self.mirror()['New (2026-01-06)'].cell(4, 2).value, 'Added Example')
         jobs = [j for j in self.t.load()['jobs'] if j['Company'] == 'Added Example']
         self.assertEqual((jobs[0]['_sheet'], jobs[0]['_row']), ('New (2026-01-06)', 4))

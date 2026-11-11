@@ -41,7 +41,7 @@ A secret scan runs on every PR; a red `gitleaks` check means remove the secret a
 - Start from the latest `main` and keep to the "safe to change" files above. Fill in the pull request template.
 - Run the build and the tests before you open it, and paste the results. A PR whose own description says the build fails is not ready.
 - Do not change what a number means (applications, tile counts, percentages) in a styling PR. If you think it should change, say so in the description and let the owner decide. Skipped jobs are not applications.
-- Applications = Applied + Interviewing + Offer + Rejected. Count each job once by current status. The workbook stores `Interview` for the UI's Interviewing stage.
+- Applications = Applied + Interview + Offer + Rejected. Count each job once by current status. Board order is Tracked, Review, Apply, Skipped, Applied, Interview, Offer, Rejected; `tools/tracker/stages.json` defines the stages for every consumer. Stage migration uses `python -I tools/tracker/migrate_stages.py --workbook work/applications-tracker.xlsx --dry-run` before an explicitly chosen `--apply` run. Desktop and phone use the same PC page.
 - Add no third-party requests, remote fonts, analytics, or dependencies. Preserve API behavior and same-origin PC resources.
 - Keep functions the page needs out of the data section (see `docs/REVIEWING-PULL-REQUESTS.md`) and leave the phone header rules alone unless the geometry test still passes.
 - Attach desktop and phone screenshots (fictional data).

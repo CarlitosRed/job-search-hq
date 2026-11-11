@@ -1,0 +1,16 @@
+{
+  "stages": [
+    {"id": "tracked", "name": "Tracked", "means": "Found, not looked at yet", "color": "gray"},
+    {"id": "review", "name": "Review", "means": "Looking at it; Fit shows here", "color": "gray"},
+    {"id": "apply", "name": "Apply", "means": "I want to apply; make the CV", "color": "gray"},
+    {"id": "skipped", "name": "Skipped", "means": "Not applying", "color": "gray"},
+    {"id": "applied", "name": "Applied", "means": "Sent", "color": "gray"},
+    {"id": "interview", "name": "Interview", "means": "In interviews", "color": "gray"},
+    {"id": "offer", "name": "Offer", "means": "Got an offer", "color": "green"},
+    {"id": "rejected", "name": "Rejected", "means": "They said no", "color": "red"}
+  ],
+  "new_row": "Tracked",
+  "rejected_from": ["Applied", "Interview", "Offer"],
+  "legacy": {"Suggested (not applied)": "Review", "Message drafted": "Apply", "CV ready": "Apply"},
+  "without_fit": {"Review": "Tracked"}
+}

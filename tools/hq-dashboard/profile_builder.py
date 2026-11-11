@@ -17,6 +17,7 @@ if RUBRIC_VERSION != policy.RUBRIC_VERSION:
     raise ValueError('Rubric version mismatch: profile bank')
 
 ROOT = hq_settings.data_root()
+NEW_ROW = json.loads((Path(__file__).resolve().parent / '..' / 'tracker' / 'stages.json').read_text(encoding='utf-8'))['new_row']
 OUT = ROOT / "work" / "hq-seed"
 STATUS = re.compile(r"\s*(OPEN|CLOSED|REDIRECTED|UNKNOWN)", re.I)
 
@@ -44,56 +45,66 @@ def workbook():
 def meta():
     # The tracker's "Add lead" dialog needs each lead sheet's columns (some have no Source column).
     sheets = []
-    for ws in workbook():
-        head = [str(h) for h in next(ws.iter_rows(max_row=1, values_only=True), ()) if h]
-        if "My status" in head:
-            sheets.append({"name": ws.title, "columns": head})
+    wb = workbook()
+    try:
+        for ws in wb:
+            head = [str(h) for h in next(ws.iter_rows(max_row=1, values_only=True), ()) if h]
+            if "My status" in head:
+                sheets.append({"name": ws.title, "columns": head})
+    finally:
+        wb.close()
     return {"sheets": sheets, "updated": date.today().isoformat()}
 
 
 def contacts():
     wb = workbook()
-    if "Contacts" not in wb.sheetnames:
-        return
-    rows = list(wb["Contacts"].iter_rows(values_only=True))
-    head = [str(h) if h else "" for h in rows[0]] if rows else []
-    for n, r in enumerate(rows[1:], start=2):
-        d = {h: cell(v) for h, v in zip(head, r) if h}
-        if d.get("Person"):
-            yield doc_id("Contacts", n), {
-                "person": d["Person"], "whereNow": d.get("Where now", ""), "howKnown": d.get("How you know them", ""),
-                "status": d.get("Status", ""), "dateSent": d.get("Date sent", ""), "reply": d.get("Reply", ""),
-                "notes": d.get("Notes", ""), "row": n,
-            }
+    try:
+        if "Contacts" not in wb.sheetnames:
+            return
+        rows = list(wb["Contacts"].iter_rows(values_only=True))
+        head = [str(h) if h else "" for h in rows[0]] if rows else []
+        for n, r in enumerate(rows[1:], start=2):
+            d = {h: cell(v) for h, v in zip(head, r) if h}
+            if d.get("Person"):
+                yield doc_id("Contacts", n), {
+                    "person": d["Person"], "whereNow": d.get("Where now", ""), "howKnown": d.get("How you know them", ""),
+                    "status": d.get("Status", ""), "dateSent": d.get("Date sent", ""), "reply": d.get("Reply", ""),
+                    "notes": d.get("Notes", ""), "row": n,
+                }
+    finally:
+        wb.close()
 
 
 def jobs():
     wb = workbook()
-    for ws in wb:
-        rows = list(ws.iter_rows(values_only=True))
-        if not rows or "My status" not in rows[0]:
-            if rows and any(str(h or "").strip().lower() == "my status" for h in rows[0]):
-                print(f"WARNING: sheet {ws.title!r} skipped: its My status header has extra spaces", file=sys.stderr)
-            continue
-        head = [str(h) if h else "" for h in rows[0]]
-        checks = newest_first(head)
-        for n, r in enumerate(rows[1:], start=2):
-            d = {h: cell(v) for h, v in zip(head, r) if h}
-            if not d.get("Company"):
+    try:
+        for ws in wb:
+            rows = list(ws.iter_rows(values_only=True))
+            if not rows or "My status" not in rows[0]:
+                if rows and any(str(h or "").strip().lower() == "my status" for h in rows[0]):
+                    print(f"WARNING: sheet {ws.title!r} skipped: its My status header has extra spaces", file=sys.stderr)
                 continue
-            # A "not re-checked" line says nothing, so a real result in an older column wins over it.
-            latest = next((h for h in checks if STATUS.match(d.get(h, ""))), None) or next((h for h in checks if d.get(h)), checks[0] if checks else "")
-            raw = d.get(latest, "")
-            m = STATUS.match(raw)
-            yield doc_id(ws.title, n), {
-                "num": d.get("#", ""), "company": d.get("Company", ""), "role": d.get("Role", ""), "where": d.get("Where", ""),
-                "posted": d.get("Posted", ""), "score": d.get("Score", ""), "verdict": d.get("Verdict", ""),
-                "status": d.get("My status", "") or "Suggested (not applied)", "dateApplied": d.get("Date applied", ""),
-                "cvUsed": d.get("CV used", ""), "source": d.get("Source", ""), "link": d.get("Link", ""),
-                "notes": d.get("Notes", ""), "check": m.group(1).upper() if m else "", "checkNote": raw[:300],
-                "checkDate": (re.search(r"\d{4}-\d{2}-\d{2}", latest) or [""])[0] if latest else "",
-                "sheet": ws.title, "row": n,
-            }
+            head = [str(h) if h else "" for h in rows[0]]
+            checks = newest_first(head)
+            for n, r in enumerate(rows[1:], start=2):
+                d = {h: cell(v) for h, v in zip(head, r) if h}
+                if not d.get("Company"):
+                    continue
+                # A "not re-checked" line says nothing, so a real result in an older column wins over it.
+                latest = next((h for h in checks if STATUS.match(d.get(h, ""))), None) or next((h for h in checks if d.get(h)), checks[0] if checks else "")
+                raw = d.get(latest, "")
+                m = STATUS.match(raw)
+                yield doc_id(ws.title, n), {
+                    "num": d.get("#", ""), "company": d.get("Company", ""), "role": d.get("Role", ""), "where": d.get("Where", ""),
+                    "posted": d.get("Posted", ""), "score": d.get("Score", ""), "verdict": d.get("Verdict", ""),
+                    "status": d.get("My status", "") or NEW_ROW, "dateApplied": d.get("Date applied", ""),
+                    "cvUsed": d.get("CV used", ""), "source": d.get("Source", ""), "link": d.get("Link", ""),
+                    "notes": d.get("Notes", ""), "check": m.group(1).upper() if m else "", "checkNote": raw[:300],
+                    "checkDate": (re.search(r"\d{4}-\d{2}-\d{2}", latest) or [""])[0] if latest else "",
+                    "sheet": ws.title, "row": n,
+                }
+    finally:
+        wb.close()
 
 
 def strip_open_section(md):
