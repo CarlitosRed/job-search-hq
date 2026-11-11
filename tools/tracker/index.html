@@ -13,9 +13,8 @@
  --amber:#d97706;--amber-ink:#b45309;--amber-soft:#fffbeb;
  --red:#dc2626;--red-ink:#b91c1c;--red-soft:#fef2f2;
  --sel-bar:#b8b2a5;--subtle-border:rgba(0,0,0,0.12);--float-shadow:0 8px 24px rgba(35,32,24,.07),0 2px 6px rgba(35,32,24,.04);--shadow:0 1px 3px rgba(35,32,24,.05),0 4px 14px rgba(35,32,24,.06);--shadow-lg:0 12px 36px rgba(35,32,24,.14);
- --tc-all:#0f172a;--tc-wish:#7c3aed;--tc-ready:#d97706;--tc-applied:#0284c7;--tc-interview:#db2777;--tc-offer:#059669;--tc-rejected:#dc2626;--tc-skipped:#64748b;
---conn-wish:#6d28d9;--conn-ready:#b45309;--conn-applied:#0369a1;--conn-interview:#be185d;--conn-offer:#047857;--conn-rejected:#b91c1c;--conn-skipped:#475569;--conn-other:#475569;--conn-zero:#64748b;
- --sk-tracked:var(--tc-all);--sk-wish:var(--tc-wish);--sk-ready:var(--tc-ready);--sk-applied:var(--tc-applied);--sk-skip:var(--tc-skipped);--sk-wait:var(--tc-applied);--sk-int:var(--tc-interview);--sk-rej:var(--tc-rejected);--sk-offer:var(--tc-offer);--sk-prog:var(--green);
+ --tc-all:var(--ink);--tc-tracked:var(--mute);--tc-review:var(--mute);--tc-apply:var(--mute);--tc-skipped:var(--mute);--tc-applied:var(--mute);--tc-interview:var(--mute);--tc-offer:var(--green);--tc-rejected:var(--red);--tc-other:var(--mute);
+--conn-tracked:var(--mute);--conn-review:var(--mute);--conn-apply:var(--mute);--conn-skipped:var(--mute);--conn-applied:var(--mute);--conn-interview:var(--mute);--conn-offer:var(--green);--conn-rejected:var(--red);--conn-other:var(--mute);--conn-zero:var(--mute);
  --av-l:92%;--av-s:70%;--av-fl:30%;
  --r:16px;--r-sm:10px;--on-blue:#fff;
 }
@@ -27,9 +26,8 @@
  --amber:#f0b54a;--amber-ink:#f7d58f;--amber-soft:#3a2d12;
  --red:#f07474;--red-ink:#ffb3b3;--red-soft:#3d1c22;
  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35);--shadow-lg:0 12px 40px rgba(0,0,0,.6);
- --tc-all:#F8FAFC;--tc-wish:#A78BFA;--tc-ready:#FBBF24;--tc-applied:#38BDF8;--tc-interview:#F472B6;--tc-offer:#34D399;--tc-rejected:#F87171;--tc-skipped:#94A3B8;
---conn-wish:#a78bfa;--conn-ready:#fbbf24;--conn-applied:#38bdf8;--conn-interview:#f472b6;--conn-offer:#34d399;--conn-rejected:#f87171;--conn-skipped:#94a3b8;--conn-other:#94a3b8;--conn-zero:#94a3b8;
- --sk-tracked:var(--tc-all);--sk-wish:var(--tc-wish);--sk-ready:var(--tc-ready);--sk-applied:var(--tc-applied);--sk-skip:var(--tc-skipped);--sk-wait:var(--tc-applied);--sk-int:var(--tc-interview);--sk-rej:var(--tc-rejected);--sk-offer:var(--tc-offer);--sk-prog:var(--green);
+ --tc-all:var(--ink);--tc-tracked:var(--mute);--tc-review:var(--mute);--tc-apply:var(--mute);--tc-skipped:var(--mute);--tc-applied:var(--mute);--tc-interview:var(--mute);--tc-offer:var(--green);--tc-rejected:var(--red);--tc-other:var(--mute);
+--conn-tracked:var(--mute);--conn-review:var(--mute);--conn-apply:var(--mute);--conn-skipped:var(--mute);--conn-applied:var(--mute);--conn-interview:var(--mute);--conn-offer:var(--green);--conn-rejected:var(--red);--conn-other:var(--mute);--conn-zero:var(--mute);
  --av-l:26%;--av-s:38%;--av-fl:86%;--on-blue:#0b1530;
 }}
 /* Dark by default unless data-theme="light" */
@@ -40,9 +38,8 @@
  --amber:#f0b54a;--amber-ink:#f7d58f;--amber-soft:#3a2d12;
  --red:#f07474;--red-ink:#ffb3b3;--red-soft:#3d1c22;
  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35);--shadow-lg:0 12px 40px rgba(0,0,0,.6);
- --tc-all:#F8FAFC;--tc-wish:#A78BFA;--tc-ready:#FBBF24;--tc-applied:#38BDF8;--tc-interview:#F472B6;--tc-offer:#34D399;--tc-rejected:#F87171;--tc-skipped:#94A3B8;
---conn-wish:#a78bfa;--conn-ready:#fbbf24;--conn-applied:#38bdf8;--conn-interview:#f472b6;--conn-offer:#34d399;--conn-rejected:#f87171;--conn-skipped:#94a3b8;--conn-other:#94a3b8;--conn-zero:#94a3b8;
- --sk-tracked:var(--tc-all);--sk-wish:var(--tc-wish);--sk-ready:var(--tc-ready);--sk-applied:var(--tc-applied);--sk-skip:var(--tc-skipped);--sk-wait:var(--tc-applied);--sk-int:var(--tc-interview);--sk-rej:var(--tc-rejected);--sk-offer:var(--tc-offer);--sk-prog:var(--green);
+ --tc-all:var(--ink);--tc-tracked:var(--mute);--tc-review:var(--mute);--tc-apply:var(--mute);--tc-skipped:var(--mute);--tc-applied:var(--mute);--tc-interview:var(--mute);--tc-offer:var(--green);--tc-rejected:var(--red);--tc-other:var(--mute);
+--conn-tracked:var(--mute);--conn-review:var(--mute);--conn-apply:var(--mute);--conn-skipped:var(--mute);--conn-applied:var(--mute);--conn-interview:var(--mute);--conn-offer:var(--green);--conn-rejected:var(--red);--conn-other:var(--mute);--conn-zero:var(--mute);
  --av-l:26%;--av-s:38%;--av-fl:86%;--on-blue:#0b1530;
 }
 :root[data-theme="light"]{color-scheme:light;
@@ -52,9 +49,8 @@
  --amber:#d97706;--amber-ink:#b45309;--amber-soft:#fffbeb;
  --red:#dc2626;--red-ink:#b91c1c;--red-soft:#fef2f2;
  --sel-bar:#b8b2a5;--subtle-border:rgba(0,0,0,0.12);--float-shadow:0 8px 24px rgba(35,32,24,.07),0 2px 6px rgba(35,32,24,.04);--shadow:0 1px 3px rgba(35,32,24,.05),0 4px 14px rgba(35,32,24,.06);--shadow-lg:0 12px 36px rgba(35,32,24,.14);
- --tc-all:#0f172a;--tc-wish:#7c3aed;--tc-ready:#d97706;--tc-applied:#0284c7;--tc-interview:#db2777;--tc-offer:#059669;--tc-rejected:#dc2626;--tc-skipped:#64748b;
---conn-wish:#6d28d9;--conn-ready:#b45309;--conn-applied:#0369a1;--conn-interview:#be185d;--conn-offer:#047857;--conn-rejected:#b91c1c;--conn-skipped:#475569;--conn-other:#475569;--conn-zero:#64748b;
- --sk-tracked:var(--tc-all);--sk-wish:var(--tc-wish);--sk-ready:var(--tc-ready);--sk-applied:var(--tc-applied);--sk-skip:var(--tc-skipped);--sk-wait:var(--tc-applied);--sk-int:var(--tc-interview);--sk-rej:var(--tc-rejected);--sk-offer:var(--tc-offer);--sk-prog:var(--green);
+ --tc-all:var(--ink);--tc-tracked:var(--mute);--tc-review:var(--mute);--tc-apply:var(--mute);--tc-skipped:var(--mute);--tc-applied:var(--mute);--tc-interview:var(--mute);--tc-offer:var(--green);--tc-rejected:var(--red);--tc-other:var(--mute);
+--conn-tracked:var(--mute);--conn-review:var(--mute);--conn-apply:var(--mute);--conn-skipped:var(--mute);--conn-applied:var(--mute);--conn-interview:var(--mute);--conn-offer:var(--green);--conn-rejected:var(--red);--conn-other:var(--mute);--conn-zero:var(--mute);
  --av-l:92%;--av-s:70%;--av-fl:30%;--on-blue:#fff;
 }
 *{box-sizing:border-box}
@@ -175,14 +171,15 @@ main{flex:1 0 auto;width:100%;max-width:1680px;margin:0 auto;padding:18px 24px 6
 .tile{background:transparent;border:0;padding:8px 12px 8px 16px;text-align:left;display:flex;flex-direction:column;gap:4px;position:relative;border-radius:10px;cursor:pointer;transition:background .2s ease}
 .tile:hover,.tile:focus-visible{background:color-mix(in srgb,var(--soft) 60%,transparent)}
 .tile[data-tile="all"]{--tc:var(--tc-all)}
-.tile[data-tile="wish"]{--tc:var(--tc-wish)}
-.tile[data-tile="ready"]{--tc:var(--tc-ready)}
+.tile[data-tile="tracked"]{--tc:var(--tc-tracked)}
+.tile[data-tile="review"]{--tc:var(--tc-review)}
+.tile[data-tile="apply"]{--tc:var(--tc-apply)}
 .tile[data-tile="applied"]{--tc:var(--tc-applied)}
 .tile[data-tile="interview"]{--tc:var(--tc-interview)}
 .tile[data-tile="offer"]{--tc:var(--tc-offer)}
 .tile[data-tile="rejected"]{--tc:var(--tc-rejected)}
 .tile[data-tile="skipped"]{--tc:var(--tc-skipped)}
-.tile[data-tile="other"]{--tc:var(--tc-skipped)}
+.tile[data-tile="other"]{--tc:var(--tc-other)}
 .tile::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3.5px;border-radius:4px;background:var(--tc,var(--line));transition:width .25s ease,box-shadow .25s ease,transform .25s ease}
 .tile:hover::before,.tile:focus-visible::before,.tile.flip::before{width:5px;transform:scaleY(1.06);box-shadow:0 0 12px color-mix(in srgb,var(--tc) 70%,transparent)}
 .tile b{position:relative;display:block;height:40px;line-height:1;perspective:600px;transform-style:preserve-3d}
@@ -196,16 +193,52 @@ main{flex:1 0 auto;width:100%;max-width:1680px;margin:0 auto;padding:18px 24px 6
 .tile small{color:var(--mute);font-size:11.5px;line-height:1.35;max-height:0;opacity:0;transform-origin:top center;transform:translateY(-8px) rotateX(-45deg);overflow:hidden;transition:max-height .36s cubic-bezier(.16,1,.3,1),opacity .28s ease,transform .36s cubic-bezier(.16,1.25,.4,1);pointer-events:none;margin-top:0}
 .tile:hover small,.tile:focus-visible small,.tile.flip small{max-height:48px;opacity:1;transform:translateY(0) rotateX(0deg);margin-top:4px}
 
-/* Current stage counts */
+/* sankey - fine lines & tree branching animation */
 .sk-wrap{overflow-x:hidden;margin:0;padding:4px 0;width:100%}
-#sk{width:100%;max-width:880px;height:auto;display:block;margin:0 auto}
-#sk.compact{max-width:360px}
+#sk{width:100%;max-width:960px;height:auto;display:block;margin:0 auto}
+#sk.compact{max-width:360px;margin:0 auto}
+#sk .lnk-wrap{outline:none}
+#sk .lnk{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;animation:growBranch .68s cubic-bezier(.16,1,.3,1) forwards;transition:stroke-width .22s cubic-bezier(.16,1,.3,1),filter .22s ease;pointer-events:none}
+#sk .lnk[data-tier="0"]{animation-delay:.06s}
+#sk .lnk[data-tier="1"]{animation-delay:.46s}
+#sk .lnk[data-tier="2"]{animation-delay:.86s}
+#sk .lnk[data-tier="3"]{animation-delay:1.26s}
+#sk text{font-size:13.5px;fill:var(--ink);paint-order:stroke;stroke:var(--card);stroke-width:4px;stroke-linejoin:round;user-select:none}
+#sk.compact text{font-size:13.5px;stroke-width:3.5px}
+#sk text.v{font-weight:700}
+#sk .p{fill:var(--mute);font-size:12.5px}
+#sk.compact .p{font-size:13px}
 #sk .nd{cursor:default}
-#sk text{font-size:13px;fill:var(--ink)}
-#sk .stage-track{fill:var(--line)}
-#sk .stage-value{fill:var(--mute);font-variant-numeric:tabular-nums}
+#sk .nd-dot{transform-box:fill-box;transform-origin:center;transition:r .22s cubic-bezier(.34,1.56,.64,1),filter .22s ease}
+#sk .nd[data-col="0"] .nd-dot,#sk .nd[data-row="0"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .02s both}
+#sk .nd[data-col="1"] .nd-dot,#sk .nd[data-row="1"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .42s both}
+#sk .nd[data-col="2"] .nd-dot,#sk .nd[data-row="2"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .82s both}
+#sk .nd[data-col="3"] .nd-dot,#sk .nd[data-row="3"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) 1.22s both}
+#sk .nd[data-col="4"] .nd-dot,#sk .nd[data-row="4"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) 1.62s both}
+#sk .nd[data-col="0"] text,#sk .nd[data-row="0"] text{animation:fadeInLabel .35s ease .06s both}
+#sk .nd[data-col="1"] text,#sk .nd[data-row="1"] text{animation:fadeInLabel .35s ease .46s both}
+#sk .nd[data-col="2"] text,#sk .nd[data-row="2"] text{animation:fadeInLabel .35s ease .86s both}
+#sk .nd[data-col="3"] text,#sk .nd[data-row="3"] text{animation:fadeInLabel .35s ease 1.26s both}
+#sk .nd[data-col="4"] text,#sk .nd[data-row="4"] text{animation:fadeInLabel .35s ease 1.66s both}
+#sk .nd:hover .nd-dot,#sk .nd:focus-visible .nd-dot{r:8.5px;filter:drop-shadow(0 0 8px currentColor)}
 .sk-note{font-size:12px;color:var(--mute);margin:8px 0 0;line-height:1.4}
 .sk-empty{display:flex;align-items:center;gap:8px;color:var(--mute);font-size:12.5px;margin-top:6px}
+
+#sk .lnk[data-tier="4"]{animation-delay:1.66s}
+#sk .lnk[data-tier="5"]{animation-delay:2.06s}
+#sk .nd[data-col="5"] .nd-dot,#sk .nd[data-row="5"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) 2.02s both}
+#sk .nd[data-col="5"] text,#sk .nd[data-row="5"] text{animation:fadeInLabel .35s ease 2.06s both}
+@keyframes growBranch{0%{stroke-dashoffset:100}100%{stroke-dashoffset:0}}
+@keyframes popDot{0%{transform:scale(0);opacity:0}65%{transform:scale(1.32);opacity:1}100%{transform:scale(1);opacity:1}}
+@keyframes fadeInLabel{0%{opacity:0;transform:translateY(3px)}100%{opacity:1;transform:translateY(0)}}
+@media (prefers-reduced-motion:reduce){
+ #sk .lnk,#sk [data-tier]{animation:none!important;animation-delay:0s!important;stroke-dashoffset:0!important;opacity:1!important}
+ #sk .nd-dot,#sk [data-col] .nd-dot,#sk [data-row] .nd-dot{animation:none!important;animation-delay:0s!important;transform:none!important;opacity:1!important}
+ #sk text,#sk [data-col] text,#sk [data-row] text{animation:none!important;animation-delay:0s!important;opacity:1!important;transform:none!important}
+}
+html.no-anim #sk .lnk,html.no-anim #sk [data-tier]{animation:none!important;animation-delay:0s!important;stroke-dashoffset:0!important;opacity:1!important}
+html.no-anim #sk .nd-dot,html.no-anim #sk [data-col] .nd-dot,html.no-anim #sk [data-row] .nd-dot{animation:none!important;animation-delay:0s!important;transform:none!important;opacity:1!important}
+html.no-anim #sk text,html.no-anim #sk [data-col] text,html.no-anim #sk [data-row] text{animation:none!important;animation-delay:0s!important;opacity:1!important;transform:none!important}
 .legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--mute);font-size:12px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 #tip{position:fixed;z-index:60;pointer-events:none;background:var(--ink);color:var(--bg);padding:7px 10px;border-radius:9px;font-size:12.5px;box-shadow:var(--shadow-lg);opacity:0;transition:opacity .12s;max-width:260px}
@@ -924,16 +957,49 @@ function counts(js,quiet){const c={total:js.length,pct:{}};BUCKETS.forEach(([k])
 function pcts(vals){const t=vals.reduce((a,b)=>a+b,0);return vals.map(v=>t?Math.round(v*1000/t)/10:0)}
 const pctTol=vals=>Math.max(0.1,0.05*vals.filter(v=>v>0).length)+1e-9;
 const f1=v=>`${(+v).toFixed(1)}%`;
-const TILE_COLORS=Object.fromEntries([["all","var(--ink)"],...STAGES.map(s=>[s.id,s.c])]);
-/* Each job contributes to exactly one current stage. */
+const TILE_COLORS=Object.fromEntries([["all","var(--tc-all)"],...STAGES.map(s=>[s.id,`var(--tc-${s.id})`])]);
 function sankey(js,C,phone=innerWidth<960){
- const nodes=STAGES.filter(s=>s.id!=="other"||C.other),W=phone?360:880,H=nodes.length*36+16;
- const max=Math.max(1,...nodes.map(s=>C[s.id])),barX=96;
- const valueWidth=Math.max(...nodes.map(s=>`${C[s.id]} · ${f1(C.pct[s.id])}`.length))*8+12,barWidth=W-barX-valueWidth-8;
- let out='<desc>Current stage counts. Each job counts once.</desc>';
- nodes.forEach((s,i)=>{const y=26+i*36,n=C[s.id],width=n/max*barWidth;
-  out+=`<g class="nd" data-key="${s.id}" data-row="${i}" data-n="${n}"><text x="4" y="${y}">${esc(s.label)}</text><rect class="stage-track" x="${barX}" y="${y-6}" width="${barWidth}" height="2" rx="1"/>${n?`<rect x="${barX}" y="${y-10}" width="${width}" height="10" rx="2" style="fill:${s.c}"/>`:""}<text class="stage-value" x="${barX+barWidth+10}" y="${y}">${n} · ${f1(C.pct[s.id])}</text></g>`});
- return`<svg id="sk" class="${phone?"compact":""}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Current stage counts">${out}</svg>`
+ const TIERS={tracked:0,review:1,apply:2,skipped:3,applied:3,interview:4,rejected:4,offer:5,other:1};
+ const nodes=STAGES.filter(s=>s.id!=="other"||C.other);
+ const N=Object.fromEntries(nodes.map(s=>[s.id,s]));
+ const L=[["tracked","review"],["review","apply"],["apply","skipped"],["apply","applied"],["applied","interview"],["applied","rejected"],["interview","offer"]];
+ if(C.other)L.push(["tracked","other"]);
+ const P=phone?{
+  tracked:{cx:112,cy:34},review:{cx:112,cy:126},apply:{cx:112,cy:218},
+  applied:{cx:112,cy:310},interview:{cx:112,cy:402},offer:{cx:112,cy:494},
+  skipped:{cx:222,cy:310},rejected:{cx:222,cy:402},other:{cx:222,cy:126}
+ }:{
+  tracked:{cx:65,cy:128},review:{cx:215,cy:128},apply:{cx:365,cy:128},
+  applied:{cx:515,cy:128},interview:{cx:665,cy:128},offer:{cx:815,cy:128},
+  skipped:{cx:515,cy:245},rejected:{cx:665,cy:245},other:{cx:215,cy:40}
+ };
+ const W=phone?300:960,H=phone?550:300,dotR=phone?5.5:6;
+ const note="Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown. Rejection can happen before or after an interview.";
+ let out=`<desc>${note}</desc>`;
+ L.forEach(([a,b])=>{
+  const v=C[b],A=P[a],B=P[b],tier=TIERS[a];
+  const col=v>0?`var(--conn-${b})`:"var(--conn-zero)";
+  let pathD;
+  if(phone){
+   const x0=A.cx,y0=A.cy+dotR,x1=B.cx,y1=B.cy-dotR,ym=(y0+y1)/2;
+   pathD=`M${x0},${y0}C${x0},${ym} ${x1},${ym} ${x1},${y1}`;
+  }else{
+   const x0=A.cx+dotR,y0=A.cy,x1=B.cx-dotR,y1=B.cy,xm=(x0+x1)/2;
+   pathD=`M${x0},${y0}C${xm},${y0} ${xm},${y1} ${x1},${y1}`;
+  }
+  const label=`${N[a].label} to ${N[b].label}`;
+  out+=`<g class="lnk-wrap"><path class="lnk" data-tier="${tier}" data-link="${label}" pathLength="100" d="${pathD}" style="stroke:${col};color:${col};stroke-width:${v>0?2.85:2};opacity:1;${v>0?"":"stroke-dasharray:4 4;"}"><title>${label}</title></path></g>`;
+ });
+ nodes.forEach(s=>{
+  const key=s.id,p=P[key],n=C[key],pct=f1(C.pct[key]),col=TILE_COLORS[key];
+  const side=phone&&!["skipped","rejected","other"].includes(key);
+  const lx=side?50:p.cx,ly=p.cy+(side?-8:phone?20:25);
+  out+=`<g class="nd" data-key="${key}" data-${phone?"row":"col"}="${TIERS[key]}" data-n="${n}" data-tip="<b>${s.label}</b><br>${n} job${n===1?"":"s"} · ${pct} of all jobs">
+  <circle cx="${p.cx}" cy="${p.cy}" r="${dotR+10}" fill="transparent"/>
+  <circle class="nd-dot" cx="${p.cx}" cy="${p.cy}" r="${dotR}" style="fill:${col};color:${col}"/>
+  <text x="${lx}" y="${ly}" text-anchor="middle"><tspan x="${lx}"><tspan class="v" font-weight="700">${n}</tspan> <tspan class="p">${pct}</tspan></tspan><tspan x="${lx}" dy="16">${s.label}</tspan></text></g>`;
+ });
+ return`<svg id="sk" class="${phone?"compact":""}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Job search flow: ${nodes.map(s=>C[s.id]+" "+s.label+" ("+f1(C.pct[s.id])+")").join(", ")}. ${note}">${out}</svg>`;
 }
 /* ---------- views ---------- */
 function attnBtn(){const n=D.jobs.filter(j=>matches(j,"attention")&&attention(j)).length;return`<button class="btn ${S.attention?"":"ghost"} attn" data-act="attn" aria-pressed="${S.attention}">${IC.warn}Needs attention <span class="count">${n}</span></button>`}
@@ -945,7 +1011,7 @@ function overview(js){const st=j=>stageOf(j).id,C=counts(js);
  const why=attention;
  return`<section class="tiles" aria-label="Summary. All jobs equals the sum of the stage tiles; each job counts once, by its current status.">${T.map(t=>{const pct=t[4]==="all"?"100%":f1(C.pct[t[4]]);const col=TILE_COLORS[t[4]]||`var(${t[3]})`;return`<button class="tile ${t[4]==="all"?"total":""}" style="--tc:${col}" data-tile="${t[4]}" data-n="${t[0]}" data-pct="${pct}"><b><span class="num">${t[0]}</span><span class="pct">${pct}</span></b><span>${t[1]}</span><small>${t[2]}</small></button>`}).join("")}</section>
  <section class="panel ov-chart-panel" aria-labelledby="skh"><div class="panel-h"><h2 id="skh">Job search summary</h2><p>${activeCount()||S.q?"Filtered view":"All lists"}</p></div>
-  <div class="sk-wrap">${sankey(js,C)}</div><p class="sk-note">Current stage counts. Each job counts once.</p>${appliedN?"":`<div class="sk-empty">${IC.info.replace("<svg",'<svg width="16" height="16"')}No applications yet. Once you mark one Applied, it flows on to interviews, offers or rejections here.</div>`}</section>
+  <div class="sk-wrap">${sankey(js,C)}</div><p class="sk-note">Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown. Rejection can happen before or after an interview.</p>${appliedN?"":`<div class="sk-empty">${IC.info.replace("<svg",'<svg width="16" height="16"')}No applications yet. Once you mark one Applied, it flows on to interviews, offers or rejections here.</div>`}</section>
  <section class="panel" style="margin-top:16px"><div class="panel-h"><h2>Needs attention</h2><span class="chip ${att.length?"r":"g"}">${att.length}</span>${att.length?`<button class="btn ghost sp attn" data-act="attn-list">Show all</button>`:""}</div>
   ${att.length?`<ul class="mini" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:6px">${att.slice(0,6).map(j=>`<li><button data-open="${esc(key(j))}">${av(j.Company,"sm")}<span class="t"><b>${esc(j.Company)} <span style="font-weight:500;color:var(--mute)">· ${esc(place(j))}</span></b><small>${esc(why(j))}</small></span></button></li>`).join("")}</ul>`:`<p style="color:var(--mute);margin:0;font-size:13px">All clear: nothing closed, drafted or waiting on you.</p>`}</section>`}
 
@@ -1296,14 +1362,25 @@ $("#addForm").addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.tagNam
 window.trackerSelfTest=function(){
  const lines=[],check=(ok,msg)=>lines.push((ok?"ok ":"FAIL ")+msg);
  const mk=(s,i)=>({Company:"Example "+i,Role:"Example role","My status":s,_sheet:"selftest",_row:i,_sib:[],_reg:"OTHER",_sc:null,_v:verdict(""),_open:"open"});
- const fixtures=[[],D.jobs,STAGE_DATA.stages.map((s,i)=>mk(s.name,i)),[mk("Unknown status",0)],STAGE_DATA.stages.flatMap((s,i)=>Array.from({length:i+1},(_,n)=>mk(s.name,i*10+n)))];
+ const fixtures=[[],D.jobs,filtered(),STAGE_DATA.stages.map((s,i)=>mk(s.name,i)),[mk("Unknown status",0)],[...STAGE_DATA.stages.map((s,i)=>mk(s.name,i)),mk("Unknown status",99)],STAGE_DATA.stages.flatMap((s,i)=>Array.from({length:i+1},(_,n)=>mk(s.name,i*10+n)))];
  fixtures.forEach((js,i)=>{
   const C=counts(js,true),box=document.createElement("div");box.innerHTML=overview(js);
   check(!C.problems.length,"fixture "+i+" counts and percentages");
   const tiles=[...box.querySelectorAll("[data-tile]")].filter(t=>t.dataset.tile!=="all");
-  check(tiles.reduce((n,t)=>n+Number(t.dataset.n),0)===js.length,"fixture "+i+" tile totals");
+  const totalTile=box.querySelector('[data-tile="all"]');
+  check(Number(totalTile.dataset.n)===js.length&&tiles.reduce((n,t)=>n+Number(t.dataset.n),0)===js.length,"fixture "+i+" total tile = stage tiles = jobs");
+  check(!js.length||Math.abs(tiles.reduce((n,t)=>n+parseFloat(t.dataset.pct),0)-100)<=pctTol(tiles.map(t=>Number(t.dataset.n))),"fixture "+i+" tile percentages");
+  check(box.querySelector(".sk-note")?.textContent==="Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown. Rejection can happen before or after an interview.","fixture "+i+" schematic note");
   [false,true].forEach(phone=>{box.innerHTML=sankey(js,C,phone);const nodes=[...box.querySelectorAll(".nd")];
-   check(nodes.length===STAGE_DATA.stages.length+(C.other?1:0),"fixture "+i+" flow buckets");
+   const name="fixture "+i+(phone?" phone":" desktop"),keys=nodes.map(n=>n.dataset.key);
+   const expectedKeys=["tracked","review","apply","skipped","applied","interview","offer","rejected",...(C.other?["other"]:[])];
+   check(new Set(keys).size===keys.length,name+" unique node keys");
+   check(keys.length===expectedKeys.length&&expectedKeys.every(k=>keys.includes(k)),name+" exact expected node keys");
+   const expectedLinks=["Tracked to Review","Review to Apply","Apply to Skipped","Apply to Applied","Applied to Interview","Applied to Rejected","Interview to Offer",...(C.other?["Tracked to Other status"]:[])];
+   const links=[...box.querySelectorAll(".lnk")];
+   check(links.length===expectedLinks.length&&new Set(links.map(l=>l.dataset.link)).size===expectedLinks.length&&expectedLinks.every(e=>links.some(l=>l.dataset.link===e)),name+" exact expected links");
+   check(links.every(l=>l.getAttribute("pathLength")==="100"&&l.getAttribute("d").includes("C")),name+" full-length cubic links");
+   check(nodes.every(n=>n.hasAttribute(phone?"data-row":"data-col")&&n.querySelector(".nd-dot")&&n.dataset.tip),name+" tiered dots and hover tips");
    check(nodes.reduce((n,x)=>n+Number(x.dataset.n),0)===js.length,"fixture "+i+" flow totals");
    check(nodes.every(x=>Number(x.dataset.n)===C[x.dataset.key]),"fixture "+i+" flow counts")});
  });
