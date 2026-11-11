@@ -4,6 +4,14 @@
 # hosted/tools.js, hosted/hosted.css) and writes tools/hq-dashboard/index.html, which is what gets published.
 # Every replacement must match exactly the expected number of times, so a tracker change that breaks the port fails loudly.
 # Run: python -I tools/hq-dashboard/port_tracker.py
+# Resolve settings beside this module under isolated execution.
+import importlib.util as _settings_util
+from pathlib import Path as _SettingsPath
+_settings_spec = _settings_util.spec_from_file_location('hq_owner_settings', _SettingsPath(__file__).with_name('hq_settings.py'))
+hq_settings = _settings_util.module_from_spec(_settings_spec)
+_settings_spec.loader.exec_module(hq_settings)
+SETTINGS = hq_settings.load()
+
 import re
 import argparse
 from datetime import date
@@ -62,9 +70,9 @@ def main():
     h = sub(h, "<dt><kbd>1</kbd>–<kbd>4</kbd></dt><dd>Overview, List, Board, Contacts</dd>",
             "<dt><kbd>1</kbd>–<kbd>6</kbd></dt><dd>Overview, List, Board, Contacts, Search, CVs</dd>")
     h = sub(h, "<p>Every change saves straight into the spreadsheet and can be undone from the message at the bottom. This page only records; it never applies or sends anything.</p>",
-            "<p>Every change saves online at once and reaches the spreadsheet at the next sync. Undo from the message at the bottom. This page only records and drafts; it never applies or sends anything.</p>")
+            "<p>Every change saves online at once and reaches the spreadsheet at the daily {{SCAN_TIME}} sync. Undo from the message at the bottom. This page only records and drafts; it never applies or sends anything.</p>")
     h = sub(h, "<p class=\"sub\">Adds a new row to the spreadsheet. It's recorded only; applying stays yours.</p>",
-            "<p class=\"sub\">Saved here now and added to the spreadsheet at the next sync. It's recorded only; applying stays yours.</p>")
+            "<p class=\"sub\">Saved here now and added to the spreadsheet at the next {{SCAN_TIME}} sync. It's recorded only; applying stays yours.</p>")
     h = sub(h, 'id="addSave" type="button">Add to spreadsheet</button>', 'id="addSave" type="button">Add lead</button>')
     h = sub(h, '<main id="main"><div class="loading"><div class="sk-line"></div><div class="sk-line" style="height:280px"></div></div></main>',
             '<main id="main"><div class="loading"><div class="sk-line"></div><div class="sk-line" style="height:280px"></div></div></main>\n' + read("views.html").rstrip())
@@ -96,7 +104,7 @@ def main():
     h = sub(h, 'if(/^[1-4]$/.test(e.key)){S.view=["overview","list","board","contacts"][+e.key-1];',
             'if(/^[1-6]$/.test(e.key)){S.view=["overview","list","board","contacts","search","review"][+e.key-1];')
     h = sub(h, "<dt>Spreadsheet</dt><dd>${esc(j._sheet)}, row ${j._row}${j[\"#\"]?` (#${esc(j[\"#\"])})`:\"\"}</dd>",
-            "<dt>Spreadsheet</dt><dd>${j._added?`${esc(j._sheet)} · added here, goes in at the next sync`:`${esc(j._sheet)}, row ${esc(j._row)}${j[\"#\"]?` (#${esc(j[\"#\"])})`:\"\"}`}</dd>")
+            "<dt>Spreadsheet</dt><dd>${j._added?`${esc(j._sheet)} · added here, goes in at the next {{SCAN_TIME}} sync`:`${esc(j._sheet)}, row ${esc(j._row)}${j[\"#\"]?` (#${esc(j[\"#\"])})`:\"\"}`}</dd>")
     h = sub(h, '<b>This posting looks closed.</b> Last open check: ${esc(j._check)}${j._checkdate?` (${esc(j._checkdate)})`:""}.',
             '<b>This posting looks closed.</b> Last check${j._checkdate?` (${esc(j._checkdate)})`:""}: ${esc(checkText(j))}.')
     h = sub(h, '<span class="chip ${j._open==="open"?"g":j._open==="closed"?"r":""}"><i class="dot"></i>${esc(j._check)}</span>',
@@ -106,16 +114,16 @@ def main():
             '<button class="btn ghost" data-act="review" data-id="${esc(j._id)}">${IC.star}Review fit + draft CV</button></div>')
     h = sub(h, 'if(v==="add")openAdd();', 'if(v==="add")openAdd();if(v==="review"){const j=byKey(a.dataset.id);if(j)reviewFromJob(j)}')
     h = sub(h, "note-${j._row}", "note-${esc(j._id)}", count=2)
-    h = sub(h, '"Saved to the spreadsheet · ":"Saved to the Notes column · "', '"Saved · syncs later":"Notes"', count=2)
+    h = sub(h, '"Saved to the spreadsheet · ":"Saved to the Notes column · "', '"Saved · syncs at {{SCAN_TIME}}":"Notes"', count=2)
     h = sub(h, '"Unsaved changes · "', '"Unsaved changes"')
     h = sub(h, "<kbd>Ctrl</kbd>+<kbd>Enter</kbd></small>", '<span class="h-desk"> · <kbd>Ctrl</kbd>+<kbd>Enter</kbd></span></small>')
-    h = sub(h, "Saved straight into the spreadsheet.</p>", "Saved online at once; the spreadsheet catches up later.</p>")
+    h = sub(h, "Saved straight into the spreadsheet.</p>", "Saved online at once; the spreadsheet catches up at {{SCAN_TIME}}.</p>")
     # The viewer never shows confirm(): a second close discards unsaved notes instead.
     h = sub(h, "let lastFocus=null;", "let lastFocus=null,discardArm=false;")
     h = sub(h, """if(dirty&&!confirm("Discard unsaved notes?"))return false;""",
             """if(dirty&&!discardArm){discardArm=true;setTimeout(()=>discardArm=false,6000);toast("Unsaved notes. Save them, or close again to discard.",null,true);return false}discardArm=false;""")
 
-    # Phones (all of this came from the 2026-11-03 phone QA).
+    # Phones (all of this came from the 2026-11-03 phone QA).md, 2026-11-04.
     # Drawer: warn before notes are lost; a dirty note or focused field stays put while the rest refreshes; focus lands on Close.
     h = sub(h, "function openJob(k){const j=byKey(k);if(!j)return;S.sel=k;", "function openJob(k){const j=byKey(k);if(!j||keepNotes(k))return;S.sel=k;")
     h = sub(h, """const dr=$("#drawer");const ta=dr.querySelector("textarea[data-dirty='1']");if(ta&&dr.dataset.k===key(j))return;""", """const dr=$("#drawer");if(keepLive(dr,j))return;""")
@@ -178,18 +186,18 @@ def main():
     if args.backend == 'pc':
         h = sub(h, '<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>\n', '')
         h = sub(h, read('data.js'), read('pc-data.js'))
-        h = h.replace('Every change saves online at once and reaches the spreadsheet at the next sync.',
+        h = h.replace('Every change saves online at once and reaches the spreadsheet at the daily {{SCAN_TIME}} sync.',
                       'Every saved change goes straight into your spreadsheet.')
-        h = h.replace('Saved here now and added to the spreadsheet at the next sync.', 'Adds a row directly to your spreadsheet.')
-        h = h.replace('Saved online at once; the spreadsheet catches up later.', 'Saved straight into your spreadsheet.')
-        h = h.replace('Saved · syncs later', 'Saved to spreadsheet')
-        h = h.replace('Draft: truth review later', 'Draft: awaiting separate truth review')
+        h = h.replace('Saved here now and added to the spreadsheet at the next {{SCAN_TIME}} sync.', 'Adds a row directly to your spreadsheet.')
+        h = h.replace('Saved online at once; the spreadsheet catches up at {{SCAN_TIME}}.', 'Saved straight into your spreadsheet.')
+        h = h.replace('Saved · syncs at {{SCAN_TIME}}', 'Saved to spreadsheet')
+        h = h.replace('Draft: truth review at {{SCAN_TIME}}', 'Draft: awaiting separate truth review')
         h = sub(h, 'esc(c.updated)', 'esc(pcDate(c.updated))')
         # Documents tab (Claude · HQ Builder (Opus), 2026-11-05): CVs, cover letters and reports; a job links its files.
         h = sub(h, '<span class="l">CVs</span></button>\n </nav>', '<span class="l">Documents</span></button>\n </nav>')
         h = sub(h, '<dd>Overview, List, Board, Contacts, Search, CVs</dd>', '<dd>Overview, List, Board, Contacts, Search, Documents</dd>')
         h = sub(h, ' <div class="panel"><div class="panel-h"><h2>Your CVs</h2></div>\n'
-                   '  <p class="lede">Your tailored CVs as Word files. On the iPhone a download lands in Files › Downloads. They\'re also in your synced CVs folder, refreshed by the scan.</p>\n'
+                   '  <p class="lede">Your tailored CVs as Word files. On the iPhone a download lands in Files › Downloads. They\'re also in {{COPY_CVS}}, refreshed by the {{SCAN_TIME}} run.</p>\n'
                    '  <div id="cvs"><p class="mut">Loading…</p></div></div>',
                 ' <div class="panel" id="docs"><div class="panel-h"><h2>Your documents</h2></div>\n'
                 '  <p class="lede">Your CVs, cover letters and reports. Tap Download to save a file; on the iPhone it lands in Files › Downloads. Tap Read to open a report here.</p>\n'
@@ -201,11 +209,11 @@ def main():
         h = sub(h, '</style>', read('pc.css') + '</style>')
         h = h.replace('Claude reads it, scores it against your evidence bank and shows the fit.',
                       'Codex reads it, scores it against your evidence bank and shows the fit.')
-        h = h.replace('They stay drafts until a truth review.',
+        h = h.replace('They stay drafts until the {{SCAN_TIME}} truth review.',
                       'They stay drafts until a separate truth reviewer checks them.')
         # PC Search uses live public company boards; the hosted daily-request form stays unchanged.
         #
-        h = h.replace('Say what the search assistant should look for. It runs at the next daily search (on your computer) and the new leads land on the Board as a new list. ',
+        h = h.replace('{{SEARCH_HELP}}',
                       'Search current openings on the company boards below. Review the results, then choose which leads to add to your tracker. Remote does not always mean you can work from your country.')
         h = resub(h, r'<form id="f-search".*?</form>', lambda _: '''<form id="f-search" class="form2" novalidate>
    <label class="f full" for="s-what"><span>Role keywords <span class="req">*</span></span><input class="inp" id="s-what" maxlength="300" required aria-describedby="s-query-help" placeholder="e.g. automation analyst"></label>
@@ -221,7 +229,7 @@ def main():
         h = sub(h, '</style>', '</style></head><body>')
         h = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">' + h + '</body></html>'
         target = HERE / 'pc-index.html'
-    target.write_text(h, encoding="utf-8", newline="\n")
+    target.write_text(hq_settings.render_page(h), encoding="utf-8", newline="\n")
     print("wrote", target, len(h.encode("utf-8")), "bytes")
 
 

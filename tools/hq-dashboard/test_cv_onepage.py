@@ -1,3 +1,4 @@
+# Fictional fixtures and settings-aware expectations.
 """Offline checks for the CV trimmer and the CV length cap. Fictional text only."""
 import importlib.util
 import re
@@ -54,7 +55,7 @@ class Trim(unittest.TestCase):
 
     def test_posting_related_bullets_survive_and_all_fit_one_page(self):
         src = make_source(5, 6, 14).replace('- Fictional bullet 1.6 ', '- Fictional bullet 1.6 reconciliation analyst ')
-        focus = c.focus_words('CV_Example_Reconciliation_Analyst.docx')
+        focus = c.focus_words((c.SETTINGS['document_prefix'] + 'CV_Example_Reconciliation_Analyst.docx'))
         self.assertEqual(focus, {'example', 'reconciliation', 'analyst'})
         text, head, sections = (lambda hs: (c.render_md(*hs), *hs))(c.trim(src, focus))
         c.verify_subset(src, text)
@@ -83,7 +84,7 @@ class Trim(unittest.TestCase):
 
     def test_ai_posting_keeps_the_agent_project_bullet(self):
         src = make_source(5, 3, 14).replace('- Project bullet 1 ', '- Project bullet 1 directed agents with review gates ')
-        focus = c.focus_words('CV_Example_Ai_Workflow_Engineer.docx')
+        focus = c.focus_words((c.SETTINGS['document_prefix'] + 'CV_Example_Ai_Workflow_Engineer.docx'))
         text, head, sections = (lambda hs: (c.render_md(*hs), *hs))(c.trim(src, focus))
         c.verify_subset(src, text)
         self.assertIn('directed agents with review gates', text)
@@ -92,13 +93,13 @@ class Trim(unittest.TestCase):
         self.assertTrue(all(len(r) >= 2 for r in roles))  # never below 1 bullet per role
 
     def test_marker_lines_never_reach_the_output(self):
-        src = SOURCE.replace('## Skills\n', '## Skills\nSigned : Writer (example), 2026-01-01. DRAFT ONLY.\n') + 'Sentiment: warm\n[DRAFT]\n'
+        src = SOURCE.replace('## Skills\n', '## Skills\nSigned\x3a Writer (Example), 2026-01-01. DRAFT ONLY.\n') + 'Sentiment: warm\n[DRAFT]\n'
         text, head, sections = self.run_trim(src)
         c.verify_subset(src, text)
         for marker in ('Signed', 'Sentiment', 'DRAFT'):
             self.assertNotIn(marker, text)
         with self.assertRaises(SystemExit):
-            c.verify_subset(src, text + 'Signed : Codex\n')
+            c.verify_subset(src, text + 'Signed\x3a Codex\n')
         with self.assertRaises(SystemExit):
             c.trim(SOURCE.replace('One, two, three', 'One, [DRAFT] two'))
 
@@ -223,7 +224,7 @@ class WordFile(unittest.TestCase):
         import docx
         conv = load('docx_export')
         path = self.dir / 'draft.docx'
-        conv.md_to_docx('Signed : Codex\n' + make_source(2, 2, 3), path)
+        conv.md_to_docx('Signed\x3a Codex\n' + make_source(2, 2, 3), path)
         d = docx.Document(path)
         self.assertEqual(d.paragraphs[0].style.name, 'CV Name')
         self.assertIn('CV Section', {p.style.name for p in d.paragraphs})

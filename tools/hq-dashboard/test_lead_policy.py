@@ -1,16 +1,14 @@
+# Fictional fixtures and settings-aware expectations.
 """Offline integration and exact browser/ranker parity; fictional inputs only.
  Maintainer executes, builder does not.
 """
 import json
-import re
 from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -18,7 +16,7 @@ import lead_policy as policy
 from lead_policy_fixtures import fictional_result, cleared_context
 
 NOW = datetime(2026, 11, 7, 12, tzinfo=timezone.utc)
-WANT = {'want':'Dream','actor':'Fictional the owner','at':NOW.isoformat()}
+WANT = {'want':'Dream','actor':'Fictional Alex','at':NOW.isoformat()}
 
 
 class ProductionBoundary(unittest.TestCase):
@@ -59,16 +57,11 @@ console.log(JSON.stringify(p.cases.map(c=>{try{
                               input=json.dumps(dict(cases=cases, now=NOW.isoformat(), schema=policy.extraction_schema())))
         self.assertEqual(json.loads(done.stdout), [c['error'] for c in cases])
 
-    #
-    @unittest.skip("Private seed/profile builder is not shipped in the fictional export")
-    def test_generated_prompts_and_hosted_bank_exclude_private_policy(self):
-        pass
-
     def rank(self, out, context=None, want=None):
         return policy.rank_result(out, 'https://example.com/fictional', 'Fictional employer', NOW, context, want)
 
     def test_cleared_dream_safe_and_commercial_analogues(self):
-        # Fictional analogues cover dream, safe and commercial outcomes.
+        # Fictional analogues preserve accepted Example Cloud/Example Ratings/Example Lab outcomes.
         dream = fictional_result('SSPPPT')
         dream['analysis'].update(work='5',growth='5')
         self.assertEqual(self.rank(dream,cleared_context(),WANT)['lane'],'Ready')
@@ -153,7 +146,9 @@ console.log(JSON.stringify(p.cases.map(c=>{try{
             out=fictional_result();out['analysis'].update(changes)
             cases.append(dict(out=out,context=cleared_context(),want={}))
         source=(HERE/'hosted/lead-policy.js').read_text(encoding='utf-8')
-        script=source+'''
+        # Match the page builder's browser configuration.
+        import hq_settings
+        script='const HQ_SETTINGS='+json.dumps(hq_settings.browser())+';\n'+source+'''
 const fs=require('fs'),p=JSON.parse(fs.readFileSync(0,'utf8'));
 console.log(JSON.stringify(p.cases.map(c=>LeadPolicy.rank(c.out,'https://example.com/fictional','Fictional employer',p.now,c.context,c.want,p.schema))));
 '''

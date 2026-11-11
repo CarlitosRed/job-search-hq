@@ -13,11 +13,19 @@ project the bullet least related to the posting title (words in the output file 
   2. to fit one page: projects down to 1 bullet; roles oldest first down to 2/2/1/1/1; Projects down to its
      single strongest entry; summary down to 2 sentences; then the two newest roles down to 1 bullet. Skills,
      Education, Languages and role title lines are never touched.
-  3. last resort (not reached by the owner's CVs): oldest roles keep only their title; then a whole section starts
+  3. last resort (not reached by typical CVs): oldest roles keep only their title; then a whole section starts
      page 2 if that leaves MIN_LAST lines there.
 
 Usage: python -I cv_onepage.py <source.md> <out.md> <out.docx>
 """
+# Resolve settings beside this module under isolated execution.
+import importlib.util as _settings_util
+from pathlib import Path as _SettingsPath
+_settings_spec = _settings_util.spec_from_file_location('hq_owner_settings', _SettingsPath(__file__).with_name('hq_settings.py'))
+hq_settings = _settings_util.module_from_spec(_settings_spec)
+_settings_spec.loader.exec_module(hq_settings)
+SETTINGS = hq_settings.load()
+
 import importlib.util
 import re
 import sys
@@ -84,7 +92,7 @@ STOP = {'and', 'the', 'for', 'with', 'of', 'to', 'in', 'a', 'an', 'junior', 'sen
 
 def focus_words(name):
     """Posting words from an output file name such as CV_Example_Revenue_Operations_Analyst.docx."""
-    stem = re.sub(r'^CV_', '', Path(name).stem) if name else ''
+    stem = re.sub('^' + re.escape(SETTINGS['document_prefix'] + 'CV_'), '', Path(name).stem) if name else ''
     return {w.lower() for w in re.split(r'[_\W]+', stem) if len(w) >= 2 and w.lower() not in STOP}
 
 
@@ -107,7 +115,7 @@ def relevance(text, focus):
 # cut, and a reviewer still reads the result.
 SUPPORT_SHARE = 0.7
 AI_WORDS = {'ai', 'agent', 'agents', 'workflow', 'automation', 'enablement'}  # posting words that make it AI-titled
-AI_CUT_ORDER = []  # optional: lowercase employer words, older roles cut to 1 bullet first in this order
+AI_CUT_ORDER = SETTINGS['cv_cut_order']
 HIGH = re.compile(r'\b(?:agents?|governance|review|tests?|claude|codex)\b', re.I)
 KNOWLEDGE = re.compile(r'knowledge base', re.I)
 GENERIC = set('''with and the for from into that this than more about over under after before then also plus total
@@ -249,7 +257,7 @@ def trim(md, focus=()):
         strongest_project(force)  # Projects keeps only its strongest entry
 
     def ai_order():
-        # AI postings: older roles go to 1 bullet in the AI_CUT_ORDER order, any other
+        # AI postings: older roles go to 1 bullet in the configured cut order, any other
         # older role first; the newest role is handled separately.
         def rank(idx):
             title = roles[idx][0].lower()
@@ -281,7 +289,7 @@ def trim(md, focus=()):
     oldest_first(lambda idx: 1)  # the two newest roles down to 1 bullet, oldest first
     # Never touched: Skills, Education, Languages and every role title line.
 
-    # 3: last resort, never reached by the owner's CVs: forced cuts (an orphaned Summary sentence then goes), oldest
+    # 3: last resort, never reached by typical CVs: forced cuts (an orphaned Summary sentence then goes), oldest
     # roles keep only their title line; then, if still two pages, a whole section of MIN_LAST+ lines starts page 2.
     bullets_and_projects(force=True)
     oldest_first(lambda idx: 1, force=True)

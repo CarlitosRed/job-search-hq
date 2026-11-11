@@ -12,6 +12,14 @@ headers or footers; real paragraph styles; real Word bullets ("•" in Arial, ha
 
 page_fill() is an estimate from real Arial metrics (PIL), not Word itself: always glance at the file on the phone.
 """
+# Resolve settings beside this module under isolated execution.
+import importlib.util as _settings_util
+from pathlib import Path as _SettingsPath
+_settings_spec = _settings_util.spec_from_file_location('hq_owner_settings', _SettingsPath(__file__).with_name('hq_settings.py'))
+hq_settings = _settings_util.module_from_spec(_settings_spec)
+_settings_spec.loader.exec_module(hq_settings)
+SETTINGS = hq_settings.load()
+
 import copy
 import re
 from pathlib import Path
@@ -156,7 +164,7 @@ def blocks(head, sections):
 def neutral_properties(d):
     cp = d.core_properties
     cp.author, cp.last_modified_by, cp.title, cp.subject, cp.keywords, cp.comments, cp.category = (
-        '', '', '', '', '', '', '')
+        SETTINGS['owner_name'], SETTINGS['owner_name'], '', '', '', '', '')
 
 
 def _fonts(rpr_owner):

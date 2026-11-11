@@ -1,3 +1,4 @@
+# Fictional fixtures and settings-aware expectations.
 """Offline tests for link_fetch (no network: DNS and fetching are replaced)."""
 import importlib.util
 import json

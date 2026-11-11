@@ -1,6 +1,6 @@
 /* ---------- data (hosted) ----------
    The page keeps its data in its own store on claude.ai, so it opens on a computer or a phone.
-   The scheduled run syncs the store with work/applications-tracker.xlsx . */
+   The daily {{SCAN_TIME}} run syncs the store with work/applications-tracker.xlsx (page edits win). */
 let busy=false,READY=false,seenView=null;const CAP={db:null,sample:null,downloads:null},NOTED=new Set(),TOOL_VIEWS=["search","review"];
 const STATUSES=["Suggested (not applied)","Message drafted","CV ready","Applied","Interview","Rejected","Offer","Skipped"];
 const JOB_COLS=["#","Company","Role","Where","Posted","Score","Verdict","My status","Date applied","CV used","Source","Link","Notes"];

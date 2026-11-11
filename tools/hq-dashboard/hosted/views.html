@@ -1,9 +1,9 @@
 <section id="v-search" hidden><div class="tool-in">
  <div class="panel"><div class="panel-h"><h2>New job search</h2></div>
-  <p class="lede">Say what the search assistant should look for. It runs at the next daily search (on your computer) and the new leads land on the Board as a new list. </p>
+  <p class="lede">{{SEARCH_HELP}}</p>
   <form id="f-search" class="form2" novalidate>
    <label class="f full"><span>What to look for <span class="req">*</span></span><input class="inp" id="s-what" maxlength="300" placeholder="e.g. AI operations or AI automation roles, entry to mid level"></label>
-   <label class="f">Where<input class="inp" id="s-where" maxlength="120" placeholder="Remote, your country, Spain…"></label>
+   <label class="f">Where<input class="inp" id="s-where" maxlength="120" placeholder="{{LOCATION_PLACEHOLDER}}"></label>
    <label class="f">Level<select class="inp" id="s-level"><option value="">Any level</option><option>Entry</option><option>Mid</option><option>Senior</option></select></label>
    <label class="f full">Anything else<textarea class="inp" id="s-notes" rows="3" maxlength="1000" placeholder="Companies to include or avoid, salary floor, languages…"></textarea></label>
    <p id="s-err" class="banner full" hidden></p>
@@ -13,10 +13,10 @@
 </div></section>
 <section id="v-review" hidden><div class="tool-in">
  <div class="panel"><div class="panel-h"><h2>Your CVs</h2></div>
-  <p class="lede">Your tailored CVs as Word files. On the iPhone a download lands in Files › Downloads. They're also in your synced CVs folder, refreshed by the scan.</p>
+  <p class="lede">Your tailored CVs as Word files. On the iPhone a download lands in Files › Downloads. They're also in {{COPY_CVS}}, refreshed by the {{SCAN_TIME}} run.</p>
   <div id="cvs"><p class="mut">Loading…</p></div></div>
  <div class="panel"><div class="panel-h"><h2>Review a posting</h2></div>
-  <p class="lede">Add a screenshot or photo of a job, or paste its text. Claude reads it, scores it against your evidence bank and shows the fit. Then you choose whether to create a CV and a cover letter. They stay drafts until a truth review.</p>
+  <p class="lede">Add a screenshot or photo of a job, or paste its text. Claude reads it, scores it against your evidence bank and shows the fit. Then you choose whether to create a CV and a cover letter. They stay drafts until the {{SCAN_TIME}} truth review.</p>
   <form id="f-review" class="form2" novalidate>
    <p id="r-hint" class="banner n full" hidden></p>
    <div class="full ph" id="r-photos" hidden>

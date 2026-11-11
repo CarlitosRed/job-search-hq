@@ -37,14 +37,15 @@ const LeadPolicy=(()=>{
   for(const m of matches){
    if(m.importance!=='nice')total=add(total,t(!m.evidence||m.level==='gap'?0:m.level==='strong'?1:'.5'.replace(/^\./,'0.')))}
   const C=core.length?mul(total,R(`1/${core.length}`)):null;
-  const floors={},priority={NONE:0,MET:0,TEACHABLE:1,HEAVY:2,UNKNOWN:3,'SENIORITY MISMATCH':4,HARD:5};
+  // The page supplies the same tenure settings as Python.
+  const floors=(typeof HQ_SETTINGS==="undefined"?{}:HQ_SETTINGS.documented_relevant_years||{}),priority={NONE:0,MET:0,TEACHABLE:1,HEAVY:2,UNKNOWN:3,'SENIORITY MISMATCH':4,HARD:5};
   let yr={kind:'NONE',gap:null,penalty:t(0),reason:''};
   for(const c of a.years_clauses){for(const k of ['equivalent_experience_accepted','legal_minimum','legal_conflict_confirmed'])bool(c[k]);
    let q={kind:'NONE',gap:null,penalty:t(0),reason:''};const req=R(c.required_years),rel=c.relevant_years===null?(c.years_domain in floors?t(floors[c.years_domain]):null):R(c.relevant_years);
    if(req&&(!ge(req,t(0))))bad('Negative required years');if(rel&&!ge(rel,t(0)))bad('Negative relevant years');
    if(c.relevant_years!==null&&!c.relevant_years_source.trim())bad('Years source required');
    if(!req){if(c.legal_minimum)q.kind='UNKNOWN'}else if(!rel){q.kind='UNKNOWN'}else{q.gap=sub(req,rel);
-    q.reason=`asks for ${fmt(req)} years; you have ${c.relevant_years===null&&c.years_domain==='agent'?'under 1':'about '+fmt(rel)} in the relevant work`;
+    q.reason=`asks for ${fmt(req)} years; you have ${c.relevant_years===null&&typeof HQ_SETTINGS!=="undefined"?(HQ_SETTINGS.documented_years_labels[c.years_domain]||"about "+fmt(rel)):"about "+fmt(rel)} in the relevant work`;
     if(!gt(q.gap,t(0))){q.kind=ge(q.gap,t(0))?'TEACHABLE':'MET';q.reason=''}
     else if(c.legal_minimum){q.kind=c.relevant_years!==null&&c.legal_conflict_confirmed?'HARD':'UNKNOWN';if(q.kind==='HARD')q.reason+='; confirmed legal or contractual minimum'}
     else if((ge(q.gap,t(5))||gt(q.gap,t(2))&&a.title_seniority)&&!c.equivalent_experience_accepted)q.kind='SENIORITY MISMATCH';
@@ -70,7 +71,7 @@ const LeadPolicy=(()=>{
   let lane,reason;
   // Preserve the confirmed legal-years conflict.
   if(blockers.length||yr.kind==='HARD'){lane='Archive';reason='Confirmed restriction: '+[...blockers,...(yr.kind==='HARD'?[yr.reason]:[])].join('; ')}
-  else if(context.owner_hold||w==='No'){lane='Monitor';reason="the owner's recommendation hold"}
+  else if(context.owner_hold||w==='No'){lane='Monitor';reason=(typeof HQ_SETTINGS==="undefined"?"Owner recommendation hold":HQ_SETTINGS.recommendation_hold_reason)}
   else if(yr.kind==='SENIORITY MISMATCH'){lane='Monitor';reason='Seniority mismatch: '+yr.reason}
   else if(!a.source_open||!fresh||!a.eligibility_clear||!a.requirements_complete||C===null||a.urgency_conflict||yr.kind==='UNKNOWN'||a.deadline_verified&&dl!==null&&dl<n){lane='Verify';reason='Resolve source freshness, availability, eligibility or requirements'}
   else if(yr.kind==='HEAVY'){const high=D&&ge(D,t('3.5'));lane=w==='Dream'&&half||high&&half&&ge(A,t('3.25'))||(w==='Dream'||high)&&context.adjudication_pending&&context.plausible_half_coverage?'Stretch':'Monitor';reason='Heavy years gap: '+yr.reason}

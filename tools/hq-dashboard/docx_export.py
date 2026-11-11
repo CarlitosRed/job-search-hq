@@ -1,12 +1,9 @@
-"""Plain .docx files for CVs, cover letters and reports, and the marker rules that keep notes out of them.
-CVs: headings, bullets, **bold**. Letters: plain paragraphs only. Reports: headings, bullets, tables as labelled lines."""
+"""Document converters and marker rules."""
 import re
 from pathlib import Path
-
 import docx
 from docx.shared import Pt
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
-
 
 def plain(s):
     return re.sub("[\ud800-\udfff]", "", ILLEGAL_CHARACTERS_RE.sub("", s.replace("\x0b", "\n").replace("\x0c", "\n")))
@@ -49,7 +46,7 @@ def draft_problem(text, kind):
         if not s:
             continue
         if marker_line(s) or has_known_tag(s):
-            return f"The {name} came back with a marker line (a tag like [DRAFT], a DRAFT banner, a word count, or a line starting Sentiment:, Signed :, Note: or Draft:). The document must hold only its own text. Try again."
+            return f"The {name} came back with a marker line (a tag like [DRAFT], a DRAFT banner, a word count, or a line starting Sentiment:, Signed\x3a, Note: or Draft:). The document must hold only its own text. Try again."
         if kind == "letter" and (s.startswith("#") or s.startswith(">") or s.startswith("---")):
             return f"The {name} came back with a heading, quote or divider line. A letter is plain paragraphs only. Try again."
     return None
@@ -238,3 +235,4 @@ def report_to_docx(md, stream):
                     if k < len(row) - 1 and p.runs:
                         p.runs[-1].add_break()
     d.save(stream)
+

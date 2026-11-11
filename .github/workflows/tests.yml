@@ -22,3 +22,5 @@ jobs:
       - run: python -I tools/hq-dashboard/test_lead_ranker.py
       - run: python -I tools/hq-dashboard/test_link_fetch.py
       - run: node tools/hq-dashboard/test_importance.js
+      - run: python -I tools/hq-dashboard/test_profile.py
+      - run: python -I tools/hq-dashboard/test_rubric_versions.py

@@ -733,7 +733,7 @@ html{overflow-y:scroll;scrollbar-gutter:stable}
   <label class="f">Status<select class="inp" name="My status" id="addStatus"></select></label>
   <label class="f"><span>Company <span class="req">*</span></span><input class="inp" name="Company" required maxlength="120"></label>
   <label class="f"><span>Role <span class="req">*</span></span><input class="inp" name="Role" required maxlength="200"></label>
-  <label class="f">Where<input class="inp" name="Where" placeholder="e.g. Lisbon, Portugal or Remote" maxlength="120"></label>
+  <label class="f">Where<input class="inp" name="Where" placeholder="{{TRACKER_LOCATION_PLACEHOLDER}}" maxlength="120"></label>
   <label class="f">Posted<input class="inp" name="Posted" type="date"></label>
   <label class="f">Fit score (0–5)<input class="inp" name="Score" inputmode="decimal" placeholder="e.g. 3.6" maxlength="20"></label>
   <label class="f">Verdict<select class="inp" name="Verdict"><option value="">Not scored yet</option><option>APPLY</option><option>CONSIDER</option><option>LOW</option><option>SKIP</option></select></label>
@@ -747,6 +747,8 @@ html{overflow-y:scroll;scrollbar-gutter:stable}
 </form></dialog>
 <script>
 "use strict";
+// Server/page builder injects the browser settings here.
+const HQ_SETTINGS=/*HQ_SETTINGS*/{};
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const store={get(k,d){try{const v=localStorage.getItem("jshq."+k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem("jshq."+k,JSON.stringify(v))}catch{}}};
@@ -789,14 +791,14 @@ const SL={"Suggested (not applied)":"Wishlist","Message drafted":"Message drafte
 const sl=s=>SL[s]||s||"Wishlist";
 const stageOf=j=>STAGES.find(s=>s.id===BUCKET_STAGE[bucket(j)]);
 const stageIdx=j=>STAGES.indexOf(stageOf(j));
-const REG={CR:["Home country","globe"],LATAM:["LatAm / Americas","globe"],ES:["Spain","es"],DE:["Germany","de"],IT:["Italy","it"],EU:["EU-wide remote","eu"],OTHER:["Other","globe"]};
+const REG={CR:[HQ_SETTINGS.home_country_label||"Home country",HQ_SETTINGS.home_country_icon||"globe"],LATAM:["LatAm / Americas","globe"],ES:["Spain","es"],DE:["Germany","de"],IT:["Italy","it"],EU:["EU-wide remote","eu"],OTHER:["Other","globe"]};
 const VERD={APPLY:["Apply","g"],CONSIDER:["Consider","b"],LOW:["Low","a"],SKIP:["Skip",""],NONE:["Not scored",""]};
 function region(w){w=w||"";
  if(/spain|madrid|barcelona|m[aá]laga|valencia|sevill/i.test(w))return"ES";
  if(/germany|berlin|munich|m[uü]nchen|hamburg|frankfurt/i.test(w))return"DE";
  if(/italy|milan|rome|turin/i.test(w))return"IT";
  if(/\bEU\b|europe|emea/i.test(w))return"EU";
- if(/home country|\bHOME\b/i.test(w))return"CR";
+ if(HQ_SETTINGS.home_places_pattern&&new RegExp(HQ_SETTINGS.home_places_pattern,"i").test(w))return"CR";
  if(/latam|latin america|namer|americas/i.test(w))return"LATAM";
  return"OTHER"}
 function flag(code){const f=(REG[code]||REG.OTHER)[1];return f==="globe"?IC.globe:`<i class="flag ${f}" aria-hidden="true"></i>`}
@@ -1233,7 +1235,7 @@ function detail(j){const st=stageOf(j),si=stageIdx(j),closed=st.id==="closed",re
   const sub=s.id==="applied"&&(cls==="done"||cls==="cur")?`<small class="sd">${ad?esc(ad):"no date"}</small>`:s.id==="applied"&&si>2&&!closed&&!other?`<small class="sd warnd">no date</small>`:"";
   return`<li class="${cls}"><button data-step="${s.id}" title="Move to ${s.label}" ${i===si&&!closed?'aria-current="step"':""}><span class="b">${cls==="done"?IC.check:i+1}</span>${s.step}${sub}</button></li>`}).join("");
  const ban=[];if(j._open==="closed"&&!closed)ban.push(`<div class="banner">${IC.warn}<span><b>This posting looks closed.</b> Last open check: ${esc(j._check)}${j._checkdate?` (${esc(j._checkdate)})`:""}. Confirm on the employer site before spending time on it.</span></div>`);
- else if(j._age!=null&&j._age>3&&!closed&&si<2)ban.push(`<div class="banner a">${IC.clock}<span>Open check is ${j._age} days old (${esc(j._checkdate)}). The scheduled rerun should refresh it.</span></div>`);
+ else if(j._age!=null&&j._age>3&&!closed&&si<2)ban.push(`<div class="banner a">${IC.clock}<span>Open check is ${j._age} days old (${esc(j._checkdate)}). The daily rerun should refresh it.</span></div>`);
  if(other)ban.push(`<div class="banner a">${IC.info}<span>Status <b>${esc(j["My status"])}</b> isn't one of the tracker's statuses, so it's counted under “Other status”. Pick a status below to fix it.</span></div>`);
  if(closed)ban.push(`<div class="banner n">${IC.info}<span>Marked <b>${esc(sl(j["My status"]))}</b>. <button class="linkbtn" data-step="wish" style="padding:0">Move back to wishlist</button></span></div>`);
  const sc=j._sc,v=j._v;
@@ -1277,7 +1279,7 @@ function render(){const keep=$$("textarea[data-note][data-dirty='1']").map(t=>[t
 function renderInner(){const js=filtered();$$(".seg button").forEach(b=>b.setAttribute("aria-selected",b.dataset.v===S.view));
  const ac=activeCount();$("#fcount").hidden=!ac;$("#fcount").textContent=ac;$("#fbtn").hidden=S.view==="contacts";
  activebar();const m=$("#main");const scroll=$(".board")?.scrollLeft;
- if(!D.jobs.length&&S.view!=="contacts")m.innerHTML=emptyBox("No jobs yet","Add your first lead, or let the scheduled rerun fill the spreadsheet.",`<button class="btn" data-act="add">Add a lead</button>`);
+ if(!D.jobs.length&&S.view!=="contacts")m.innerHTML=emptyBox("No jobs yet","Add your first lead, or let the daily rerun fill the spreadsheet.",`<button class="btn" data-act="add">Add a lead</button>`);
  else if(S.view==="overview")m.innerHTML=js.length?overview(js):noMatch();
  else if(S.view==="board")m.innerHTML=js.length?board(js):noMatch();
  else if(S.view==="list")m.innerHTML=listView(js);
@@ -1453,13 +1455,13 @@ window.trackerSelfTest=function(){const out=[],fail=m=>out.push("FAIL "+m),pass=
   return C}
  const C=check("all jobs",D.jobs);check("current filters",filtered());
  const mk=(st,w)=>({...D.jobs[0],"My status":st,Where:w,_sheet:"selftest",_row:0,_sib:[],_reg:region(w),_sc:null,_v:verdict(""),_open:"open"});
- const synth=[mk("Offer","Madrid, Spain"),mk("Rejected","Berlin, Germany"),mk("Interview","Home country"),mk("Message drafted","Milan, Italy"),mk("Skipped","Remote, LATAM"),mk("On hold??","Home country"),mk("","Somewhere"),mk("Applied","Home country"),mk("CV ready","Home country"),mk("Suggested (not applied)","Home country")];
+ const synth=[mk("Offer","Madrid, Spain"),mk("Rejected","Berlin, Germany"),mk("Interview",HQ_SETTINGS.home_place_example||"Home country"),mk("Message drafted","Milan, Italy"),mk("Skipped","Remote, LATAM"),mk("On hold??",HQ_SETTINGS.home_place_example||"Home country"),mk("","Somewhere"),mk("Applied",HQ_SETTINGS.home_place_example||"Home country"),mk("CV ready",HQ_SETTINGS.home_place_example||"Home country"),mk("Suggested (not applied)",HQ_SETTINGS.home_place_example||"Home country")];
  const SC=check("synthetic: one of every status + unknown + blank",synth);
  (SC.offer===1&&SC.rejected===1&&SC.interview===1&&SC.ready===2&&SC.skipped===1&&SC.other===1&&SC.wish===2&&SC.applied===1&&SC.sent===4?pass:fail)("synthetic buckets: "+BUCKETS.map(([k,l])=>`${l} ${SC[k]}`).join(", "));
  check("rejected-only fixture",[mk("Rejected","Berlin, Germany"),mk("Rejected","Remote, EU")]);
  check("unequal-count fixture",[mk("Suggested (not applied)","Spain"),mk("Suggested (not applied)","Spain"),mk("Suggested (not applied)","Spain"),mk("CV ready","Germany"),mk("Applied","UK"),mk("Applied","UK"),mk("Interview","USA"),mk("Offer","Remote"),mk("Skipped","Spain")]);
  // Estimate compact labels from character counts at the declared 13.5px / 13px sizes.
- const large=Array.from({length:100},()=>["Suggested (not applied)","CV ready","Skipped","On hold??","Applied","Interview","Rejected","Offer"].map(st=>mk(st,"Home country"))).flat();
+ const large=Array.from({length:100},()=>["Suggested (not applied)","CV ready","Skipped","On hold??","Applied","Interview","Rejected","Offer"].map(st=>mk(st,HQ_SETTINGS.home_place_example||"Home country"))).flat();
  const compact=document.createElement("div");compact.innerHTML=sankey(large,counts(large,true),true);
  const compactNodes=[...compact.querySelectorAll(".nd")];
  const labelsFit=compactNodes.every(n=>{const text=n.querySelector("text"),x=+text.getAttribute("x");

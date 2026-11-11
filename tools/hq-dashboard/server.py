@@ -126,7 +126,8 @@ class App:
 
     def health(self):
         scan = {'state': 'unknown', 'message': 'No scan result is available yet.'}
-        logs = sorted(self.scan_log_dir.glob('scan-*.log'))
+        # Preserve the private runner's log names through settings.
+        logs = sorted(self.scan_log_dir.glob(load_component('hq_settings').load()['scan_log_glob']))
         if logs:
             # Read only the log tail; never expose the prompt or posting contents.
             with logs[-1].open('rb') as stream:

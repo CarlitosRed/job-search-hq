@@ -1,3 +1,4 @@
+# Fictional fixtures and settings-aware expectations.
 """Offline career task tests with fictional evidence.
 Activation updates: Codex - Activation Builder, 2026-11-07.
 """
@@ -174,8 +175,8 @@ class CareerTasks(unittest.TestCase):
 
     def test_unknown_sources_are_blocked(self):
         key=self.analyze()
-        self.result={'cv_markdown':'An invented claim.','sources':['E-013'],'flags':[],
-                     'claims':[{'text':'An invented claim.','evidence':['E-013']}]}
+        self.result={'cv_markdown':'An invented claim.','sources':['E-998'],'flags':[],
+                     'claims':[{'text':'An invented claim.','evidence':['E-998']}]}
         self.tasks.submit({'kind':'cv','postingId':key,'requestId':str(uuid.uuid4())})
         self.tasks.process_one()
         self.assertEqual(next(t for t in self.tasks.list_tasks() if t['kind']=='cv')['status'],'failed')
@@ -223,7 +224,7 @@ Dear Example Company team,
 Kind regards,
 Alex Example
 (About 40 words)
-Signed : Codex'''
+Signed\x3a Codex'''
 MARKERS=('Sentiment','Signed','DRAFT','Draft:','[HQ]','(About','Note:','Word count')
 # Real content that only looks like a marker: it must survive every check and converter unchanged.
 LOOKALIKES=['Signed 3 enterprise partners in a fictional pilot.','Sentiment analysis pipeline for fictional reviews.','Note-taking agent for fictional meetings.',
@@ -249,7 +250,7 @@ class CleanDocuments(unittest.TestCase):
 
     def test_letter_docx_is_plain_paragraphs_without_markers(self):
         record={'company':'Example Company','fit':{'cover_letter_markdown':DIRTY_LETTER}}
-        path=files.export_draft(self.dir,str(uuid.uuid4()),'letter',record,copy_dir=self.dir/'no-copy_dir'/'Job Search')
+        path=files.export_draft(self.dir,str(uuid.uuid4()),'letter',record,copy_dir=self.dir/'no-copy'/'Job Search')
         self.assertNotIn('DRAFT',path.name)
         d,text,head=self.read(path)
         self.assertEqual({p.style.name for p in d.paragraphs},{'Normal'})
@@ -275,7 +276,7 @@ class CleanDocuments(unittest.TestCase):
         self.assertIsNone(conv.draft_problem(CLEAN_LETTER,'letter'))
         self.assertIsNone(conv.draft_problem('# Alex Example\n[email] | [phone]\n## Skills\n- Drafted plans','cv'))
         bad={'# Cover letter':'letter','> quoted line':'letter','--- ':'letter','[HQ]':'letter','[DRAFT]':'cv','[/HQ]':'cv','[TODO] [PLACEHOLDER]':'letter',
-             '[REVIEWED]':'cv','Sentiment: warm':'letter','Signed : Codex':'cv','Note: check this':'letter','Notes: x':'cv','Word count: 210':'letter',
+             '[REVIEWED]':'cv','Sentiment: warm':'letter','Signed\x3a Codex':'cv','Note: check this':'letter','Notes: x':'cv','Word count: 210':'letter',
              '(About 210 words)':'letter','(210 words)':'cv','DRAFT':'cv','Draft: v2':'letter','**Sentiment:** warm':'letter'}
         for line in LOOKALIKES:
             for kind in ('cv','letter'):
@@ -313,14 +314,13 @@ class CleanDocuments(unittest.TestCase):
 
     def test_existing_files_report_marker_lines(self):
         import docx
-        clean,noted=self.dir/'CL_Example_Clean.docx',self.dir/'CL_Example_Noted.docx'
+        clean,noted=self.dir/(files.SETTINGS['document_prefix'] + 'CL_Example_Clean.docx'),self.dir/(files.SETTINGS['document_prefix'] + 'CL_Example_Noted.docx')
         d=docx.Document();d.add_paragraph('Dear team,');[d.add_paragraph(x) for x in LOOKALIKES];d.save(clean)
         d=docx.Document();d.add_paragraph('Dear team,');d.add_paragraph('Sentiment: warm');d.save(noted)
         before={p:p.read_bytes() for p in (clean,noted)}
         found={x['name']:x['clean'] for x in files.documents(self.dir)}
         self.assertEqual(found,{clean.name:True,noted.name:False})
         self.assertEqual(before,{p:p.read_bytes() for p in (clean,noted)},'Listing never changes a file')
-
 
     def test_report_parsing_is_bounded_and_links_are_text(self):
         import time
@@ -333,7 +333,7 @@ class CleanDocuments(unittest.TestCase):
         self.assertNotIn('javascript',flat)
 
     def test_bulleted_and_emphasized_markers(self):
-        for line in ('- Sentiment: confident','* Signed : Codex','  - Note: check','_Signed : Codex_','**Signed :**','+ Draft: v2','• Word count: 210','> - **Notes:** x'):
+        for line in ('- Sentiment: confident','* Signed\x3a Codex','  - Note: check','_Signed\x3a Codex_','**Signed\x3a**','+ Draft: v2','• Word count: 210','> - **Notes:** x'):
             for kind in ('cv','letter'):
                 with self.subTest(line=line,kind=kind):
                     self.assertTrue(conv.marker_line(line))
@@ -352,16 +352,16 @@ class CleanDocuments(unittest.TestCase):
     def test_header_or_footer_text_is_not_clean(self):
         import docx
         for part in ('header','footer'):
-            path=self.dir/f'CV_Example_{part}.docx'
+            path=self.dir/(files.SETTINGS['document_prefix'] + f'CV_Example_{part}.docx')
             d=docx.Document();d.add_paragraph('Fictional body.');getattr(d.sections[0],part).paragraphs[0].text='Fictional '+part+' text';d.save(path)
-        plain=self.dir/'CV_Example_plain.docx'
+        plain=self.dir/(files.SETTINGS['document_prefix'] + 'CV_Example_plain.docx')
         d=docx.Document();d.add_paragraph('Fictional body.');d.save(plain)
         found={x['name']:x['clean'] for x in files.documents(self.dir)}
-        self.assertEqual(found,{'CV_Example_header.docx':False,'CV_Example_footer.docx':False,plain.name:True})
+        self.assertEqual(found,{(files.SETTINGS['document_prefix'] + 'CV_Example_header.docx'):False,(files.SETTINGS['document_prefix'] + 'CV_Example_footer.docx'):False,plain.name:True})
 
     def test_pairing_links_cv_and_letter(self):
         import docx
-        for name in ('CV_Example_Ai_Engineer.docx','CL_Example_Ai_Engineer.docx','CV_Other_Role.docx'):
+        for name in ((files.SETTINGS['document_prefix'] + 'CV_Example_Ai_Engineer.docx'),(files.SETTINGS['document_prefix'] + 'CL_Example_Ai_Engineer.docx'),(files.SETTINGS['document_prefix'] + 'CV_Other_Role.docx')):
             docx.Document().save(self.dir/name)
         docs=files.documents(self.dir)
         pairs={(d['kind'],d['pair']) for d in docs}

@@ -13,3 +13,4 @@ evidence/*
 !evidence/*-example-*.md
 
 .venv/
+settings.json
