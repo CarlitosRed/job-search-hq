@@ -250,7 +250,7 @@ class CleanDocuments(unittest.TestCase):
 
     def test_letter_docx_is_plain_paragraphs_without_markers(self):
         record={'company':'Example Company','fit':{'cover_letter_markdown':DIRTY_LETTER}}
-        path=files.export_draft(self.dir,str(uuid.uuid4()),'letter',record,copy_dir=self.dir/'no-copy'/'Job Search')
+        path=files.export_draft(self.dir,str(uuid.uuid4()),'letter',record,copy_dir=self.dir/'no-copy'/'Job Search',work=self.dir)
         self.assertNotIn('DRAFT',path.name)
         d,text,head=self.read(path)
         self.assertEqual({p.style.name for p in d.paragraphs},{'Normal'})
@@ -265,7 +265,7 @@ class CleanDocuments(unittest.TestCase):
 
     def test_cv_docx_keeps_name_header_but_no_markers(self):
         cv='# Alex Example\n[email] | [phone] | [LinkedIn URL]\n[DRAFT]\nNote: for the reviewer\n## Skills\n- Drafted fictional example plans\n- **Fictional** example skill'
-        path=files.export_draft(self.dir,str(uuid.uuid4()),'cv',{'company':'Example','fit':{'cv_markdown':cv}},copy_dir=self.dir/'none'/'x')
+        path=files.export_draft(self.dir,str(uuid.uuid4()),'cv',{'company':'Example','fit':{'cv_markdown':cv}},copy_dir=self.dir/'none'/'x',work=self.dir)
         d,text,head=self.read(path)
         self.assertEqual(d.paragraphs[0].text,'Alex Example')
         self.assertIn('[LinkedIn URL]',text)
@@ -306,7 +306,7 @@ class CleanDocuments(unittest.TestCase):
     def test_lookalike_content_survives_both_converters(self):
         body='\n\n'.join(LOOKALIKES)
         for kind,field in (('letter','cover_letter_markdown'),('cv','cv_markdown')):
-            path=files.export_draft(self.dir,str(uuid.uuid4()),kind,{'company':'Example','fit':{field:'Sentiment: warm\n\n'+body+'\n\n[DRAFT]'}},copy_dir=self.dir/'none'/'x')
+            path=files.export_draft(self.dir,str(uuid.uuid4()),kind,{'company':'Example','fit':{field:'Sentiment: warm\n\n'+body+'\n\n[DRAFT]'}},copy_dir=self.dir/'none'/'x',work=self.dir)
             _,text,_=self.read(path)
             for line in LOOKALIKES:
                 with self.subTest(kind=kind,line=line):self.assertIn(line,text)
@@ -345,7 +345,7 @@ class CleanDocuments(unittest.TestCase):
             with self.subTest(line=line):self.assertIsNotNone(conv.draft_problem(CLEAN_LETTER+'\n'+line,'letter'))
         self.assertEqual(conv.clean_text('[HQ] Dear Example team,\nDear team, [HQ]\nA [TODO] fictional  [RAG] item [Note]'),
                          'Dear Example team,\nDear team,\nA fictional [RAG] item [Note]')
-        path=files.export_draft(self.dir,str(uuid.uuid4()),'letter',{'company':'Example','fit':{'cover_letter_markdown':'[HQ] Dear Example team,\n\nBuilt a [RAG] harness. [DRAFT]'}},copy_dir=self.dir/'none'/'x')
+        path=files.export_draft(self.dir,str(uuid.uuid4()),'letter',{'company':'Example','fit':{'cover_letter_markdown':'[HQ] Dear Example team,\n\nBuilt a [RAG] harness. [DRAFT]'}},copy_dir=self.dir/'none'/'x',work=self.dir)
         _,text,_=self.read(path)
         self.assertEqual(text,'Dear Example team,\nBuilt a [RAG] harness.')
 
