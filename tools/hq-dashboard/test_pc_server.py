@@ -811,16 +811,34 @@ try {
                 result = page.evaluate('trackerSelfTest()')
                 self.assertTrue(result['ok'], result['lines'] if 'lines' in result else result)
                 if name == 'desktop':
-                    page.click('.col[data-stage="review"] [data-act="open-move"]')
-                    page.click('.col[data-stage="review"] .bcard-move-item[data-moveto="apply"]')
+                    def move(stage, target):
+                        # A save re-renders the board and closes an open menu, so retry the open-and-pick a few times.
+                        for attempt in range(5):
+                            try:
+                                page.click(f'.col[data-stage="{stage}"] [data-act="open-move"]', timeout=3000)
+                                page.click(f'.col[data-stage="{stage}"] .bcard-move-item[data-moveto="{target}"]', timeout=3000)
+                                return
+                            except Exception:
+                                if attempt == 4:
+                                    raise
+                                page.wait_for_timeout(300)
+                    move('review', 'apply')
                     expect(page.locator('.col[data-stage="apply"]')).to_contain_text('Example Company')
                     wait_status('Example Company', 'Apply')
                     page.click('#undoBtn')
                     expect(page.locator('.col[data-stage="review"]')).to_contain_text('Example Company')
                     wait_status('Example Company', 'Review')
-                    page.click('.col[data-stage="applied"] [data-act="open-move"]')
-                    page.click('.col[data-stage="applied"] .bcard-move-item[data-moveto="rejected"]')
+                    move('applied', 'rejected')
                     wait_status('Second Company', 'Rejected')
+                # The Overview keeps its flow chart (Sankey): one node per stage, the possible steps as links.
+                page.click('.seg [data-v="overview"]')
+                keys = page.eval_on_selector_all('#sk .nd[data-key]', 'ns => ns.map(n => n.dataset.key)')
+                self.assertEqual(sorted(keys), sorted(ids), name)
+                links = page.eval_on_selector_all('#sk [data-link]', 'ls => ls.map(l => l.dataset.link)')
+                self.assertEqual(sorted(links), sorted(['Tracked to Review', 'Review to Apply', 'Apply to Skipped', 'Apply to Applied',
+                                                       'Applied to Interview', 'Applied to Rejected', 'Interview to Offer']), name)
+                self.assertTrue(page.eval_on_selector_all('#sk path[data-link]', "ps => ps.every(p => (p.getAttribute('d') || '').includes('C'))"),
+                                'flow links are curves')
                 self.assertEqual(errors, [], name)
                 context.close()
             browser.close()
