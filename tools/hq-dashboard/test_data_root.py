@@ -157,5 +157,23 @@ class AppInsideData(Clean):
         self.assertIn('Fictional Data Owner', page)
 
 
+class SuitesIgnoreTheOwnersDataFolder(unittest.TestCase):
+    """A suite that builds its own fictional folder must pass even when JOB_SEARCH_HQ_DATA is set.
+
+    With the setting on, test_profile used to read the other folder's rules and test_lead_ranker
+    its settings.
+    """
+    SUITES = ('test_profile.py', 'test_lead_ranker.py')
+
+    def test_suites_pass_with_the_setting_pointing_at_an_empty_folder(self):
+        with tempfile.TemporaryDirectory(prefix='other-data-') as folder:
+            env = dict(os.environ, **{ENV: folder})
+            for name in self.SUITES:
+                r = subprocess.run([sys.executable, '-I', str(HERE / name)], env=env,
+                                   capture_output=True, text=True, timeout=600)
+                self.assertEqual(r.returncode, 0, name + ' fails when ' + ENV + ' is set: ' + r.stderr[-1500:])
+                self.assertEqual(os.listdir(folder), [], name + ' wrote into the data folder from the setting')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

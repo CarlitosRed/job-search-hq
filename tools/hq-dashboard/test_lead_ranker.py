@@ -20,9 +20,13 @@ from fractions import Fraction
 from pathlib import Path
 import runpy
 import json
+import os
 import shutil
 import tempfile
 import unittest
+
+# Use this suite's fictional fixture folder instead of an external data folder.
+os.environ.pop("JOB_SEARCH_HQ_DATA", None)
 
 
 # Arithmetic fixtures own their sourced tenure settings.
