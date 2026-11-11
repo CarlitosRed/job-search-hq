@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -12,8 +13,10 @@ import tempfile
 import openpyxl
 from openpyxl.worksheet.datavalidation import DataValidation
 
-STATUSES = ('Suggested (not applied)', 'Message drafted', 'CV ready', 'Applied',
-            'Interview', 'Rejected', 'Offer', 'Skipped')
+_stage_spec = importlib.util.spec_from_file_location('tracker_store_stages', Path(__file__).with_name('stages.py'))
+stages = importlib.util.module_from_spec(_stage_spec)
+_stage_spec.loader.exec_module(stages)
+STATUSES = stages.NAMES
 NAMED = {'company': 'Company', 'role': 'Role', 'place': 'Where', 'link': 'Link',
          'status': 'My status', 'fit': 'Verdict', 'notes': 'Notes',
          'agent_notes': 'Agent notes', 'posted': 'Posted'}
@@ -118,7 +121,7 @@ class Store:
             return 'jobs'
         return 'contacts' if title == 'Contacts' else 'other_rows'
 
-    def put_row(self, table, title, number, head, values, history=False):
+    def put_row(self, table, title, number, head, values, history=False, who='site'):
         fields = encode(values)
         previous = self.db.execute(f'SELECT id, status, fields FROM {table} WHERE sheet=? AND row=?',
                                    (title, number)).fetchone()
@@ -134,7 +137,7 @@ class Store:
             if history and table == 'jobs' and previous['status'] != row.get('My status'):
                 self.db.execute('INSERT INTO moves(job_id, from_status, to_status, at, who) VALUES (?,?,?,?,?)',
                                 (previous['id'], previous['status'], row.get('My status'),
-                                 datetime.now(timezone.utc).isoformat(), 'site'))
+                                 datetime.now(timezone.utc).isoformat(), who))
         else:
             columns = ', '.join(NAMED)
             self.db.execute(f'''INSERT INTO {table}

@@ -196,48 +196,16 @@ main{flex:1 0 auto;width:100%;max-width:1680px;margin:0 auto;padding:18px 24px 6
 .tile small{color:var(--mute);font-size:11.5px;line-height:1.35;max-height:0;opacity:0;transform-origin:top center;transform:translateY(-8px) rotateX(-45deg);overflow:hidden;transition:max-height .36s cubic-bezier(.16,1,.3,1),opacity .28s ease,transform .36s cubic-bezier(.16,1.25,.4,1);pointer-events:none;margin-top:0}
 .tile:hover small,.tile:focus-visible small,.tile.flip small{max-height:48px;opacity:1;transform:translateY(0) rotateX(0deg);margin-top:4px}
 
-/* sankey - fine lines & tree branching animation */
+/* Current stage counts */
 .sk-wrap{overflow-x:hidden;margin:0;padding:4px 0;width:100%}
-#sk{width:100%;max-width:960px;height:auto;display:block;margin:0 auto}
-#sk.compact{max-width:360px;margin:0 auto}
-#sk .lnk-wrap{outline:none}
-#sk .lnk{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;animation:growBranch .68s cubic-bezier(.16,1,.3,1) forwards;transition:stroke-width .22s cubic-bezier(.16,1,.3,1),filter .22s ease;pointer-events:none}
-#sk .lnk[data-tier="0"]{animation-delay:.06s}
-#sk .lnk[data-tier="1"]{animation-delay:.46s}
-#sk .lnk[data-tier="2"]{animation-delay:.86s}
-#sk .lnk[data-tier="3"]{animation-delay:1.26s}
-#sk text{font-size:13.5px;fill:var(--ink);paint-order:stroke;stroke:var(--card);stroke-width:4px;stroke-linejoin:round;user-select:none}
-#sk.compact text{font-size:13.5px;stroke-width:3.5px}
-#sk text.v{font-weight:700}
-#sk .p{fill:var(--mute);font-size:12.5px}
-#sk.compact .p{font-size:13px}
+#sk{width:100%;max-width:880px;height:auto;display:block;margin:0 auto}
+#sk.compact{max-width:360px}
 #sk .nd{cursor:default}
-#sk .nd-dot{transform-box:fill-box;transform-origin:center;transition:r .22s cubic-bezier(.34,1.56,.64,1),filter .22s ease}
-#sk .nd[data-col="0"] .nd-dot,#sk .nd[data-row="0"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .02s both}
-#sk .nd[data-col="1"] .nd-dot,#sk .nd[data-row="1"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .42s both}
-#sk .nd[data-col="2"] .nd-dot,#sk .nd[data-row="2"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .82s both}
-#sk .nd[data-col="3"] .nd-dot,#sk .nd[data-row="3"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) 1.22s both}
-#sk .nd[data-col="4"] .nd-dot,#sk .nd[data-row="4"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) 1.62s both}
-#sk .nd[data-col="0"] text,#sk .nd[data-row="0"] text{animation:fadeInLabel .35s ease .06s both}
-#sk .nd[data-col="1"] text,#sk .nd[data-row="1"] text{animation:fadeInLabel .35s ease .46s both}
-#sk .nd[data-col="2"] text,#sk .nd[data-row="2"] text{animation:fadeInLabel .35s ease .86s both}
-#sk .nd[data-col="3"] text,#sk .nd[data-row="3"] text{animation:fadeInLabel .35s ease 1.26s both}
-#sk .nd[data-col="4"] text,#sk .nd[data-row="4"] text{animation:fadeInLabel .35s ease 1.66s both}
-#sk .nd:hover .nd-dot,#sk .nd:focus-visible .nd-dot{r:8.5px;filter:drop-shadow(0 0 8px currentColor)}
+#sk text{font-size:13px;fill:var(--ink)}
+#sk .stage-track{fill:var(--line)}
+#sk .stage-value{fill:var(--mute);font-variant-numeric:tabular-nums}
 .sk-note{font-size:12px;color:var(--mute);margin:8px 0 0;line-height:1.4}
 .sk-empty{display:flex;align-items:center;gap:8px;color:var(--mute);font-size:12.5px;margin-top:6px}
-
-@keyframes growBranch{0%{stroke-dashoffset:100}100%{stroke-dashoffset:0}}
-@keyframes popDot{0%{transform:scale(0);opacity:0}65%{transform:scale(1.32);opacity:1}100%{transform:scale(1);opacity:1}}
-@keyframes fadeInLabel{0%{opacity:0;transform:translateY(3px)}100%{opacity:1;transform:translateY(0)}}
-@media (prefers-reduced-motion:reduce){
- #sk .lnk,#sk [data-tier]{animation:none!important;animation-delay:0s!important;stroke-dashoffset:0!important;opacity:1!important}
- #sk .nd-dot,#sk [data-col] .nd-dot,#sk [data-row] .nd-dot{animation:none!important;animation-delay:0s!important;transform:none!important;opacity:1!important}
- #sk text,#sk [data-col] text,#sk [data-row] text{animation:none!important;animation-delay:0s!important;opacity:1!important;transform:none!important}
-}
-html.no-anim #sk .lnk,html.no-anim #sk [data-tier]{animation:none!important;animation-delay:0s!important;stroke-dashoffset:0!important;opacity:1!important}
-html.no-anim #sk .nd-dot,html.no-anim #sk [data-col] .nd-dot,html.no-anim #sk [data-row] .nd-dot{animation:none!important;animation-delay:0s!important;transform:none!important;opacity:1!important}
-html.no-anim #sk text,html.no-anim #sk [data-col] text,html.no-anim #sk [data-row] text{animation:none!important;animation-delay:0s!important;opacity:1!important;transform:none!important}
 .legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--mute);font-size:12px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 #tip{position:fixed;z-index:60;pointer-events:none;background:var(--ink);color:var(--bg);padding:7px 10px;border-radius:9px;font-size:12.5px;box-shadow:var(--shadow-lg);opacity:0;transition:opacity .12s;max-width:260px}
@@ -305,9 +273,6 @@ html.no-anim #sk text,html.no-anim #sk [data-col] text,html.no-anim #sk [data-ro
 :root:not([data-theme="light"]) .bpill-attn{background:#3b2505;border-color:#78350f;color:#fef3c7}
 .bpill-other{background:var(--soft);border-color:var(--line);color:var(--mute)}
 
-.bpill-closed-btn{display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid var(--line);border-radius:8px;padding:4px 10px;font-size:12px;font-weight:600;color:var(--mute);cursor:pointer;transition:all .15s ease}
-.bpill-closed-btn:hover{background:var(--soft);color:var(--ink);border-color:color-mix(in srgb,var(--ink) 25%,var(--line))}
-.bpill-closed-btn.active{background:color-mix(in srgb,var(--red) 12%,transparent);border-color:var(--red);color:var(--red)}
 
 /* kanban columns grid */
 .board-cols{display:grid;gap:14px;align-items:start;width:100%;min-width:1160px}
@@ -553,7 +518,7 @@ border-radius:24px;border:1px solid var(--line);background:var(--card);color:var
 .banner.n{background:var(--soft);color:var(--ink2)}
 .banner svg{width:17px;height:17px;flex:none;margin-top:1px}
 .sec h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin:0 0 10px;font-weight:700}
-.stepper{display:grid;grid-template-columns:repeat(5,1fr);list-style:none;margin:0;padding:0;counter-reset:s}
+.stepper{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:12px 0;list-style:none;margin:0;padding:0;counter-reset:s}
 .stepper li{position:relative;text-align:center}
 .stepper li::before{content:"";position:absolute;top:13px;left:calc(-50% + 18px);right:calc(50% + 18px);height:2px;background:var(--line);border-radius:2px;z-index:1;pointer-events:none}
 .stepper li:first-child::before{display:none}
@@ -772,25 +737,21 @@ const IC={
  close:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>'};
 
 /* ---------- model ---------- */
-const STAGES=[
- {id:"wish",label:"Wishlist",step:"Wishlist",sts:["Suggested (not applied)"],drop:"Suggested (not applied)",c:"var(--sk-tracked)"},
- {id:"ready",label:"Ready to send",step:"Ready to send",sts:["Message drafted","CV ready"],drop:"CV ready",c:"var(--amber)"},
- {id:"applied",label:"Applied",step:"Applied",sts:["Applied"],drop:"Applied",c:"var(--blue)"},
- {id:"interview",label:"Interviewing",step:"Interviewing",sts:["Interview"],drop:"Interview",c:"var(--green)"},
- {id:"offer",label:"Offer",step:"Offer",sts:["Offer"],drop:"Offer",c:"var(--green)"},
- {id:"closed",label:"Rejected / Skipped",step:"Closed",sts:["Rejected","Skipped"],drop:null,c:"var(--red)"},
+const STAGE_DATA=/*{{STAGES_JSON}}*/null;
+const STAGES=[...STAGE_DATA.stages.map(s=>({...s,label:s.name,step:s.name,sts:[s.name],drop:s.name,c:s.color==="gray"?"var(--mute)":`var(--${s.color})`})),
  {id:"other",label:"Other status",step:"Other",sts:[],drop:null,c:"var(--mute)"}];
 /* THE counting rule. Every number on the page comes from bucket(): each job is in exactly one bucket, by its current status. */
-const BUCKETS=[["wish","Wishlist","--sk-wish"],["ready","Ready to send","--sk-ready"],["applied","Applied","--sk-wait"],["interview","Interviewing","--sk-int"],["offer","Offer","--sk-offer"],["rejected","Rejected","--sk-rej"],["skipped","Skipped","--sk-skip"],["other","Other status","--sk-skip"]];
-function bucket(j){const s=String(j["My status"]??"").trim();
- if(s===""||s==="Suggested (not applied)")return"wish";if(s==="Message drafted"||s==="CV ready")return"ready";
- if(s==="Applied")return"applied";if(s==="Interview")return"interview";if(s==="Offer")return"offer";if(s==="Rejected")return"rejected";if(s==="Skipped")return"skipped";return"other"}
-const BUCKET_STAGE={wish:"wish",ready:"ready",applied:"applied",interview:"interview",offer:"offer",rejected:"closed",skipped:"closed",other:"other"};
+const BUCKETS=STAGES.map(s=>[s.id,s.label,s.color==="green"?"--green":s.color==="red"?"--red":"--mute"]);
+function bucket(j){return STAGES.find(s=>s.sts.includes(String(j["My status"]??"").trim()))?.id||"other"}
+const BUCKET_STAGE=Object.fromEntries(STAGES.map(s=>[s.id,s.id]));
 // Display names for the xlsx status values (the xlsx keeps its own values).
-const SL={"Suggested (not applied)":"Wishlist","Message drafted":"Message drafted","CV ready":"CV ready","Applied":"Applied","Interview":"Interviewing","Offer":"Offer","Rejected":"Rejected","Skipped":"Skipped"};
-const sl=s=>SL[s]||s||"Wishlist";
+const SL=Object.fromEntries(STAGE_DATA.stages.map(s=>[s.name,s.name]));
+const sl=s=>SL[s]||s||"Other status";
 const stageOf=j=>STAGES.find(s=>s.id===BUCKET_STAGE[bucket(j)]);
 const stageIdx=j=>STAGES.indexOf(stageOf(j));
+const closedStage=s=>["skipped","rejected"].includes(s.id);
+function allowedMove(j,s){return !!s&&s.id!=="other"&&(s.id!=="rejected"||stageOf(j).id==="rejected"||STAGE_DATA.rejected_from.includes(j["My status"]))}
+function boardMove(j,s){return allowedMove(j,s)&&!(s.id==="skipped"&&["applied","interview","offer","rejected"].includes(stageOf(j).id))}
 const REG={CR:[HQ_SETTINGS.home_country_label||"Home country",HQ_SETTINGS.home_country_icon||"globe"],LATAM:["LatAm / Americas","globe"],ES:["Spain","es"],DE:["Germany","de"],IT:["Italy","it"],EU:["EU-wide remote","eu"],OTHER:["Other","globe"]};
 const VERD={APPLY:["Apply","g"],CONSIDER:["Consider","b"],LOW:["Low","a"],SKIP:["Skip",""],NONE:["Not scored",""]};
 function region(w){w=w||"";
@@ -819,17 +780,17 @@ const vchip=v=>v.key==="NONE"&&!v.raw?"":`<span class="chip ${v.cls}" title="${e
 function fitText(sc,v){if(v.key==="APPLY")return"Top pick";if(!sc)return"Not scored yet";return sc.val>=3.75?"Strong fit":sc.val>=3.25?"Good fit":sc.val>=2.75?"Partial fit":"Weak fit"}
 
 let D={jobs:[],contacts:[],sheets:[],statuses:[]};
-const S=Object.assign({view:"overview",sheets:[],regions:[],verdicts:[],stages:[],minScore:0,openOnly:false,hideClosed:false,sort:"score",group:"none",sel:null,showClosedBoard:false},store.get("state",{}));
+const S=Object.assign({view:"overview",sheets:[],regions:[],verdicts:[],stages:[],minScore:0,openOnly:false,hideClosed:false,sort:"score",group:"none",sel:null},store.get("state",{}));
 S.q="";S.view="overview";S.attention=false;
+S.stages=S.stages.filter(id=>STAGES.some(s=>s.id===id));
 const save=()=>store.set("state",{sheets:S.sheets,regions:S.regions,verdicts:S.verdicts,stages:S.stages,minScore:S.minScore,openOnly:S.openOnly,hideClosed:S.hideClosed,sort:S.sort,group:S.group,sel:S.sel});
 const key=j=>j._sheet+"|"+j._row;
 const byKey=k=>D.jobs.find(j=>key(j)===k);
 const sheetShort=s=>s.replace(/\s*\((\d{4}-\d{2}-\d{2})\)$/,"").replace(/\s*\(evening\)$/," (evening)");
 
-function attention(j){const st=stageOf(j).id;if(st==="closed")return"";
+function attention(j){const st=stageOf(j).id;if(["skipped","rejected"].includes(st))return"";
  if(j._open==="closed")return"Posting looks closed";
- if(j["My status"]==="Message drafted")return"Message drafted, not sent";
- if(j["My status"]==="CV ready")return"CV ready, not applied";
+ if(st==="apply")return"Application to prepare and send";
  if(st==="applied"&&j["Date applied"]){const d=daysBetween(j["Date applied"],D.today);if(d>=10)return`Applied ${d} days ago: follow up?`}
  return""}
 const coKey=n=>String(n||"").replace(/\(.*?\)/g,"").trim().toLowerCase();
@@ -848,7 +809,7 @@ function matches(j,skip){const q=S.q.trim().toLowerCase();
  if(skip!=="stages"&&S.stages.length&&!S.stages.includes(stageOf(j).id))return false;
  if(S.minScore>0&&!(j._sc&&j._sc.val>=S.minScore))return false;
  if(S.openOnly&&j._open!=="open")return false;
- if(S.hideClosed&&stageOf(j).id==="closed")return false;
+ if(S.hideClosed&&closedStage(stageOf(j)))return false;
  if(skip!=="attention"&&S.attention&&!attention(j))return false;
  return true}
 const filtered=()=>D.jobs.filter(j=>matches(j));
@@ -889,10 +850,11 @@ setInterval(async()=>{if(document.hidden||busy||$("#addDlg").open||$$("textarea[
  try{const r=await fetch("/api/version",{cache:"no-store"});const v=(await r.json()).version;if(v&&D.version&&v!==D.version)load(true)}catch{}},15000);
 
 /* ---------- writes ---------- */
-const PRE_APPLIED=["Suggested (not applied)","Message drafted","CV ready"],POST_APPLIED=["Applied","Interview","Offer"];
+const PRE_APPLIED=STAGES.filter(s=>["tracked","review","apply","skipped"].includes(s.id)).map(s=>s.drop),POST_APPLIED=STAGE_DATA.rejected_from;
 const PENDING=new Set();
 /* One change = one save. The page updates at once (optimistic) and rolls back if the save fails. */
 async function setStatus(j,s,{date}={}){if(!j)return;const k=key(j);if(PENDING.has(k))return;
+ if(!allowedMove(j,STAGES.find(x=>x.drop===s)||STAGES[STAGES.length-1]))return;
  const prev={status:j["My status"],date:j["Date applied"]||""};
  if(s===prev.status&&(date===undefined||date===prev.date))return;
  let d=date;
@@ -919,7 +881,7 @@ async function undoLast(){if(undoing)return;const e=UNDO.pop();undoUI();if(!e)re
  else{cur["My status"]=was.status;cur["Date applied"]=was.date;UNDO.push(e);undoUI();render()}}
 async function saveNote(j,txt){busy=true;const ok=await post("/api/update",{sheet:j._sheet,row:j._row,note:txt,expect:{Company:j.Company,Role:j.Role}});busy=false;
  if(ok){j.Notes=txt;j._noteSaved=true;toast("Notes saved");return true}return false}
-function dropStatus(j,stage){if(stage.drop)return stage.drop;return stageIdx(j)>=2?"Rejected":"Skipped"}
+function dropStatus(j,stage){return stage.drop}
 
 /* ---------- toast ---------- */
 let tT,tMs=0;const tHide=()=>{clearTimeout(tT);tT=setTimeout(()=>$("#toast").classList.remove("on"),tMs)};
@@ -932,11 +894,11 @@ $("#toast").addEventListener("focusin",()=>clearTimeout(tT));$("#toast").addEven
 /* ---------- pieces ---------- */
 function emptyBox(title,text,action){return`<div class="empty"><svg viewBox="0 0 120 90" fill="none"><rect x="14" y="18" width="92" height="62" rx="12" fill="var(--soft)"/><rect x="26" y="32" width="40" height="7" rx="3.5" fill="var(--line)"/><rect x="26" y="46" width="64" height="6" rx="3" fill="var(--line)"/><rect x="26" y="58" width="52" height="6" rx="3" fill="var(--line)"/><circle cx="92" cy="22" r="14" fill="var(--blue-soft)"/><path d="m86.5 22 4 4 7-8" stroke="var(--blue)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><h3>${title}</h3><p>${text}</p>${action||""}</div>`}
 function noMatch(){return emptyBox("No jobs match these filters","Try widening the score range or clearing a filter.",`<button class="btn ghost" data-act="clear">Clear filters</button>`)}
-function warnFor(j,compact){const st=stageOf(j).id;if(st==="closed")return"";
+function warnFor(j,compact){const st=stageOf(j).id;if(["skipped","rejected"].includes(st))return"";
  if(j._open==="closed")return`<div class="warn">${IC.warn}Posting looks closed</div>`;
  return""}
 function locLine(j){return`<div class="loc">${flag(j._reg)}<span>${esc(j.Where||"Location not listed")}</span></div>`}
-function jobCard(j,opts={}){const st=stageOf(j);const dim=st.id==="closed"||j._open==="closed";
+function jobCard(j,opts={}){const st=stageOf(j);const dim=closedStage(st)||j._open==="closed";
  return`<article class="card ${opts.list?"lcard":""} ${dim?"dim":""} ${S.sel===key(j)&&opts.list?"sel":""}" tabindex="0" ${opts.drag?'draggable="true"':""} data-k="${esc(key(j))}" aria-label="${esc(jname(j))}, ${esc(j.Role)}, ${esc(sl(j["My status"]))}">
  <div class="card-top">${av(j.Company,"sm")}<div class="t"><div class="co">${esc(j.Company)} <span class="pl">· ${flag(j._reg)}${esc(place(j))}</span></div><div class="ro">${esc(j.Role)}</div></div>${ring(j._sc,opts.list?40:36)}</div>
  <div class="card-foot"><div class="chips">${vchip(j._v)}${opts.list?`<span class="chip st"><i class="dot" style="color:${st.c}"></i>${esc(sl(j["My status"]))}</span>`:""}${j._sib.length?`<span class="chip" title="Also: ${esc(j._sib.map(x=>place(x)+" ("+sheetShort(x._sheet)+")").join("; "))}">Also in ${j._sib.length} place${j._sib.length>1?"s":""}</span>`:""}</div></div>
@@ -945,7 +907,7 @@ function jobCard(j,opts={}){const st=stageOf(j);const dim=st.id==="closed"||j._o
 /* ---------- sankey ---------- */
 /* Counts for any list of jobs, all from bucket(). pct = each bucket's share to one decimal. */
 function counts(js,quiet){const c={total:js.length,pct:{}};BUCKETS.forEach(([k])=>c[k]=0);js.forEach(j=>c[bucket(j)]++);
- c.cvready=js.filter(j=>String(j["My status"]).trim()==="CV ready").length;c.drafted=c.ready-c.cvready;
+
  c.appliedTotal=c.applied+c.interview+c.offer+c.rejected;
  c.sent=c.appliedTotal;
  pcts(BUCKETS.map(([k])=>c[k])).forEach((v,i)=>c.pct[BUCKETS[i][0]]=v);
@@ -962,125 +924,34 @@ function counts(js,quiet){const c={total:js.length,pct:{}};BUCKETS.forEach(([k])
 function pcts(vals){const t=vals.reduce((a,b)=>a+b,0);return vals.map(v=>t?Math.round(v*1000/t)/10:0)}
 const pctTol=vals=>Math.max(0.1,0.05*vals.filter(v=>v>0).length)+1e-9;
 const f1=v=>`${(+v).toFixed(1)}%`;
-const TILE_COLORS={all:"var(--tc-all)",tracked:"var(--tc-all)",wish:"var(--tc-wish)",ready:"var(--tc-ready)",applied:"var(--tc-applied)",interview:"var(--tc-interview)",offer:"var(--tc-offer)",rejected:"var(--tc-rejected)",skipped:"var(--tc-skipped)",other:"var(--tc-skipped)"};
-function sankey(js,C,phone=innerWidth<960){const SH={wish:"Wishlist",ready:"Ready",applied:"Applied",interview:"Interviewing",rejected:"Rejected",offer:"Offer",skipped:"Skipped",other:"Other"};
- const N={};
- const D_COLS={wish:0,ready:1,skipped:1,other:1,applied:2,interview:3,rejected:3,offer:4};
- const P_ROWS={wish:0,ready:1,skipped:1,other:1,applied:2,interview:3,rejected:3,offer:4};
- BUCKETS.forEach(([k,l])=>{if(k==="other"&&!C.other)return;N[k]=[l,C[k],phone?P_ROWS[k]:D_COLS[k],TILE_COLORS[k]||"var(--tc-skipped)"]});
- const order=["wish","ready","skipped","other","applied","interview","rejected","offer"];
- const nodes=order.map(k=>[k,N[k]]).filter(([,v])=>!!v);
- const baseL=[["wish","ready"],["wish","skipped"],["ready","applied"],["applied","interview"],["applied","rejected"],["interview","offer"]];
- if(C.other)baseL.splice(2,0,["wish","other"]);
- const L=baseL.filter(([a,b])=>N[a]&&N[b]);
- const dotR=phone?5.5:6;
- const P={};
- if(phone){
-  P.wish={cx:150,cy:34};
-  if(C.other){P.ready={cx:50,cy:110};P.skipped={cx:150,cy:110};P.other={cx:250,cy:110}}
-  else{P.ready={cx:70,cy:110};P.skipped={cx:215,cy:110}}
-  P.applied={cx:150,cy:186};
-  P.interview={cx:70,cy:262};P.rejected={cx:215,cy:262};
-  P.offer={cx:150,cy:338};
- }else{
-  P.wish={cx:45,cy:130};
-  if(C.other){P.ready={cx:215,cy:55};P.skipped={cx:215,cy:130};P.other={cx:215,cy:205}}
-  else{P.ready={cx:215,cy:68};P.skipped={cx:215,cy:192}}
-  P.applied={cx:385,cy:130};
-  P.interview={cx:555,cy:68};P.rejected={cx:555,cy:192};
-  P.offer={cx:725,cy:130};
- }
- const W=phone?300:880,H=phone?370:260;
- let out=`<desc>Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown. Rejection can happen before or after an interview.</desc>`;
- L.forEach(([a,b])=>{const v=N[b][1],A=P[a],B=P[b];
-  if(!A||!B)return;
-  const tier=phone?P_ROWS[a]:D_COLS[a];
-  const col=v>0?`var(--conn-${b})`:"var(--conn-zero)";
-  const strokeW=v>0?2.85:2;
-  const dash=v>0?"":"stroke-dasharray:4 4;";
-  let pathD;
-  if(phone){
-   const x0=A.cx,y0=A.cy+dotR;
-   const x1=B.cx,y1=B.cy-dotR;
-   const ym=(y0+y1)/2;
-   pathD=`M${x0},${y0}C${x0},${ym} ${x1},${ym} ${x1},${y1}`;
-  }else{
-   const x0=A.cx+dotR,y0=A.cy;
-   const x1=B.cx-dotR,y1=B.cy;
-   const xm=(x0+x1)/2;
-   pathD=`M${x0},${y0}C${xm},${y0} ${xm},${y1} ${x1},${y1}`;
-  }
-  out+=`<g class="lnk-wrap">
-  <path class="lnk" data-tier="${tier}" data-link="${N[a][0]} to ${N[b][0]}" pathLength="100" d="${pathD}" style="stroke:${col};color:${col};stroke-width:${strokeW};opacity:1;${dash}"><title>${N[a][0]} to ${N[b][0]}</title></path></g>`});
- nodes.forEach(([key,v])=>{const p=P[key];if(!p)return;
-  const pct=`${f1(C.pct[key])}`;
-  const col=TILE_COLORS[key]||"var(--tc-skipped)";
-  let lx,ly,anchor;
-  if(phone){
-   anchor="middle";
-   lx=p.cx;
-   ly=key==="offer"?p.cy-30:p.cy+19;
-  }else{
-   anchor="start";
-   lx=p.cx+dotR+8;
-   ly=p.cy+4.5;
-  }
-  const nm=SH[key]||v[0];
-  out+=`<g class="nd" data-key="${key}" data-${phone?"row":"col"}="${v[2]}" data-n="${v[1]}" data-tip="<b>${v[0]}</b><br>${v[1]} job${v[1]===1?"":"s"} · ${pct} of tracked">
-  <circle cx="${p.cx}" cy="${p.cy}" r="${dotR+10}" fill="transparent"/>
-  <circle class="nd-dot" cx="${p.cx}" cy="${p.cy}" r="${dotR}" style="fill:${col};color:${col}"/>
-  <text x="${lx}" y="${ly}" text-anchor="${anchor}">${phone?`<tspan x="${lx}"><tspan class="v" font-weight="700">${v[1]}</tspan> <tspan class="p">${pct}</tspan></tspan><tspan x="${lx}" dy="16">${nm}</tspan>`:`<tspan class="v" font-weight="700">${v[1]}</tspan> ${nm} <tspan class="p">${pct}</tspan>`}</text></g>`});
- return`<svg id="sk" class="${phone?"compact":""}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Job search flow: ${nodes.map(([k,v])=>v[1]+" "+v[0]+" ("+f1(C.pct[k])+")").join(", ")}. Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown. Rejection can happen before or after an interview.">${out}</svg>`}
-
+const TILE_COLORS=Object.fromEntries([["all","var(--ink)"],...STAGES.map(s=>[s.id,s.c])]);
+/* Each job contributes to exactly one current stage. */
+function sankey(js,C,phone=innerWidth<960){
+ const nodes=STAGES.filter(s=>s.id!=="other"||C.other),W=phone?360:880,H=nodes.length*36+16;
+ const max=Math.max(1,...nodes.map(s=>C[s.id])),barX=96;
+ const valueWidth=Math.max(...nodes.map(s=>`${C[s.id]} · ${f1(C.pct[s.id])}`.length))*8+12,barWidth=W-barX-valueWidth-8;
+ let out='<desc>Current stage counts. Each job counts once.</desc>';
+ nodes.forEach((s,i)=>{const y=26+i*36,n=C[s.id],width=n/max*barWidth;
+  out+=`<g class="nd" data-key="${s.id}" data-row="${i}" data-n="${n}"><text x="4" y="${y}">${esc(s.label)}</text><rect class="stage-track" x="${barX}" y="${y-6}" width="${barWidth}" height="2" rx="1"/>${n?`<rect x="${barX}" y="${y-10}" width="${width}" height="10" rx="2" style="fill:${s.c}"/>`:""}<text class="stage-value" x="${barX+barWidth+10}" y="${y}">${n} · ${f1(C.pct[s.id])}</text></g>`});
+ return`<svg id="sk" class="${phone?"compact":""}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Current stage counts">${out}</svg>`
+}
 /* ---------- views ---------- */
 function attnBtn(){const n=D.jobs.filter(j=>matches(j,"attention")&&attention(j)).length;return`<button class="btn ${S.attention?"":"ghost"} attn" data-act="attn" aria-pressed="${S.attention}">${IC.warn}Needs attention <span class="count">${n}</span></button>`}
 function overview(js){const st=j=>stageOf(j).id,C=counts(js);
  const appliedN=C.sent;
- const SUB={wish:"Not started",ready:`${C.cvready} CV ready · ${C.drafted} drafted`,applied:"Waiting on a reply",interview:"In interviews now",offer:"Holding an offer",rejected:"After applying",skipped:"Decided not to apply",other:"Unrecognised status"};
- const T=[[C.total,"Tracked",`${C.sent} application${C.sent===1?"":"s"} so far`,"--ink","all"],...BUCKETS.filter(([k])=>k!=="other"||C.other).map(([k,l,col])=>[C[k],l,`${f1(C.pct[k])} · ${SUB[k]}`,col,k])];
+ const SUB=Object.fromEntries(STAGES.map(s=>[s.id,s.means||"Unrecognised status"]));
+ const T=[[C.total,"All jobs",`${C.sent} application${C.sent===1?"":"s"} so far`,"--ink","all"],...BUCKETS.filter(([k])=>k!=="other"||C.other).map(([k,l,col])=>[C[k],l,`${f1(C.pct[k])} · ${SUB[k]}`,col,k])];
  const att=js.filter(j=>attention(j));
  const why=attention;
- return`<section class="tiles" aria-label="Summary. Tracked equals the sum of the stage tiles; each job counts once, by its current status.">${T.map(t=>{const pct=t[4]==="all"?"100%":f1(C.pct[t[4]]);const col=TILE_COLORS[t[4]]||`var(${t[3]})`;return`<button class="tile ${t[4]==="all"?"total":""}" style="--tc:${col}" data-tile="${t[4]}" data-n="${t[0]}" data-pct="${pct}"><b><span class="num">${t[0]}</span><span class="pct">${pct}</span></b><span>${t[1]}</span><small>${t[2]}</small></button>`}).join("")}</section>
+ return`<section class="tiles" aria-label="Summary. All jobs equals the sum of the stage tiles; each job counts once, by its current status.">${T.map(t=>{const pct=t[4]==="all"?"100%":f1(C.pct[t[4]]);const col=TILE_COLORS[t[4]]||`var(${t[3]})`;return`<button class="tile ${t[4]==="all"?"total":""}" style="--tc:${col}" data-tile="${t[4]}" data-n="${t[0]}" data-pct="${pct}"><b><span class="num">${t[0]}</span><span class="pct">${pct}</span></b><span>${t[1]}</span><small>${t[2]}</small></button>`}).join("")}</section>
  <section class="panel ov-chart-panel" aria-labelledby="skh"><div class="panel-h"><h2 id="skh">Job search summary</h2><p>${activeCount()||S.q?"Filtered view":"All lists"}</p></div>
-  <div class="sk-wrap">${sankey(js,C)}</div><p class="sk-note">Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown. Rejection can happen before or after an interview.</p>${appliedN?"":`<div class="sk-empty">${IC.info.replace("<svg",'<svg width="16" height="16"')}No applications yet. Once you mark one Applied, it flows on to interviews, offers or rejections here.</div>`}</section>
+  <div class="sk-wrap">${sankey(js,C)}</div><p class="sk-note">Current stage counts. Each job counts once.</p>${appliedN?"":`<div class="sk-empty">${IC.info.replace("<svg",'<svg width="16" height="16"')}No applications yet. Once you mark one Applied, it flows on to interviews, offers or rejections here.</div>`}</section>
  <section class="panel" style="margin-top:16px"><div class="panel-h"><h2>Needs attention</h2><span class="chip ${att.length?"r":"g"}">${att.length}</span>${att.length?`<button class="btn ghost sp attn" data-act="attn-list">Show all</button>`:""}</div>
   ${att.length?`<ul class="mini" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:6px">${att.slice(0,6).map(j=>`<li><button data-open="${esc(key(j))}">${av(j.Company,"sm")}<span class="t"><b>${esc(j.Company)} <span style="font-weight:500;color:var(--mute)">· ${esc(place(j))}</span></b><small>${esc(why(j))}</small></span></button></li>`).join("")}</ul>`:`<p style="color:var(--mute);margin:0;font-size:13px">All clear: nothing closed, drafted or waiting on you.</p>`}</section>`}
 
-const stageColor=s=>s.id==="wish"?"var(--tc-wish, #7c3aed)":s.id==="ready"?"var(--tc-ready, #d97706)":s.id==="applied"?"var(--tc-applied, #0284c7)":s.id==="interview"?"var(--tc-interview, #db2777)":s.id==="offer"?"var(--tc-offer, #059669)":s.c;
+const stageColor=s=>s.c;
 
-function nextStep(j){
- const st=stageOf(j);
- if(st.id==="closed"){
-  return{title:j["My status"]==="Rejected"?"Application rejected":"Role skipped",attn:false};
- }
- const att=attention(j);
- const isAttn=!!att;
- if(j._open==="closed"){
-  return{title:"Confirm posting is still open",attn:true};
- }
- if(st.id==="other"){
-  return{title:"Review role details",attn:isAttn};
- }
- if(st.id==="wish"){
-  return{title:"Compare role fit",attn:isAttn};
- }
- if(st.id==="ready"){
-  if(j["My status"]==="CV ready")return{title:"Send tailored CV",attn:isAttn};
-  return{title:"Send drafted message",attn:isAttn};
- }
- if(st.id==="applied"){
-  if(att)return{title:"Send a follow-up",attn:true};
-  return{title:"Confirm application receipt",attn:false};
- }
- if(st.id==="interview"){
-  return{title:"Prepare for interview",attn:isAttn};
- }
- if(st.id==="offer"){
-  return{title:"Review offer details",attn:isAttn};
- }
- return{title:"Review next step",attn:isAttn};
-}
-
+function nextStep(j){const st=stageOf(j);return{title:st.means||"Review role details",attn:!!attention(j)}}
 function contactFor(j){
  if(!D.contacts||!D.contacts.length)return null;
  const c=D.contacts.find(x=>x.Company&&j.Company&&x.Company.trim().toLowerCase()===j.Company.trim().toLowerCase());
@@ -1099,7 +970,7 @@ function boardCard(j,s){
  const scTxt=sc?esc(sc.txt):"–";
  const scLabel=sc?esc(fitText(sc,j._v)):"Not scored";
  const ct=contactFor(j);
- const realStatus=s.id==="closed"||s.id==="other"?sl(j["My status"]):s.label;
+ const realStatus=s.id==="other"?sl(j["My status"]):s.label;
  return`<article class="card bcard" tabindex="0" draggable="true" data-k="${esc(key(j))}" aria-label="${esc(j.Company)}, ${esc(j.Role)}, ${esc(realStatus)}" style="--bcard-notch:${col}">
   <div class="bcard-top">
    ${av(j.Company,"sm")}
@@ -1127,7 +998,7 @@ function boardCard(j,s){
      Move <svg class="bcard-move-caret" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
     </button>
     <div class="bcard-move-menu" role="menu" hidden>
-     ${STAGES.filter(st=>st.id!=="other"&&st.id!==s.id).map(st=>`
+     ${STAGES.filter(st=>st.id!==s.id&&boardMove(j,st)).map(st=>`
       <button class="bcard-move-item" type="button" role="menuitem" data-moveto="${st.id}" data-k="${esc(key(j))}">
        <i class="dot" style="background:${stageColor(st)}"></i>
        <span>${esc(st.label)}</span>
@@ -1139,17 +1010,16 @@ function boardCard(j,s){
  </article>`}
 
 function board(js){const so=sorter();
- const activeJobs=js.filter(j=>stageOf(j).id!=="closed"&&stageOf(j).id!=="other");
- const closedJobs=js.filter(j=>stageOf(j).id==="closed");
+ const activeJobs=js.filter(j=>!closedStage(stageOf(j))&&stageOf(j).id!=="other");
  const otherJobs=js.filter(j=>stageOf(j).id==="other");
  const attJobs=js.filter(j=>attention(j));
- const stagesToShow=STAGES.filter(s=>(s.id!=="closed"||S.showClosedBoard)&&(s.id!=="other"||otherJobs.length>0));
+ const stagesToShow=STAGES.filter(s=>s.id!=="other"||otherJobs.length>0);
  return`<div class="board" role="list">
   <div class="board-top-bar">
    <div class="board-top-left">
     <h2 class="board-title">Application pipeline</h2>
     <p class="board-sub">Move each role forward and keep its next step in view.</p>
-    <div class="board-hint-line">Active roles (Wishlist through Offer) · Drag a role to update its stage</div>
+    <div class="board-hint-line">All board stages · Drag a role to update its stage</div>
    </div>
    <div class="board-top-right">
     <div class="board-top-pills">
@@ -1157,10 +1027,6 @@ function board(js){const so=sorter();
      <span class="bpill bpill-attn"><i class="dot" style="background:var(--amber)"></i><b>${attJobs.length}</b> needs attention</span>
      ${otherJobs.length?`<span class="bpill bpill-other"><i class="dot" style="background:var(--mute)"></i><b>${otherJobs.length}</b> other status</span>`:""}
     </div>
-    <button class="bpill-closed-btn ${S.showClosedBoard?"active":""}" type="button" data-act="toggle-board-closed" aria-expanded="${S.showClosedBoard?"true":"false"}" title="Show or hide rejected and skipped roles">
-     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
-     <span>Rejected / Skipped <b>${closedJobs.length}</b></span>
-    </button>
    </div>
   </div>
   <div class="board-cols" style="grid-template-columns:repeat(${stagesToShow.length},minmax(230px,1fr))">
@@ -1168,7 +1034,7 @@ function board(js){const so=sorter();
     const items=js.filter(j=>stageOf(j)===s).sort(so);
     return`<section class="col" data-stage="${s.id}" role="listitem" aria-label="${s.label}, ${items.length}">
      <div class="col-h"><i class="dot" style="background:${stageColor(s)}"></i>${s.label}<em>${items.length}</em></div>
-     <div class="col-list">${items.length?items.map(j=>boardCard(j,s)).join(""):`<div class="col-empty">${s.id==="wish"?"No saved jobs":"Drag a card here"}</div>`}</div>
+     <div class="col-list">${items.length?items.map(j=>boardCard(j,s)).join(""):`<div class="col-empty">${s.id==="tracked"?"No saved jobs":"Drag a card here"}</div>`}</div>
     </section>`}).join("")}
   </div>
   <p class="hint">Drag cards between columns, or focus a card and press <kbd>Shift</kbd> + <kbd>←</kbd>/<kbd>→</kbd>. Saved straight into the spreadsheet.</p>
@@ -1228,16 +1094,13 @@ function sidebar(inDrawer){const cnt=(field,val)=>D.jobs.filter(j=>matches(j,fie
  <div><h3>List</h3><div class="opts">${sheets.map(s=>box("sheets",s,s)).join("")}</div></div>
  <div class="opts"><label class="switch">Posting open only<input type="checkbox" data-t="openOnly" ${S.openOnly?"checked":""}></label><label class="switch">Needs attention only<input type="checkbox" data-t="attention" ${S.attention?"checked":""}></label><label class="switch">Hide closed &amp; skipped<input type="checkbox" data-t="hideClosed" ${S.hideClosed?"checked":""}></label></div></aside>`}
 
-function detail(j){const st=stageOf(j),si=stageIdx(j),closed=st.id==="closed",rej=j["My status"]==="Rejected";
+function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
  const other=st.id==="other",ad=j["Date applied"];
- const steps=STAGES.slice(0,5).map((s,i)=>{let cls=other?"":closed?(rej&&i<=2&&(i<2||ad)?"done":""):i<si?"done":i===si?"cur":"";
-  if(s.id==="applied"&&cls==="done"&&!ad)cls="";
-  const sub=s.id==="applied"&&(cls==="done"||cls==="cur")?`<small class="sd">${ad?esc(ad):"no date"}</small>`:s.id==="applied"&&si>2&&!closed&&!other?`<small class="sd warnd">no date</small>`:"";
-  return`<li class="${cls}"><button data-step="${s.id}" title="Move to ${s.label}" ${i===si&&!closed?'aria-current="step"':""}><span class="b">${cls==="done"?IC.check:i+1}</span>${s.step}${sub}</button></li>`}).join("");
+ const steps=STAGES.filter(s=>s.id!=="other").map(s=>`<li class="${s===st?"cur":""}"><button data-step="${s.id}" title="Move to ${s.label}" ${allowedMove(j,s)?"":"disabled"} ${s===st?'aria-current="step"':""}><span class="b">${s===st?IC.check:STAGES.indexOf(s)+1}</span>${s.step}</button></li>`).join("");
  const ban=[];if(j._open==="closed"&&!closed)ban.push(`<div class="banner">${IC.warn}<span><b>This posting looks closed.</b> Last open check: ${esc(j._check)}${j._checkdate?` (${esc(j._checkdate)})`:""}. Confirm on the employer site before spending time on it.</span></div>`);
  else if(j._age!=null&&j._age>3&&!closed&&si<2)ban.push(`<div class="banner a">${IC.clock}<span>Open check is ${j._age} days old (${esc(j._checkdate)}). The daily rerun should refresh it.</span></div>`);
  if(other)ban.push(`<div class="banner a">${IC.info}<span>Status <b>${esc(j["My status"])}</b> isn't one of the tracker's statuses, so it's counted under “Other status”. Pick a status below to fix it.</span></div>`);
- if(closed)ban.push(`<div class="banner n">${IC.info}<span>Marked <b>${esc(sl(j["My status"]))}</b>. <button class="linkbtn" data-step="wish" style="padding:0">Move back to wishlist</button></span></div>`);
+ if(closed)ban.push(`<div class="banner n">${IC.info}<span>Marked <b>${esc(sl(j["My status"]))}</b>. <button class="linkbtn" data-step="tracked" style="padding:0">Move back to first stage</button></span></div>`);
  const sc=j._sc,v=j._v;
  return`<article class="detail" data-k="${esc(key(j))}" aria-label="${esc(jname(j))} details">
  <div class="d-head">${av(j.Company,"lg")}<div class="t"><h2>${esc(j.Company)} <span class="pl">· ${flag(j._reg)} ${esc(place(j))}</span></h2><div class="role">${esc(j.Role)}</div></div><div class="d-actions d-actions-top">${/^https?:\/\//.test(j.Link)?`<a class="btn" href="${esc(j.Link)}" target="_blank" rel="noopener noreferrer">Open posting ${IC.ext}<span class="sr"> (opens a new tab)</span></a><button class="btn ghost" data-copy="${esc(j.Link)}">${IC.copy}Copy link</button>`:`<span style="color:var(--mute);font-size:13px">No link saved</span>`}</div></div>
@@ -1260,7 +1123,7 @@ function detail(j){const st=stageOf(j),si=stageIdx(j),closed=st.id==="closed",re
    <div class="gd-qual-item"><div><b>Location &amp; Remote:</b><small>${flag(j._reg)} ${esc(j.Where||place(j))}${j._remote?" · Remote-friendly":""}</small></div></div>
   </div>
   <div style="margin-top:20px"><h4 style="font-size:14px;margin-bottom:12px">Application progress</h4><ol class="stepper ${closed?"closed":""}">${steps}</ol></div>
-  <div class="form2" style="margin-top:18px"><label class="f">Status<select class="inp" data-status>${D.statuses.map(s=>`<option value="${esc(s)}" ${s===j["My status"]?"selected":""}>${esc(sl(s))}</option>`).join("")}${D.statuses.includes(j["My status"])?"":`<option selected>${esc(j["My status"])}</option>`}</select></label>
+  <div class="form2" style="margin-top:18px"><label class="f">Status<select class="inp" data-status>${D.statuses.filter(name=>allowedMove(j,STAGES.find(s=>s.drop===name))).map(s=>`<option value="${esc(s)}" ${s===j["My status"]?"selected":""}>${esc(sl(s))}</option>`).join("")}${D.statuses.includes(j["My status"])?"":`<option selected>${esc(j["My status"])}</option>`}</select></label>
    <label class="f">Date applied<input class="inp" type="date" data-date value="${esc(j["Date applied"])}" max="${D.today}"></label></div>
  </section>
  <section class="gd-card gd-notes-card">
@@ -1322,16 +1185,15 @@ $("#scrim").onclick=closeDrawers;
 document.addEventListener("click",async e=>{const t=e.target;
  if(!t.closest(".bcard-move-wrap")){$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"))}
  const a=t.closest("[data-act]");if(a){const v=a.dataset.act;if(v==="clear")clearFilters();if(v==="close"||v==="closef")closeDrawers();if(v==="openf")openFilters();if(v==="add")openAdd();if(v==="attn"){S.attention=!S.attention;render()}if(v==="attn-list"){S.attention=true;S.view="list";render()}
-  if(v==="toggle-board-closed"){S.showClosedBoard=!S.showClosedBoard;render()}
   if(v==="open-move"){const w=a.closest(".bcard-move-wrap"),m=w.querySelector(".bcard-move-menu"),opening=m.hidden;$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"));m.hidden=!opening;a.setAttribute("aria-expanded",String(opening));if(opening){const f=m.querySelector(".bcard-move-item");if(f)f.focus()}else a.focus();return}
   return}
- const mv=t.closest("[data-moveto]");if(mv){const k=mv.dataset.k,keyboard=e.detail===0,j=byKey(k),st=STAGES.find(x=>x.id===mv.dataset.moveto);if(j&&st&&st.id!=="other"&&stageOf(j)!==st){setStatus(j,dropStatus(j,st)).then(()=>{const card=$(`.card[data-k="${CSS.escape(k)}"]`);if(card)card.focus();else if(keyboard&&st.id==="closed"&&!S.showClosedBoard&&!PENDING.has(k)&&stageOf(byKey(k)||j).id==="closed")$('[data-act="toggle-board-closed"]')?.focus()})}$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"));return}
+ const mv=t.closest("[data-moveto]");if(mv){const k=mv.dataset.k,keyboard=e.detail===0,j=byKey(k),st=STAGES.find(x=>x.id===mv.dataset.moveto);if(j&&st&&boardMove(j,st)&&stageOf(j)!==st){setStatus(j,dropStatus(j,st)).then(()=>{const card=$(`.card[data-k="${CSS.escape(k)}"]`);if(card)card.focus();})}$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"));return}
  const rm=t.closest("[data-rm]");if(rm){const f=rm.dataset.rm;if(Array.isArray(S[f]))S[f]=S[f].filter(x=>x!==rm.dataset.v);else S[f]=f==="minScore"?0:false;render();return}
  const tile=t.closest("[data-tile]");if(tile){const v=tile.dataset.tile;S.view="list";if(v!=="all"){S.stages=[BUCKET_STAGE[v]]}render();return}
  const reg=t.closest("[data-reg]");if(reg){S.regions=[reg.dataset.reg];S.view="list";render();return}
  const op=t.closest("[data-open]");if(op){openJob(op.dataset.open);return}
  const step=t.closest("[data-step]");if(step){const j=byKey(step.closest("[data-k]").dataset.k);const s=STAGES.find(x=>x.id===step.dataset.step);
-  const ns=s.id==="ready"&&j["My status"]==="Message drafted"?"Message drafted":s.drop;if(ns&&ns!==j["My status"])setStatus(j,ns);return}
+  const ns=s.drop;if(ns&&allowedMove(j,s)&&ns!==j["My status"])setStatus(j,ns);return}
  const cp=t.closest("[data-copy]");if(cp){try{await navigator.clipboard.writeText(cp.dataset.copy);toast("Link copied")}catch{toast("Couldn't copy",null,true)}return}
  const sv=t.closest("[data-savenote]");if(sv){const art=sv.closest("[data-k]"),ta=art.querySelector("[data-note]");const j=byKey(art.dataset.k);
   sv.disabled=true;sv.textContent="Saving…";if(await saveNote(j,ta.value)){noteState(ta)}else{sv.disabled=false;sv.textContent="Save notes"}return}
@@ -1363,24 +1225,29 @@ document.addEventListener("keydown",e=>{const t=e.target,typing=/INPUT|TEXTAREA|
  const card=t.closest&&t.closest(".card[data-k]");
  if(card&&t===card&&(e.key==="Enter"||e.key===" ")){e.preventDefault();openJob(card.dataset.k);return}
  if(card&&e.shiftKey&&(e.key==="ArrowRight"||e.key==="ArrowLeft")&&S.view==="board"){e.preventDefault();const j=byKey(card.dataset.k);const i=stageIdx(j)+(e.key==="ArrowRight"?1:-1);
-  if(i<0||i>=STAGES.length-1)return;const k=card.dataset.k;setStatus(j,dropStatus(j,STAGES[i])).then(()=>{const moved=$(`.card[data-k="${CSS.escape(k)}"]`);if(moved)moved.focus();else if(STAGES[i].id==="closed"&&!S.showClosedBoard&&!PENDING.has(k)&&stageOf(byKey(k)||j).id==="closed")$('[data-act="toggle-board-closed"]')?.focus()});return}
+  if(i<0||i>=STAGES.length-1||!boardMove(j,STAGES[i]))return;const k=card.dataset.k;setStatus(j,dropStatus(j,STAGES[i])).then(()=>{const moved=$(`.card[data-k="${CSS.escape(k)}"]`);if(moved)moved.focus();});return}
  if(S.view==="list"&&(e.key==="j"||e.key==="k"||e.key==="ArrowDown"||e.key==="ArrowUp")&&(card||t===document.body)){e.preventDefault();const cs=$$(".lcard");const i=cs.findIndex(c=>c.dataset.k===S.sel);
   const n=cs[Math.max(0,Math.min(cs.length-1,i+(/j|ArrowDown/.test(e.key)?1:-1)))];if(n){if(wide())openJob(n.dataset.k);else n.focus();$(`.lcard[data-k="${CSS.escape(n.dataset.k)}"]`)?.scrollIntoView({block:"nearest"})}}});
 /* drag and drop */
+let draggingKey=null;
 document.addEventListener("dragstart",e=>{
  const c=e.target.closest&&e.target.closest(".card[draggable]");if(!c)return;
+ draggingKey=c.dataset.k;
  e.dataTransfer.setData("text/plain",c.dataset.k);e.dataTransfer.effectAllowed="move";
  if(e.dataTransfer.setDragImage)e.dataTransfer.setDragImage(c,24,24);
  document.body.classList.add("is-dragging");
  requestAnimationFrame(()=>c.classList.add("dragging"))
 });
 document.addEventListener("dragend",e=>{
+ draggingKey=null;
  document.body.classList.remove("is-dragging");
  $$(".dragging").forEach(x=>x.classList.remove("dragging"));
  $$(".col.over").forEach(x=>x.classList.remove("over"))
 });
 document.addEventListener("dragover",e=>{
  const c=e.target.closest&&e.target.closest(".col");if(!c)return;
+ const j=byKey(draggingKey),s=STAGES.find(s=>s.id===c.dataset.stage);
+ if(!j||!boardMove(j,s)){e.dataTransfer.dropEffect="none";return}
  e.preventDefault();e.dataTransfer.dropEffect="move";
  $$(".col.over").forEach(x=>x!==c&&x.classList.remove("over"));
  c.classList.add("over")
@@ -1394,7 +1261,7 @@ document.addEventListener("drop",e=>{
  const c=e.target.closest&&e.target.closest(".col");if(!c)return;
  e.preventDefault();c.classList.remove("over");$$(".col.over").forEach(x=>x.classList.remove("over"));
  const j=byKey(e.dataTransfer.getData("text/plain"));const s=STAGES.find(x=>x.id===c.dataset.stage);
- if(j&&s&&s.id!=="other"&&stageOf(j)!==s)setStatus(j,dropStatus(j,s))
+ if(j&&s&&boardMove(j,s)&&stageOf(j)!==s)setStatus(j,dropStatus(j,s))
 });
 /* sankey tooltip */
 const tip=$("#tip");
@@ -1407,7 +1274,7 @@ let rT,lastCompact=innerWidth<960;addEventListener("resize",()=>{clearTimeout(rT
 
 /* ---------- add lead ---------- */
 function fillAdd(){const sel=$("#addSheet");const cur=sel.value;sel.innerHTML=D.sheets.map(s=>`<option>${esc(s.name)}</option>`).join("");if(cur)sel.value=cur;
- $("#addStatus").innerHTML=D.statuses.map(s=>`<option value="${esc(s)}">${esc(sl(s))}</option>`).join("");syncSrc()}
+ $("#addStatus").innerHTML=D.statuses.map(s=>`<option value="${esc(s)}">${esc(sl(s))}</option>`).join("");$("#addStatus").value=STAGE_DATA.new_row;syncSrc()}
 function syncSrc(){const sh=D.sheets.find(s=>s.name===$("#addSheet").value);$("#srcWrap").hidden=!!sh&&!sh.columns.includes("Source")}
 $("#addSheet").onchange=syncSrc;
 $("#addCancel").onclick=()=>$("#addDlg").close();
@@ -1426,55 +1293,24 @@ $("#addSave").onclick=async()=>{const f=$("#addForm"),err=$("#addErr");const p={
 $("#addForm").addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.tagName==="INPUT"){e.preventDefault();if(e.ctrlKey||e.metaKey)$("#addSave").click();else{const f=[...$$("#addForm .inp")];const n=f[f.indexOf(e.target)+1];n&&n.focus()}}});
 
 /* Self-test: checks that tiles, flow nodes and percentages all agree. Run in the console: await trackerSelfTest() */
-window.trackerSelfTest=function(){const out=[],fail=m=>out.push("FAIL "+m),pass=m=>out.push("ok   "+m);
- function check(name,js){const C=counts(js,true);C.problems.forEach(p=>fail(`${name}: ${p}`));
-  const box=document.createElement("div");box.innerHTML=overview(js);const tiles=[...box.querySelectorAll("[data-tile]")];
-  const tracked=+tiles.find(t=>t.dataset.tile==="all").dataset.n,stageSum=tiles.filter(t=>t.dataset.tile!=="all").reduce((a,t)=>a+ +t.dataset.n,0);
-  (tracked===js.length&&stageSum===tracked?pass:fail)(`${name}: Tracked tile ${tracked} = stage tiles ${stageSum} = jobs ${js.length}`);
-  const nd=[...box.querySelectorAll("#sk [data-col], #sk [data-row]")];
-  const keys=nd.map(n=>n.dataset.key);
-  const expectedKeys=BUCKETS.map(([k])=>k).filter(k=>k!=="other"||C.other);
-  (new Set(keys).size===keys.length?pass:fail)(`${name}: flow node keys are unique`);
-  (keys.length===expectedKeys.length&&expectedKeys.every(k=>keys.includes(k))?pass:fail)(`${name}: exact expected node keys present`);
-  const expectedEdges=["Wishlist to Ready to send","Wishlist to Skipped","Ready to send to Applied","Applied to Interviewing","Applied to Rejected","Interviewing to Offer"];
-  if(C.other)expectedEdges.push("Wishlist to Other status");
-  const svgLinks=[...box.querySelectorAll("#sk .lnk")].map(l=>l.getAttribute("data-link")||"");
-  (expectedEdges.every(e=>svgLinks.includes(e))?pass:fail)(`${name}: all intended schematic edges present`);
-  (nd.every(n=>+n.dataset.n===(C[n.dataset.key]||0))?pass:fail)(`${name}: flow nodes match stage counts`);
-  const flowSum=nd.reduce((a,n)=>a+ +n.dataset.n,0);
-  (flowSum===js.length?pass:fail)(`${name}: flow nodes sum ${flowSum} = tracked ${js.length}`);
-  const skNote=box.querySelector(".sk-note");
-  (skNote&&skNote.textContent.includes("Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown.")&&skNote.textContent.includes("Rejection can happen before or after an interview.")?pass:fail)(`${name}: flow schematic explanatory note present`);
-  const tp=tiles.filter(t=>t.dataset.tile!=="all").reduce((a,t)=>a+parseFloat(t.querySelector("small").textContent),0);
-  (!js.length||Math.abs(tp-100)<=pctTol(tiles.filter(t=>t.dataset.tile!=="all").map(t=>+t.dataset.n))?pass:fail)(`${name}: stage tile percentages total ${tp.toFixed(1)}%`);
-  const bars=[...box.querySelectorAll(".bar")];
-  if(bars.length){
-   const rp=[...box.querySelectorAll(".bar .tr i")].reduce((a,i)=>a+parseFloat(i.style.width),0);
-   (!js.length||Math.abs(rp-100)<=pctTol([...box.querySelectorAll(".bar b")].map(b=>+b.textContent))?pass:fail)(`${name}: region bar percentages total ${rp.toFixed(1)}%`);
-  }
-  return C}
- const C=check("all jobs",D.jobs);check("current filters",filtered());
- const mk=(st,w)=>({...D.jobs[0],"My status":st,Where:w,_sheet:"selftest",_row:0,_sib:[],_reg:region(w),_sc:null,_v:verdict(""),_open:"open"});
- const synth=[mk("Offer","Madrid, Spain"),mk("Rejected","Berlin, Germany"),mk("Interview",HQ_SETTINGS.home_place_example||"Home country"),mk("Message drafted","Milan, Italy"),mk("Skipped","Remote, LATAM"),mk("On hold??",HQ_SETTINGS.home_place_example||"Home country"),mk("","Somewhere"),mk("Applied",HQ_SETTINGS.home_place_example||"Home country"),mk("CV ready",HQ_SETTINGS.home_place_example||"Home country"),mk("Suggested (not applied)",HQ_SETTINGS.home_place_example||"Home country")];
- const SC=check("synthetic: one of every status + unknown + blank",synth);
- (SC.offer===1&&SC.rejected===1&&SC.interview===1&&SC.ready===2&&SC.skipped===1&&SC.other===1&&SC.wish===2&&SC.applied===1&&SC.sent===4?pass:fail)("synthetic buckets: "+BUCKETS.map(([k,l])=>`${l} ${SC[k]}`).join(", "));
- check("rejected-only fixture",[mk("Rejected","Berlin, Germany"),mk("Rejected","Remote, EU")]);
- check("unequal-count fixture",[mk("Suggested (not applied)","Spain"),mk("Suggested (not applied)","Spain"),mk("Suggested (not applied)","Spain"),mk("CV ready","Germany"),mk("Applied","UK"),mk("Applied","UK"),mk("Interview","USA"),mk("Offer","Remote"),mk("Skipped","Spain")]);
- // Estimate compact labels from character counts at the declared 13.5px / 13px sizes.
- const large=Array.from({length:100},()=>["Suggested (not applied)","CV ready","Skipped","On hold??","Applied","Interview","Rejected","Offer"].map(st=>mk(st,HQ_SETTINGS.home_place_example||"Home country"))).flat();
- const compact=document.createElement("div");compact.innerHTML=sankey(large,counts(large,true),true);
- const compactNodes=[...compact.querySelectorAll(".nd")];
- const labelsFit=compactNodes.every(n=>{const text=n.querySelector("text"),x=+text.getAttribute("x");
-  const lines=[...text.children],stage={wish:"Wishlist",ready:"Ready",applied:"Applied",interview:"Interviewing",rejected:"Rejected",offer:"Offer",skipped:"Skipped",other:"Other"}[n.dataset.key];
-  if(lines.length!==2||!lines.every(line=>line.localName==="tspan")||lines[1].textContent!==stage||lines[1].getAttribute("dy")!=="16")return false;
-  const row=compactNodes.filter(other=>other.dataset.row===n.dataset.row).sort((a,b)=>+a.querySelector("text").getAttribute("x")- +b.querySelector("text").getAttribute("x"));
-  const i=row.indexOf(n),left=i?(+row[i-1].querySelector("text").getAttribute("x")+x)/2:0,right=i<row.length-1?(x+ +row[i+1].querySelector("text").getAttribute("x"))/2:300;
-  return lines.every(line=>{const pct=line.querySelector(".p"),pctChars=pct?pct.textContent.length:0;
-   const width=0.55*((line.textContent.length-pctChars)*13.5+pctChars*13);
-   return x-width/2>=left+3&&x+width/2<=right-3})});
- (labelsFit?pass:fail)("100-per-bucket fixture: compact label lines fit their slots with 3-unit margins");
- const ok=!out.some(l=>l.startsWith("FAIL"));console.log((ok?"SELF-TEST PASSED":"SELF-TEST FAILED")+"\n"+out.join("\n"));
- return{ok,total:C.total,buckets:Object.fromEntries(BUCKETS.map(([k])=>[k,C[k]])),pct:C.pct,lines:out}};
+window.trackerSelfTest=function(){
+ const lines=[],check=(ok,msg)=>lines.push((ok?"ok ":"FAIL ")+msg);
+ const mk=(s,i)=>({Company:"Example "+i,Role:"Example role","My status":s,_sheet:"selftest",_row:i,_sib:[],_reg:"OTHER",_sc:null,_v:verdict(""),_open:"open"});
+ const fixtures=[[],D.jobs,STAGE_DATA.stages.map((s,i)=>mk(s.name,i)),[mk("Unknown status",0)],STAGE_DATA.stages.flatMap((s,i)=>Array.from({length:i+1},(_,n)=>mk(s.name,i*10+n)))];
+ fixtures.forEach((js,i)=>{
+  const C=counts(js,true),box=document.createElement("div");box.innerHTML=overview(js);
+  check(!C.problems.length,"fixture "+i+" counts and percentages");
+  const tiles=[...box.querySelectorAll("[data-tile]")].filter(t=>t.dataset.tile!=="all");
+  check(tiles.reduce((n,t)=>n+Number(t.dataset.n),0)===js.length,"fixture "+i+" tile totals");
+  [false,true].forEach(phone=>{box.innerHTML=sankey(js,C,phone);const nodes=[...box.querySelectorAll(".nd")];
+   check(nodes.length===STAGE_DATA.stages.length+(C.other?1:0),"fixture "+i+" flow buckets");
+   check(nodes.reduce((n,x)=>n+Number(x.dataset.n),0)===js.length,"fixture "+i+" flow totals");
+   check(nodes.every(x=>Number(x.dataset.n)===C[x.dataset.key]),"fixture "+i+" flow counts")});
+ });
+ const before=mk(STAGES.find(s=>s.id==="review").drop,0),after=mk(STAGES.find(s=>s.id==="applied").drop,1),rej=STAGES.find(s=>s.id==="rejected");
+ check(!boardMove(before,rej)&&boardMove(after,rej),"rejection targets");
+ const ok=lines.every(s=>!s.startsWith("FAIL"));console.log((ok?"SELF-TEST PASSED":"SELF-TEST FAILED")+"\n"+lines.join("\n"));return{ok,lines}
+};
 
 boot();
 </script></body></html>

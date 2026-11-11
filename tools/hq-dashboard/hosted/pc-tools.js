@@ -165,7 +165,7 @@ $('#requests').addEventListener('click',e=>{const retry=e.target.closest('[data-
  if(PC_WAITING){toast('An edit is waiting. Check the save message at the top before adding another lead.',null,true);return}
  openAdd();if(!$('#addDlg').open)return;const f=$('#addForm'),put=(name,value)=>{const el=f.elements.namedItem(name);if(el)el.value=String(value||'')};
  put('Company',r.company);put('Role',r.role);put('Where',r.location);put('Link',pcSearchLink(r.link));put('Source',r.source||'Company job board');
- put('My status',D.statuses.includes('Suggested (not applied)')?'Suggested (not applied)':D.statuses[0]);
+ put('My status',STAGE_DATA.new_row);
  put('Notes','Source: '+(r.source||'Company job board')+'\nChecked: '+pcDate(r.checkedAt)+'\nNext step: Read the posting and check the eligible countries before applying.');
  $('#addErr').textContent='Check the list and details, then tap Add lead to save this job.';$('#addErr').hidden=false;
 });

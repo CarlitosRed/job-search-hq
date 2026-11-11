@@ -38,7 +38,10 @@ PORT = int(os.environ.get("TRACKER_PORT") or 8765)
 BACKUPS = XLSX.parent / ".tracker-backups"
 LOCK = threading.Lock()
 # Same order as the data-validation list in the workbook.
-STATUSES = ("Suggested (not applied)", "Message drafted", "CV ready", "Applied", "Interview", "Rejected", "Offer", "Skipped")
+_stage_spec = importlib.util.spec_from_file_location('tracker_stages', HERE / 'stages.py')
+stages = importlib.util.module_from_spec(_stage_spec)
+_stage_spec.loader.exec_module(stages)
+STATUSES = stages.NAMES
 ADD_FIELDS = ("Company", "Role", "Where", "Posted", "Score", "Verdict", "My status", "Date applied", "CV used", "Source", "Link", "Notes")
 
 
@@ -246,7 +249,7 @@ def update_row(p, wb):
         if "My status" not in head:
             raise ValueError("not a job sheet")
         col = {"status": "My status", "date": "Date applied", "note": "Notes"}
-        if "status" in p and p["status"] not in STATUSES:
+        if "status" in p and p["status"] != ws.cell(row, head.index("My status") + 1).value and not stages.allowed(ws.cell(row, head.index("My status") + 1).value, p["status"]):
             raise ValueError("bad status")
     if "date" in p and p["date"] and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(p["date"])):
         raise ValueError("date must be YYYY-MM-DD")
@@ -281,7 +284,7 @@ def add_row(p, wb):
     f = {k: str(p.get(k) or "").strip() for k in ADD_FIELDS}
     if not f["Company"] or not f["Role"]:
         raise ValueError("Company and role are required")
-    f["My status"] = f["My status"] or STATUSES[0]
+    f["My status"] = f["My status"] or stages.NEW_ROW
     if f["My status"] not in STATUSES:
         raise ValueError("bad status")
     if f["Link"] and not re.match(r"https?://", f["Link"]):
@@ -356,7 +359,9 @@ class H(BaseHTTPRequestHandler):
             elif path == "/api/version":
                 self.send(200, json.dumps({"version": version()}), "application/json")
             elif path in ("/", "/index.html"):
-                self.send(200, hq_settings.render_page((HERE / "index.html").read_text(encoding="utf-8")).encode("utf-8"), "text/html; charset=utf-8")
+                page = (HERE / "index.html").read_text(encoding="utf-8")
+                page = page.replace("/*{{STAGES_JSON}}*/null", (HERE / "stages.json").read_text(encoding="utf-8").replace("<", "\\u003c"))
+                self.send(200, hq_settings.render_page(page).encode("utf-8"), "text/html; charset=utf-8")
             else:
                 self.send(404, "not found", "text/plain")
         except PermissionError:

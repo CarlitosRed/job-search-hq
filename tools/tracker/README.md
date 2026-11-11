@@ -11,6 +11,35 @@ Keep personal lead and contact data out of version control.
 - The page records progress. A person submits applications and sends messages.
 - Follow [selftest.md](selftest.md) to check counts, flow and percentages.
 
+## Board stages
+
+`stages.json` defines Tracked, Review, Apply, Skipped, Applied, Interview, Offer,
+Rejected, in board order. New rows start in Tracked. Offer is green, Rejected is
+red, and the rest are gray. Unknown values stay in Other status. Rejected is
+allowed only from Applied, Interview, Offer or itself; other backward moves are
+allowed. The board also hides Skipped as a target after applying.
+
+Desktop and phone use the same main page, built with
+`python -I tools/hq-dashboard/port_tracker.py --backend pc`. This is the only
+supported backend. Both this builder and the plain tracker server inline the
+stage JSON into the shared HTML source.
+
+Stop the server, preview the migration and review the per-sheet counts first:
+
+```powershell
+python -I tools/tracker/migrate_stages.py --workbook work/applications-tracker.xlsx --dry-run
+python -I tools/tracker/migrate_stages.py --workbook work/applications-tracker.xlsx --apply
+```
+
+Dry run writes nothing. Apply backs up to the workbook folder's `logs/` directory
+as `<stem>-before-stages-<time>.sqlite3` or `.xlsx`. The neighboring database wins
+when present. Known legacy values are mapped using `stages.json`; an unscored
+legacy review row becomes Tracked. Unknown statuses, contacts, other sheets and
+archives stay unchanged. Input and output counts must match. Database changes
+commit together, record one `stages-01` move per changed job and a new revision,
+then rebuild the Excel mirror. Workbook changes use a verified temporary file.
+A second run changes zero statuses. Rebuild the PC page and restart the server.
+
 ## SQLite store
 
 When a neighboring `applications-tracker.sqlite3` exists, it becomes the tracker

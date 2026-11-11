@@ -5,9 +5,7 @@ Job Search HQ uses SQLite as the tracker source of truth when a database exists 
 ```mermaid
 flowchart LR
     Source[Tracker HTML source and hosted pieces] --> Build[port_tracker.py]
-    Build --> Hosted[Hosted index.html]
     Build --> PC[PC pc-index.html]
-    Hosted --> Store[External Claude runtime and page store]
     Browser[PC or phone browser] --> Tunnel[Optional public HTTPS Funnel]
     Tunnel --> Server[Protected loopback server :8770]
     Browser --> Server
@@ -24,9 +22,13 @@ flowchart LR
 
 ## Components and page builds
 
-`tools/tracker/index.html` supplies the core views, styles, and screen behavior. `tools/hq-dashboard/port_tracker.py` combines it with `hosted/` fragments. Its default `claude` backend writes `tools/hq-dashboard/index.html`, using `data.js` and `tools.js` with external Claude page-store/sample/download capabilities. This repository does not ship that runtime or its synchronization service. The hosted build includes a JSZip CDN script; do not treat it as the PC security model.
+`tools/tracker/index.html` supplies the core views, styles, and screen behavior. `tools/hq-dashboard/port_tracker.py` combines it with `hosted/` fragments and builds only the main PC page, for both desktop and phone. `--backend pc` remains accepted; any other backend is refused.
 
-The `pc` backend writes `tools/hq-dashboard/pc-index.html`. It substitutes `pc-data.js`, adds `pc-tools.js` and `pc.css`, removes the CDN dependency, and connects to same-origin PC APIs. Both outputs are ignored by Git. Exact string and pattern replacements deliberately fail when source structure drifts. The entire block between the tracker `data` and `writes` markers is replaced; view functions needed after the build must live outside it.
+The build writes `tools/hq-dashboard/pc-index.html`. It substitutes `pc-data.js`, adds `pc-tools.js` and `pc.css`, removes the CDN dependency, and connects to same-origin PC APIs. The generated output is ignored by Git. Exact string and pattern replacements deliberately fail when source structure drifts. The entire block between the tracker `data` and `writes` markers is replaced; view functions needed after the build must live outside it.
+
+`tools/tracker/stages.json` is the only stage definition: Tracked, Review, Apply, Skipped, Applied, Interview, Offer, Rejected. The tracker server and page builder inline this file into one HTML placeholder. Python consumers use `stages.py`; new leads use its `NEW_ROW`. Every current status has one bucket, with Other for unknown values. Offer is green, Rejected red, and the remaining stages gray. The server accepts Rejected only from Applied, Interview, Offer or itself. The board also hides Skipped as a move target after applying.
+
+With the server stopped, preview `python -I tools/tracker/migrate_stages.py --workbook work/applications-tracker.xlsx --dry-run`, review counts, then use `--apply`. The migration reads the neighboring database when present, otherwise Excel, and preserves contacts, other sheets and archived jobs. Apply creates a `logs/*-before-stages-*` backup, checks row counts, records database moves as `stages-01`, and rebuilds the mirror. Rebuild the PC page and restart the server afterward.
 
 `tools/hq-dashboard/server.py` handles authentication, allowlisted routes, bounded requests, workbook access, and component loading. It reads the generated PC file on page requests. `tools/tracker/server.py` contains workbook parsing/writing and a separate plain loopback tracker on port 8765. That plain server is not a substitute for protected remote hosting. Full HQ startup takes a Windows-only instance lock; it cannot run on macOS/Linux as written.
 
