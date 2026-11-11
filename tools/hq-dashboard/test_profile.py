@@ -2,10 +2,14 @@
 from datetime import date
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import tempfile
 import unittest
+
+# Use this suite's fictional fixture folder instead of an external data folder.
+os.environ.pop("JOB_SEARCH_HQ_DATA", None)
 
 HERE = Path(__file__).resolve().parent
 
