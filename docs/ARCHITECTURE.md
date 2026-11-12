@@ -63,7 +63,7 @@ Posting text, photos, and sentiment are untrusted input. `ai_tasks.py` builds ty
 
 ## Evidence-first drafting and limits
 
-Only eligible `E-*.md` entries marked verified/stated and public-safe, with usable CV-ready wording, enter the prompt. This filters the owner's labels; it does not verify those labels or facts. Draft validation checks cited-ID eligibility and the presence of listed claim strings. It does not establish complete factual-claim coverage or whether evidence supports a claim. Offline tests explicitly demonstrate acceptance of unlisted factual prose. Every draft needs human truth review.
+Only eligible `E-*.md` entries marked verified/stated and public-safe, with usable CV-ready wording, enter the prompt. Optional `- role: Title | Company | Dates` lines supply job headings alongside the CV-ready wording. This filters the owner's labels; it does not verify those labels or facts. Draft validation checks cited-ID eligibility and the presence of listed claim strings. It does not establish complete factual-claim coverage or whether evidence supports a claim. Offline tests explicitly demonstrate acceptance of unlisted factual prose. Every draft needs human truth review.
 
 Running AI tasks become interrupted after restart and are not blindly rerun; already queued tasks can still run. Word export code removes defined note markers and keeps results as drafts in state. Existing document listings read `work/` separately; exports are not automatically enrolled there. CV fitting uses Windows Arial metrics and deletes lines/sentences without rewording; actual Word/Pages pagination still needs visual review. On-demand PC search and a daily scan runner are not supplied.
 

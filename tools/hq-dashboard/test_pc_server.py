@@ -899,7 +899,7 @@ try {
                                           'rubric_version':'v3.2','analysis':__import__('lead_policy_fixtures').fictional_analysis(),'summary':'Fictional result only','location_ok':'unclear','matches':[],'gaps':[],'flags':[]}
                 if kind=='letter':return {'cover_letter_markdown':'Dear Example Company team,\n\nFictional skill.\n\nKind regards,\nAlex Example',
                                           'sources':['E-999'],'flags':[],'claims':[{'text':'Fictional skill.','evidence':['E-999']}]}
-                return {'cv_markdown':'# Fictional CV\nFictional skill.','sources':['E-999'],'flags':[],
+                return {'cv_markdown':'## Fictional CV\nFictional skill.','sources':['E-999'],'flags':[],
                         'claims':[{'text':'Fictional skill.','evidence':['E-999']}]}
             self.app.ai.runner=fake_runner
             page.click('.seg [data-v="review"]')
