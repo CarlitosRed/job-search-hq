@@ -263,7 +263,7 @@ class Writes(Base):
     def test_mirror_is_rebuilt_with_same_sheets_columns_and_types(self):
         self.t.update({'sheet': 'Jobs', 'row': 6, 'status': 'Offer', 'expect': {'Company': 'Demo Inc'}})
         wb = self.mirror()
-        self.assertEqual(wb.sheetnames, ['Jobs', 'New (2026-01-06)', 'Contacts', 'Read me'])
+        self.assertEqual(wb.sheetnames, ['Jobs', 'New (2026-01-06)', 'Contacts', 'Read me', 'Old'])  # Old last (step 02b)
         ws = wb['Jobs']
         self.assertEqual([c.value for c in ws[1]], JOB_HEAD + ['Interview rounds'])  # 01b: the copy shows rounds in one column
         self.assertEqual(ws.cell(6, 8).value, 'Offer')
@@ -409,7 +409,7 @@ class EditSavesShape(Base):
         self.assertEqual((jobs[0]['_sheet'], jobs[0]['_row'], jobs[0]['Notes']), ('New (2026-01-09)', 2, 'Plain note'))
         self.assertEqual(data['sheets'][-1]['name'], 'New (2026-01-09)')
         wb = openpyxl.load_workbook(self.xlsx)
-        self.assertEqual(wb.sheetnames, ['Jobs', 'New (2026-01-06)', 'Contacts', 'Read me', 'New (2026-01-09)'])
+        self.assertEqual(wb.sheetnames, ['Jobs', 'New (2026-01-06)', 'Contacts', 'Read me', 'New (2026-01-09)', 'Old'])  # Old last (step 02b)
         ws = wb['New (2026-01-09)']
         self.assertEqual([c.value for c in ws[1]], ['#', 'Company', 'Role', 'My status', 'Link', 'Notes', 'Interview rounds'])  # 01b column
         self.assertEqual(ws.cell(2, 2).value, 'Scan Example')

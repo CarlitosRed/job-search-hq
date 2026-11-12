@@ -98,6 +98,34 @@ a second run fills zero. The report counts jobs eligible for the 60-day archive
 without moving them. Statuses and the Excel copy stay unchanged. This command
 requires an existing database; Excel-only mode returns a message.
 
+## Archive and Posted filter
+
+Preview the archive move and review its JSON list before applying:
+
+```powershell
+python -I tools/tracker/archive_old.py --workbook work/applications-tracker.xlsx --dry-run
+python -I tools/tracker/archive_old.py --workbook work/applications-tracker.xlsx --apply
+```
+
+Dry run is the default, uses an in-memory copy and writes nothing. Apply first
+backs up the database to `logs/<stem>-before-archive-<time>.sqlite3`, then moves
+jobs older than 60 days in Tracked, Review, Apply or Skipped in one transaction.
+Applied, Interview, Offer and Rejected never move; exactly 60 days and unknown
+ages stay. Dates, history, interview rounds and duplicate keys are kept. Source
+row positions stay unchanged, archived ids remain reserved, and document records
+follow the job to its Old row. Columns are matched by name, with missing columns
+appended to Old. Nothing is deleted. Revision increases once only when jobs move;
+the Excel mirror is then rebuilt with Old after all main sheets. The site never
+shows Old, including in Excel-only mode. The archive command requires SQLite.
+A second run moves zero jobs.
+
+The Posted filter offers Last 3 days, 1 week, 2 weeks, 3 weeks, 4 weeks and All
+(default), using age <= 3, 7, 14, 21 or 28 days. Unknown ages appear only under
+All. The selection is saved, counted in the filter badge, and shown as a removable
+chip; Clear filters resets it. It applies to Board, List and the filtered
+Overview. Board and List cards show posting age, or First seen when no posted
+date is available, with "about" for estimates. Unknown ages show no age line.
+
 ## Document records
 
 Opening a tracker database adds the missing `documents` table without changing

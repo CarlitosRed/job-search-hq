@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import secrets
 import socket
+import sqlite3
 import ssl
 import subprocess
 import tempfile
@@ -1259,6 +1260,97 @@ class IntegrationSQLite(Integration):
                 self.assertEqual(errors, [], name)
                 context.close()
             browser.close()
+
+    def test_posted_filter_browser(self):
+        """Step 02b: each card says how old the job is; the Posted filter narrows Board and List (desktop, then phone)."""
+        from datetime import date, timedelta
+        from playwright.sync_api import sync_playwright, expect
+        ago = lambda n: (date.today() - timedelta(days=n)).isoformat()
+        store_spec = importlib.util.spec_from_file_location('tracker_store_posted', HERE.parent / 'tracker' / 'store.py')
+        store = importlib.util.module_from_spec(store_spec)
+        store_spec.loader.exec_module(store)
+        store.db_path(self.book).unlink()
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Fictional jobs'
+        ws.append(['#', 'Company', 'Role', 'Posted', 'My status', 'Date applied', 'Notes', 'Link'])
+        rows = [('Today Co', ago(0)), ('Fresh Co', f'{ago(2)} (Lever)'), ('LinkedIn Co', f'{ago(1)} (LinkedIn)'),
+                ('Week Co', f'{ago(6)} (Greenhouse)'), ('Month Co', ago(20)), ('Undated Co', None)]
+        for n, (company, posted) in enumerate(rows, 1):
+            ws.append([n, company, 'Example Engineer', posted, 'Review', '', 'Example only', f'https://example.com/{n}'])
+        wb.save(self.book)
+        wb.close()
+        self.assertTrue(store.migrate(self.book, apply=True)['ok'])
+        con = sqlite3.connect(store.db_path(self.book))
+        con.execute("UPDATE jobs SET first_seen=? WHERE first_seen IS NULL OR first_seen=''", (ago(0),))
+        con.execute("UPDATE jobs SET first_seen=? WHERE company='Undated Co'", (ago(10),))
+        con.execute("UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='revision'")
+        con.commit()
+        con.close()
+        lines = {'Today Co': 'Posted today', 'Fresh Co': 'Posted 2 days ago', 'LinkedIn Co': 'Posted about 1 day ago',
+                 'Week Co': 'Posted 6 days ago', 'Month Co': 'Posted 20 days ago', 'Undated Co': 'First seen about 10 days ago'}
+        self.login()
+        self.serve_tls()
+        shots = os.environ.get('HQ_SHOT_DIR')
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            for name, options in (('desktop', {'viewport': {'width': 1440, 'height': 900}}), ('phone', p.devices['iPhone 15'])):
+                context = browser.new_context(**options, ignore_https_errors=True)
+                page = context.new_page()
+                errors = []
+                page.on('pageerror', lambda e: errors.append(str(e)))
+                self.browser_login(page)
+                expect(page.locator('#sync')).to_contain_text('6 jobs', timeout=10000)
+                page.click('.seg [data-v="board"]')
+                for company, line in lines.items():
+                    expect(page.locator('.bcard', has_text=company).locator('.posted-age')).to_have_text(line)
+                cards = page.locator('.bcard')
+                expect(cards).to_have_count(6)
+                page.evaluate('openFilters()')
+                panel = page.locator('#fdrawer')
+                for label in ('Last 3 days', '1 week', '2 weeks', '3 weeks', '4 weeks', 'All'):
+                    expect(panel.get_by_role('button', name=label, exact=True)).to_be_visible()
+                expect(panel.get_by_role('button', name='All', exact=True)).to_have_attribute('aria-pressed', 'true')
+                panel.get_by_role('button', name='1 week', exact=True).click()
+                expect(panel.get_by_role('button', name='1 week', exact=True)).to_have_attribute('aria-pressed', 'true')
+                if shots:
+                    page.wait_for_timeout(1000)
+                    page.screenshot(path=str(Path(shots) / f'02b-filter-{name}.png'), full_page=False)
+                page.evaluate('closeDrawers()')
+                expect(cards).to_have_count(4)
+                for gone in ('Month Co', 'Undated Co'):
+                    expect(page.locator('.bcard', has_text=gone)).to_have_count(0)
+                expect(page.locator('#fcount')).to_be_visible()
+                if shots:
+                    page.wait_for_timeout(1000)
+                    page.screenshot(path=str(Path(shots) / f'02b-board-{name}.png'), full_page=False)
+                page.click('.seg [data-v="list"]')
+                expect(page.locator('.lcard')).to_have_count(4)
+                expect(page.locator('.lcard', has_text='Week Co').locator('.posted-age')).to_have_text('Posted 6 days ago')
+                if shots:
+                    page.wait_for_timeout(1000)
+                    page.screenshot(path=str(Path(shots) / f'02b-list-{name}.png'), full_page=False)
+                page.reload()
+                expect(page.locator('#sync')).to_contain_text('6 jobs', timeout=10000)
+                page.click('.seg [data-v="list"]')
+                expect(page.locator('.lcard')).to_have_count(4)
+                page.evaluate('openFilters()')
+                page.locator('#fdrawer').get_by_role('button', name='Last 3 days', exact=True).click()
+                page.evaluate('closeDrawers()')
+                expect(page.locator('.lcard')).to_have_count(3)
+                chip = page.locator('.fchip[data-rm="posted"]')
+                expect(chip).to_contain_text('Posted')
+                chip.click()
+                expect(page.locator('.lcard')).to_have_count(6)
+                page.evaluate('openFilters()')
+                page.locator('#fdrawer').get_by_role('button', name='2 weeks', exact=True).click()
+                page.evaluate('clearFilters()')
+                page.evaluate('closeDrawers()')
+                expect(page.locator('.lcard')).to_have_count(6)
+                self.assertEqual(errors, [], name)
+                context.close()
+            browser.close()
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
