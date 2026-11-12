@@ -30,3 +30,4 @@ jobs:
       - run: python -I tools/tracker/test_stages.py
       - run: python -I tools/tracker/test_rounds.py
       - run: python -I tools/tracker/test_fresh.py
+      - run: python -I tools/tracker/test_archive.py
