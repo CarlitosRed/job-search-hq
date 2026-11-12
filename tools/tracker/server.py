@@ -82,6 +82,7 @@ def sqlite_mode():
 
 def load():
     job_rounds = {}
+    job_dates = {}
     if sqlite_mode():
         storage = store.Store(store.db_path(XLSX))
         try:
@@ -91,6 +92,7 @@ def load():
                 warning = storage.meta('mirror_warning') or ''
                 revision = 'db-' + str(storage.meta('revision'))
                 by_job = storage.rounds()
+                job_dates = storage.dates()
                 job_rounds = {(r['sheet'], r['row']): by_job.get(r['id'], [])
                               for r in storage.db.execute('SELECT id, sheet, row FROM jobs')}
         finally:
@@ -103,6 +105,16 @@ def load():
         data = load_rows(wb, mode, warning, revision)
         for job in data['jobs']:
             job['_rounds'] = job_rounds.get((job['_sheet'], job['_row']), [])
+            if mode == 'sqlite':
+                dates = job_dates.get((job['_sheet'], job['_row']), {})
+                first_seen, posted, source = (dates.get(k) or '' for k in ('first_seen', 'posted_on', 'date_source'))
+                first_seen = first_seen or store.freshness.sheet_date(job['_sheet']) or ''
+            else:
+                posted, source = store.freshness.parse_posted(job.get('Posted'))
+                first_seen = store.freshness.sheet_date(job['_sheet']) or ''
+            job.update(_first_seen=first_seen, _posted_on=posted or '', _date_source=source,
+                       _age=store.freshness.age_days(posted, first_seen),
+                       _about=store.freshness.is_about(source, job.get('Posted')))
         return data
     finally:
         wb.close()

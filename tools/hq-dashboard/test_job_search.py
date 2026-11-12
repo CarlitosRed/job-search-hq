@@ -36,6 +36,40 @@ def fixture(source):
     ]
 
 
+class PostedDates(unittest.TestCase):
+    """Step 02a: each result carries the job board's first-posted date and where it came from."""
+
+    def test_greenhouse_first_published_never_updated_at(self):
+        source = SOURCES[0]
+        raw = {'title': 'AI Workflow Engineer', 'location': {'name': 'Remote'}, 'absolute_url': 'https://example.com/jobs/one',
+               'first_published': '2026-10-20T23:30:00-04:00', 'updated_at': '2026-11-06T15:25:07-05:00'}
+        result = search.normalize(source, raw, 'now')
+        self.assertEqual((result['postedOn'], result['dateSource']), ('2026-10-20', 'greenhouse'))
+        raw.pop('first_published')
+        result = search.normalize(source, raw, 'now')
+        self.assertEqual((result['postedOn'], result['dateSource']), ('', ''))
+        raw['first_published'] = 'not a date'
+        result = search.normalize(source, raw, 'now')
+        self.assertEqual((result['postedOn'], result['dateSource']), ('', ''))
+
+    def test_lever_created_at(self):
+        source = SOURCES[1]
+        raw = {'text': 'AI Support Engineer', 'categories': {'location': 'Spain'}, 'hostedUrl': 'https://example.org/jobs/four',
+               'createdAt': 1762041600000}
+        result = search.normalize(source, raw, 'now')
+        self.assertEqual((result['postedOn'], result['dateSource']), ('2025-11-02', 'lever'))
+        for bad in (None, 'yesterday', -5, True):
+            raw['createdAt'] = bad
+            result = search.normalize(source, raw, 'now')
+            self.assertEqual((result['postedOn'], result['dateSource']), ('', ''), bad)
+
+    def test_discover_results_carry_dates(self):
+        result = search.discover({'query': 'AI operations', 'location': '', 'remote': False}, fixture, SOURCES)
+        for item in result['results']:
+            self.assertIn('postedOn', item)
+            self.assertIn('dateSource', item)
+
+
 class Discovery(unittest.TestCase):
     def query(self, **changes):
         return {'query': 'AI operations', 'location': '', 'remote': False, **changes}

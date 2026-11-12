@@ -68,6 +68,36 @@ dated `logs/*-edited-*.xlsx` copy on the next rebuild, and the data API includes
 a warning naming that copy. Excel edits are never silently merged into SQLite.
 Keep the database and the workbook backups outside version control.
 
+## Job dates
+
+First seen records when a job was added and never changes. Posted on is a real
+date read from Posted, with its source: greenhouse, lever, ashby, linkedin, page
+or first_seen when no posted date is available. Dates marked "about", LinkedIn,
+Ashby and First seen are estimates. Age uses the older of Posted on and First
+seen, so a repost cannot make an old job look new.
+
+The scan window is 45 days, including day 45; unknown ages stay in the window.
+Applied, Interview and Offer jobs are still rechecked outside it. The shared
+duplicate key is company, role and place, normalized for Unicode, case, spaces
+and punctuation. Only exact keys match, including keys from Old. Company and
+role are required; an empty place is allowed and matches only another empty place.
+
+Preview the date fill, then apply it after reviewing the JSON report:
+
+```powershell
+python -I tools/tracker/migrate_dates.py --workbook work/applications-tracker.xlsx --dry-run
+python -I tools/tracker/migrate_dates.py --workbook work/applications-tracker.xlsx --apply
+```
+
+Dry run uses an in-memory database copy and writes nothing. Apply first backs
+up the database to `logs/<stem>-before-dates-<time>.sqlite3`, then fills only
+empty dates in jobs and Old in one transaction. First seen falls back through
+the sheet date (From sheet for Old), earliest populated Open check date,
+Posted on and today. The revision increases once if any values were filled;
+a second run fills zero. The report counts jobs eligible for the 60-day archive
+without moving them. Statuses and the Excel copy stay unchanged. This command
+requires an existing database; Excel-only mode returns a message.
+
 ## Document records
 
 Opening a tracker database adds the missing `documents` table without changing

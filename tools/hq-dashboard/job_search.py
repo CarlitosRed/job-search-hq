@@ -8,7 +8,7 @@ chooses whether to add each result through the existing workbook save queue.
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import hashlib
 import html
 import json
@@ -112,11 +112,19 @@ def safe_link(value):
 def normalize(source, raw, checked):
     if not isinstance(raw, dict):
         return None
+    posted, date_source = '', ''
     if source['provider'] == 'greenhouse':
         role = clean_text(raw.get('title'), 200)
         loc = raw.get('location') or {}
         location = clean_text(loc.get('name') if isinstance(loc, dict) else '', 300)
         link = safe_link(raw.get('absolute_url'))
+        published = raw.get('first_published')
+        if isinstance(published, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}', published[:10]):
+            try:
+                posted = date.fromisoformat(published[:10]).isoformat()
+                date_source = 'greenhouse'
+            except ValueError:
+                pass
     else:
         role = clean_text(raw.get('text'), 200)
         categories = raw.get('categories') or {}
@@ -124,10 +132,18 @@ def normalize(source, raw, checked):
         if raw.get('workplaceType') == 'remote' and 'remote' not in location.casefold():
             location = (location + ' · Remote').strip(' ·')
         link = safe_link(raw.get('hostedUrl'))
+        created = raw.get('createdAt')
+        if isinstance(created, int) and not isinstance(created, bool) and created > 0:
+            try:
+                posted = datetime.fromtimestamp(created / 1000, timezone.utc).date().isoformat()
+                date_source = 'lever'
+            except (ValueError, OverflowError, OSError):
+                pass
     if not role or not link:
         return None
     key = hashlib.sha256((source['id'] + '\n' + link).encode()).hexdigest()[:24]
     return {'id': key, 'company': source['label'], 'role': role, 'location': location or 'Not specified',
+            'postedOn': posted, 'dateSource': date_source,
             'link': link, 'source': source['label'] + ' (' + source['provider'].title() + ')', 'checkedAt': checked,
             'summary': 'Listed on the employer job board when checked. Read the posting for country and work-authorization requirements.'}
 
