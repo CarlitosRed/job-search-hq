@@ -196,10 +196,18 @@ class Store:
             dates = freshness.parse_posted(row.get('Posted')) if table in ('jobs', 'old_jobs') else ()
             date_columns = 'posted_on, date_source' if dates else 'date_source'
             date_values = dates if dates else ('',)
+            id_columns, id_values = '', ()
+            if table == 'jobs':
+                # Archive rows reserve active ids even after the highest job moves.
+                archived_columns = [r['name'] for r in self.db.execute('PRAGMA table_info(old_jobs)')]
+                reserved = 'UNION ALL SELECT original_job_id FROM old_jobs' if 'original_job_id' in archived_columns else ''
+                next_id = self.db.execute(f'''SELECT COALESCE(MAX(id), 0)+1 FROM (
+                    SELECT id FROM jobs UNION ALL SELECT id FROM old_jobs {reserved})''').fetchone()[0]
+                id_columns, id_values = 'id, ', (next_id,)
             self.db.execute(f'''INSERT INTO {table}
-                (sheet, row, {columns}, {date_columns}, first_seen, old_status, fields)
-                VALUES ({','.join('?' for _ in range(len(NAMED) + 5 + len(date_values)))})''',
-                (title, number, *named, *date_values, date.today().isoformat() if history else None,
+                ({id_columns}sheet, row, {columns}, {date_columns}, first_seen, old_status, fields)
+                VALUES ({','.join('?' for _ in range(len(id_values) + len(NAMED) + 5 + len(date_values)))})''',
+                (*id_values, title, number, *named, *date_values, date.today().isoformat() if history else None,
                  row.get('My status'), fields))
         if (history and table == 'jobs' and row.get('My status') == 'Interview'
                 and (not previous or previous['status'] != 'Interview')):
@@ -262,11 +270,13 @@ class Store:
         wb = openpyxl.Workbook()
         wb.remove(wb.active)
         rounds = self.rounds() if mirror else {}
-        for layout in self.db.execute("SELECT * FROM layouts WHERE source='main' ORDER BY position"):
+        layouts = ("SELECT * FROM layouts ORDER BY CASE source WHEN 'main' THEN 0 ELSE 1 END, position"
+                   if mirror else "SELECT * FROM layouts WHERE source='main' ORDER BY position")
+        for layout in self.db.execute(layouts):
             ws = wb.create_sheet(layout['sheet'])
             head = decode(layout['header'])
             rows = [(1, head)]
-            table = self.table('main', ws.title, head)
+            table = self.table(layout['source'], ws.title, head)
             for record in self.db.execute(f'SELECT id, row, fields FROM {table} WHERE sheet=? ORDER BY row', (ws.title,)):
                 values = decode(record['fields'])
                 if mirror and table == 'jobs':

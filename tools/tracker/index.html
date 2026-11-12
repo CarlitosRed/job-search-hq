@@ -341,6 +341,7 @@ body.is-dragging .board .col.over{border-color:var(--blue)}
 
 .bcard-loc{font-size:11px;color:var(--mute);line-height:1.2;margin-top:-3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bcard-round{font-size:11px;color:var(--mute);line-height:1.2}
+.posted-age{display:block;font-size:11.5px;color:var(--mute);line-height:1.4}
 
 /* compact next step box */
 .bcard-next{background:var(--soft);border:1px solid transparent;border-radius:7px;padding:5px 8px;display:flex;flex-direction:column;gap:2px}
@@ -591,6 +592,10 @@ dl.facts dd{margin:0;word-break:break-word;min-width:0}
 .opt input{width:16px;height:16px;margin:0;accent-color:var(--blue);flex:none}
 .opt .n{margin-left:auto;color:var(--mute);font-size:12px;font-variant-numeric:tabular-nums}
 .opt .lb{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.posted-options{display:flex;flex-wrap:wrap;gap:6px}
+.posted-options button{border:1px solid var(--line);border-radius:9px;background:transparent;padding:6px 9px;font-size:12.5px;color:var(--ink2)}
+.posted-options button:hover{background:var(--hover)}
+.posted-options button[aria-pressed=true]{background:var(--blue-soft);border-color:var(--blue);color:var(--blue-ink)}
 .range{display:grid;gap:6px}
 .range input{width:100%;accent-color:var(--blue)}
 .range .rl{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink2)}
@@ -818,11 +823,15 @@ function ring(sc,size=38){if(!sc)return`<span class="ring none" title="Not score
 const vchip=v=>v.key==="NONE"&&!v.raw?"":`<span class="chip ${v.cls}" title="${esc(v.raw)}">${esc(v.key==="NONE"?v.raw:v.label)}</span>`;
 function fitText(sc,v){if(v.key==="APPLY")return"Top pick";if(!sc)return"Not scored yet";return sc.val>=3.75?"Strong fit":sc.val>=3.25?"Good fit":sc.val>=2.75?"Partial fit":"Weak fit"}
 
+const POSTED=[[3,"Last 3 days"],[7,"1 week"],[14,"2 weeks"],[21,"3 weeks"],[28,"4 weeks"],[null,"All"]];
+function postedAge(j){if(j._age==null)return"";const age=j._age;
+ return`<span class="posted-age">${j._posted_on?"Posted":"First seen"}${j._about?" about":""} ${age===0?"today":`${age} day${age===1?"":"s"} ago`}</span>`}
 let D={jobs:[],contacts:[],sheets:[],statuses:[]};
-const S=Object.assign({view:"overview",sheets:[],regions:[],verdicts:[],stages:[],minScore:0,openOnly:false,hideClosed:false,sort:"score",group:"none",sel:null},store.get("state",{}));
+const S=Object.assign({view:"overview",sheets:[],regions:[],verdicts:[],stages:[],posted:null,minScore:0,openOnly:false,hideClosed:false,sort:"score",group:"none",sel:null},store.get("state",{}));
 S.q="";S.view="overview";S.attention=false;
 S.stages=S.stages.filter(id=>STAGES.some(s=>s.id===id));
-const save=()=>store.set("state",{sheets:S.sheets,regions:S.regions,verdicts:S.verdicts,stages:S.stages,minScore:S.minScore,openOnly:S.openOnly,hideClosed:S.hideClosed,sort:S.sort,group:S.group,sel:S.sel});
+if(!POSTED.some(([days])=>days===S.posted))S.posted=null;
+const save=()=>store.set("state",{sheets:S.sheets,regions:S.regions,verdicts:S.verdicts,stages:S.stages,posted:S.posted,minScore:S.minScore,openOnly:S.openOnly,hideClosed:S.hideClosed,sort:S.sort,group:S.group,sel:S.sel});
 const key=j=>j._sheet+"|"+j._row;
 const byKey=k=>D.jobs.find(j=>key(j)===k);
 const sheetShort=s=>s.replace(/\s*\((\d{4}-\d{2}-\d{2})\)$/,"").replace(/\s*\(evening\)$/," (evening)");
@@ -837,7 +846,7 @@ const jname=j=>`${j.Company} (${place(j)})`;
 function place(j){return j._reg==="OTHER"||j._reg==="LATAM"?(j.Where||"Location not listed"):REG[j._reg][0]}
 function linkSiblings(){const m=new Map();D.jobs.forEach(j=>{const k=coKey(j.Company);if(!m.has(k))m.set(k,[]);m.get(k).push(j)});D.jobs.forEach(j=>j._sib=m.get(coKey(j.Company)).filter(x=>x!==j))}
 function enrich(j){j._reg=region(j.Where);j._sc=score(j.Score);j._v=verdict(j.Verdict);j._open=openState(j);
- j._age=j._checkdate?daysBetween(j._checkdate,D.today):null;j._remote=/remote|flexible/i.test(j.Where||"")}
+ j._checkAge=j._checkdate?daysBetween(j._checkdate,D.today):null;j._remote=/remote|flexible/i.test(j.Where||"")}
 
 /* ---------- filtering ---------- */
 function matches(j,skip){const q=S.q.trim().toLowerCase();
@@ -846,6 +855,7 @@ function matches(j,skip){const q=S.q.trim().toLowerCase();
  if(skip!=="regions"&&S.regions.length&&!S.regions.includes(j._reg))return false;
  if(skip!=="verdicts"&&S.verdicts.length&&!S.verdicts.includes(j._v.key))return false;
  if(skip!=="stages"&&S.stages.length&&!S.stages.includes(stageOf(j).id))return false;
+ if(skip!=="posted"&&S.posted!==null&&(j._age==null||j._age>S.posted))return false;
  if(S.minScore>0&&!(j._sc&&j._sc.val>=S.minScore))return false;
  if(S.openOnly&&j._open!=="open")return false;
  if(S.hideClosed&&closedStage(stageOf(j)))return false;
@@ -857,8 +867,8 @@ function sorter(){return{
  company:(a,b)=>a.Company.localeCompare(b.Company)||(b._sc?.val??-1)-(a._sc?.val??-1),
  posted:(a,b)=>String(b.Posted).localeCompare(String(a.Posted))||(b._sc?.val??-1)-(a._sc?.val??-1),
  applied:(a,b)=>String(b["Date applied"]).localeCompare(String(a["Date applied"]))||stageIdx(b)-stageIdx(a)||(b._sc?.val??-1)-(a._sc?.val??-1)}[S.sort]||((a,b)=>0)}
-const activeCount=()=>S.sheets.length+S.regions.length+S.verdicts.length+S.stages.length+(S.minScore>0)+S.openOnly+S.hideClosed+S.attention;
-function clearFilters(){Object.assign(S,{sheets:[],regions:[],verdicts:[],stages:[],minScore:0,openOnly:false,hideClosed:false,attention:false});S.q="";$("#q").value="";render()}
+const activeCount=()=>S.sheets.length+S.regions.length+S.verdicts.length+S.stages.length+(S.posted!==null)+(S.minScore>0)+S.openOnly+S.hideClosed+S.attention;
+function clearFilters(){Object.assign(S,{sheets:[],regions:[],verdicts:[],stages:[],posted:null,minScore:0,openOnly:false,hideClosed:false,attention:false});S.q="";$("#q").value="";render()}
 
 /* ---------- theme (kept outside the data section: the PC build replaces that section) ---------- */
 function toggleTheme(){
@@ -946,6 +956,7 @@ function locLine(j){return`<div class="loc">${flag(j._reg)}<span>${esc(j.Where||
 function jobCard(j,opts={}){const st=stageOf(j);const dim=closedStage(st)||j._open==="closed";
  return`<article class="card ${opts.list?"lcard":""} ${dim?"dim":""} ${S.sel===key(j)&&opts.list?"sel":""}" tabindex="0" ${opts.drag?'draggable="true"':""} data-k="${esc(key(j))}" aria-label="${esc(jname(j))}, ${esc(j.Role)}, ${esc(sl(j["My status"]))}">
  <div class="card-top">${av(j.Company,"sm")}<div class="t"><div class="co">${esc(j.Company)} <span class="pl">· ${flag(j._reg)}${esc(place(j))}</span></div><div class="ro">${esc(j.Role)}</div></div>${ring(j._sc,opts.list?40:36)}</div>
+ ${postedAge(j)}
  <div class="card-foot"><div class="chips">${vchip(j._v)}${opts.list?`<span class="chip st"><i class="dot" style="color:${st.c}"></i>${esc(sl(j["My status"]))}</span>`:""}${j._sib.length?`<span class="chip" title="Also: ${esc(j._sib.map(x=>place(x)+" ("+sheetShort(x._sheet)+")").join("; "))}">Also in ${j._sib.length} place${j._sib.length>1?"s":""}</span>`:""}</div></div>
  ${warnFor(j,true)||(S.attention&&attention(j)?`<div class="warn a">${IC.info}${esc(attention(j))}</div>`:"")}${opts.drag?`<span class="drag-handle" title="Arrastrar para mover" aria-label="Arrastrar para mover ${esc(j.Company)}">${IC.grip}</span>`:""}</article>`}
 
@@ -1058,6 +1069,7 @@ function boardCard(j,s){
    </div>
   </div>
   <div class="bcard-loc">${esc(j.Where||place(j)||"Remote, any country")}</div>
+  ${postedAge(j)}
   ${s.id==="interview"?`<div class="bcard-round">Round ${(j._rounds||[]).length||1} of ?</div>`:""}
   <div class="bcard-next ${ns.attn?"attn":""}">
    <div class="bcard-next-label">NEXT STEP</div>
@@ -1166,6 +1178,7 @@ function sidebar(inDrawer){const cnt=(field,val)=>D.jobs.filter(j=>matches(j,fie
  const box=(field,val,label,pre="")=>{const on=S[field].includes(val);return`<label class="opt">${`<input type="checkbox" data-f="${field}" value="${esc(val)}" ${on?"checked":""}>`}${pre}<span class="lb">${esc(label)}</span><span class="n">${cnt(field,val)}</span></label>`};
  const sheets=[...new Set(D.jobs.map(j=>j._sheet))];const regs=Object.keys(REG).filter(r=>D.jobs.some(j=>j._reg===r));const verds=Object.keys(VERD).filter(v=>D.jobs.some(j=>j._v.key===v));
  return`<aside class="side" aria-label="Filters"><div class="side-h"><h2>Filters</h2>${activeCount()?`<button class="linkbtn" data-act="clear">Clear all</button>`:""}${inDrawer?`<button class="btn quiet icon" data-act="closef" aria-label="Close filters">${IC.close}</button>`:""}</div>
+ <div><h3>Posted</h3><div class="posted-options">${POSTED.map(([days,label])=>`<button type="button" data-posted="${days??"all"}" aria-pressed="${S.posted===days}">${label}</button>`).join("")}</div></div>
  <div><h3>Country / region</h3><div class="opts">${regs.map(r=>box("regions",r,REG[r][0])).join("")}</div></div>
  <div><h3>Verdict</h3><div class="opts">${verds.map(v=>box("verdicts",v,VERD[v][0])).join("")}</div></div>
  <div><h3>Fit score</h3><div class="range"><div class="rl"><span>At least</span><b id="minv">${S.minScore>0?S.minScore.toFixed(2).replace(/0$/,""):"Any"}</b></div><input type="range" min="0" max="4.5" step="0.25" value="${S.minScore}" id="minScore" aria-label="Minimum fit score"></div></div>
@@ -1186,7 +1199,7 @@ function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
  const other=st.id==="other",ad=j["Date applied"];
  const steps=STAGES.filter(s=>s.id!=="other").map(s=>`<li class="${s===st?"cur":""}"><button data-step="${s.id}" title="Move to ${s.label}" ${allowedMove(j,s)?"":"disabled"} ${s===st?'aria-current="step"':""}><span class="b">${s===st?IC.check:STAGES.indexOf(s)+1}</span>${s.step}</button></li>`).join("");
  const ban=[];if(j._open==="closed"&&!closed)ban.push(`<div class="banner">${IC.warn}<span><b>This posting looks closed.</b> Last open check: ${esc(j._check)}${j._checkdate?` (${esc(j._checkdate)})`:""}. Confirm on the employer site before spending time on it.</span></div>`);
- else if(j._age!=null&&j._age>3&&!closed&&si<2)ban.push(`<div class="banner a">${IC.clock}<span>Open check is ${j._age} days old (${esc(j._checkdate)}). The daily rerun should refresh it.</span></div>`);
+ else if(j._checkAge!=null&&j._checkAge>3&&!closed&&si<2)ban.push(`<div class="banner a">${IC.clock}<span>Open check is ${j._checkAge} days old (${esc(j._checkdate)}). The daily rerun should refresh it.</span></div>`);
  if(other)ban.push(`<div class="banner a">${IC.info}<span>Status <b>${esc(j["My status"])}</b> isn't one of the tracker's statuses, so it's counted under “Other status”. Pick a status below to fix it.</span></div>`);
  if(closed)ban.push(`<div class="banner n">${IC.info}<span>Marked <b>${esc(sl(j["My status"]))}</b>. <button class="linkbtn" data-step="tracked" style="padding:0">Move back to first stage</button></span></div>`);
  const sc=j._sc,v=j._v;
@@ -1243,6 +1256,7 @@ function renderInner(){const js=filtered();$$(".seg button").forEach(b=>b.setAtt
  const dk=$("#drawer").classList.contains("on")&&$("#drawer").dataset.k;if(dk){const j=byKey(dk);if(j)fillDrawer(j);else closeDrawers()}
  save()}
 function activebar(){const ch=[];const add=(t,f,v)=>ch.push(`<button class="fchip" data-rm="${f}" data-v="${esc(v)}">${esc(t)}<span aria-hidden="true">×</span><i class="sr">Remove filter</i></button>`);
+ if(S.posted!==null)add("Posted: "+POSTED.find(([days])=>days===S.posted)[1],"posted","");
  S.regions.forEach(r=>add(REG[r][0],"regions",r));S.verdicts.forEach(v=>add(VERD[v][0],"verdicts",v));S.stages.forEach(s=>add(STAGES.find(x=>x.id===s).label,"stages",s));S.sheets.forEach(s=>add(sheetShort(s),"sheets",s));
  if(S.minScore>0)add("Score ≥ "+S.minScore,"minScore","");if(S.openOnly)add("Open postings","openOnly","");if(S.hideClosed)add("Hiding closed","hideClosed","");if(S.attention)add("Needs attention","attention","");
  $("#activebar").innerHTML=ch.length&&S.view!=="contacts"?ch.join("")+`<button class="linkbtn" data-act="clear">Clear all</button>`:""}
@@ -1272,13 +1286,14 @@ $("#undoBtn").onclick=()=>{$("#toast").classList.remove("on");undoLast()};
 $("#scrim").onclick=closeDrawers;
 
 document.addEventListener("click",async e=>{const t=e.target;
+ const posted=t.closest("[data-posted]");if(posted){S.posted=posted.dataset.posted==="all"?null:Number(posted.dataset.posted);render();return}
  if(!t.closest(".bcard-move-wrap")){$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"))}
  const a=t.closest("[data-act]");if(a){const v=a.dataset.act;if(v==="clear")clearFilters();if(v==="close"||v==="closef")closeDrawers();if(v==="openf")openFilters();if(v==="add")openAdd();if(v==="attn"){S.attention=!S.attention;render()}if(v==="attn-list"){S.attention=true;S.view="list";render()}
   if(v==="add-round"||v==="save-round"){await saveRound(byKey(a.closest("[data-k]").dataset.k),a);return}
   if(v==="open-move"){const w=a.closest(".bcard-move-wrap"),m=w.querySelector(".bcard-move-menu"),opening=m.hidden;$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"));m.hidden=!opening;a.setAttribute("aria-expanded",String(opening));if(opening){const f=m.querySelector(".bcard-move-item");if(f)f.focus()}else a.focus();return}
   return}
  const mv=t.closest("[data-moveto]");if(mv){const k=mv.dataset.k,keyboard=e.detail===0,j=byKey(k),st=STAGES.find(x=>x.id===mv.dataset.moveto);if(j&&st&&boardMove(j,st)&&stageOf(j)!==st){setStatus(j,dropStatus(j,st)).then(()=>{const card=$(`.card[data-k="${CSS.escape(k)}"]`);if(card)card.focus();})}$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"));return}
- const rm=t.closest("[data-rm]");if(rm){const f=rm.dataset.rm;if(Array.isArray(S[f]))S[f]=S[f].filter(x=>x!==rm.dataset.v);else S[f]=f==="minScore"?0:false;render();return}
+ const rm=t.closest("[data-rm]");if(rm){const f=rm.dataset.rm;if(Array.isArray(S[f]))S[f]=S[f].filter(x=>x!==rm.dataset.v);else S[f]=f==="posted"?null:f==="minScore"?0:false;render();return}
  const tile=t.closest("[data-tile]");if(tile){const v=tile.dataset.tile;S.view="list";if(v!=="all"){S.stages=[BUCKET_STAGE[v]]}render();return}
  const reg=t.closest("[data-reg]");if(reg){S.regions=[reg.dataset.reg];S.view="list";render();return}
  const op=t.closest("[data-open]");if(op){openJob(op.dataset.open);return}

@@ -107,7 +107,7 @@ def statuses_in(xlsx):
         out = {}
         for ws in wb:
             head = [c.value for c in ws[1]]
-            if 'My status' not in head:
+            if 'My status' not in head or ws.title == 'Old':  # Old: the archive sheet in the Excel copy (step 02b)
                 continue
             col = head.index('My status')
             for row in ws.iter_rows(min_row=2, values_only=True):

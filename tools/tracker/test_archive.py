@@ -244,6 +244,9 @@ class Apply(Base):
         self.assertTrue(again['ok'])
         self.assertEqual(again['moved'], 0)
         self.assertEqual(self.revision(), revision)
+        # A daily run with nothing to move leaves no extra backup behind.
+        self.assertIsNone(again['backup'])
+        self.assertEqual(len(list((self.xlsx.parent / 'logs').glob('*before-archive*'))), 1)
 
     def test_revision_backup_and_keys(self):
         self.assertEqual(self.revision(), self.revision_before + 1)

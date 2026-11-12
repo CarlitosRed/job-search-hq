@@ -123,6 +123,8 @@ def load():
 def load_rows(wb, mode, warning, revision):
     jobs, contacts, sheets = [], [], []
     for ws in wb:
+        if ws.title == 'Old':
+            continue
         head = header(ws)
         if "My status" in head:
             # Newest dated "Open check" column with a value in the row.
