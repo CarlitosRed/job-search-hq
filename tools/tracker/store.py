@@ -16,6 +16,9 @@ from openpyxl.worksheet.datavalidation import DataValidation
 _stage_spec = importlib.util.spec_from_file_location('tracker_store_stages', Path(__file__).with_name('stages.py'))
 stages = importlib.util.module_from_spec(_stage_spec)
 _stage_spec.loader.exec_module(stages)
+_fresh_spec = importlib.util.spec_from_file_location('tracker_store_freshness', Path(__file__).with_name('freshness.py'))
+freshness = importlib.util.module_from_spec(_fresh_spec)
+_fresh_spec.loader.exec_module(freshness)
 STATUSES = stages.NAMES
 NAMED = {'company': 'Company', 'role': 'Role', 'place': 'Where', 'link': 'Link',
          'status': 'My status', 'fit': 'Verdict', 'notes': 'Notes',
@@ -78,6 +81,10 @@ class Store:
     def __init__(self, path):
         self.db = sqlite3.connect(str(path))
         self.db.row_factory = sqlite3.Row
+        for table in ('jobs', 'old_jobs'):
+            columns = [r['name'] for r in self.db.execute(f'PRAGMA table_info({table})')]
+            if columns and 'posted_on' not in columns:
+                self.db.execute(f'ALTER TABLE {table} ADD COLUMN posted_on TEXT')
         self.db.execute('''CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY,
             job_id TEXT, kind TEXT, file_name TEXT, sha256 TEXT, made_by TEXT, created TEXT,
             posting_id TEXT, evidence_ids TEXT, checks TEXT)''')
@@ -140,10 +147,11 @@ class Store:
             CREATE TABLE checks (id INTEGER PRIMARY KEY, job_id INTEGER, date TEXT, result TEXT);
         ''')
         for table in TABLES:
+            posted_column = 'posted_on TEXT,' if table in ('jobs', 'old_jobs') else ''
             self.db.execute(f'''CREATE TABLE {table} (id INTEGER PRIMARY KEY,
                 sheet TEXT, row INTEGER, company TEXT, role TEXT, place TEXT, link TEXT,
                 status TEXT, fit TEXT, notes TEXT, agent_notes TEXT, posted TEXT,
-                date_source TEXT, first_seen TEXT, old_status TEXT, fields TEXT,
+                {posted_column} date_source TEXT, first_seen TEXT, old_status TEXT, fields TEXT,
                 UNIQUE(sheet, row))''')
         for key, value in (('revision', 1), ('mirror_hash', ''),
                            ('mirror_warning', ''), ('mirror_stale', 0)):
@@ -165,7 +173,7 @@ class Store:
 
     def put_row(self, table, title, number, head, values, history=False, who='site'):
         fields = encode(values)
-        previous = self.db.execute(f'SELECT id, status, fields FROM {table} WHERE sheet=? AND row=?',
+        previous = self.db.execute(f'SELECT id, status, posted, fields FROM {table} WHERE sheet=? AND row=?',
                                    (title, number)).fetchone()
         if previous and previous['fields'] == fields:
             return
@@ -176,16 +184,22 @@ class Store:
             assignments = ', '.join(f'{key}=?' for key in NAMED)
             self.db.execute(f'UPDATE {table} SET {assignments}, fields=? WHERE id=?',
                             (*named, fields, previous['id']))
+            if table in ('jobs', 'old_jobs') and previous['posted'] != named[-1]:
+                self.db.execute(f'UPDATE {table} SET posted_on=?, date_source=? WHERE id=?',
+                                (*freshness.parse_posted(row.get('Posted')), previous['id']))
             if history and table == 'jobs' and previous['status'] != row.get('My status'):
                 self.db.execute('INSERT INTO moves(job_id, from_status, to_status, at, who) VALUES (?,?,?,?,?)',
                                 (previous['id'], previous['status'], row.get('My status'),
                                  datetime.now(timezone.utc).isoformat(), who))
         else:
             columns = ', '.join(NAMED)
+            dates = freshness.parse_posted(row.get('Posted')) if table in ('jobs', 'old_jobs') else ()
+            date_columns = 'posted_on, date_source' if dates else 'date_source'
+            date_values = dates if dates else ('',)
             self.db.execute(f'''INSERT INTO {table}
-                (sheet, row, {columns}, date_source, first_seen, old_status, fields)
-                VALUES ({','.join('?' for _ in range(15))})''',
-                (title, number, *named, '', date.today().isoformat() if history else None,
+                (sheet, row, {columns}, {date_columns}, first_seen, old_status, fields)
+                VALUES ({','.join('?' for _ in range(len(NAMED) + 5 + len(date_values)))})''',
+                (title, number, *named, *date_values, date.today().isoformat() if history else None,
                  row.get('My status'), fields))
         if (history and table == 'jobs' and row.get('My status') == 'Interview'
                 and (not previous or previous['status'] != 'Interview')):
@@ -193,6 +207,19 @@ class Store:
                                      (title, number)).fetchone()[0]
             if not self.db.execute('SELECT 1 FROM interview_rounds WHERE job_id=?', (job_id,)).fetchone():
                 self.add_round(job_id, date.today().isoformat(), '', '')
+
+    def dates(self):
+        return {(r['sheet'], r['row']): {k: r[k] for k in ('first_seen', 'posted_on', 'date_source')}
+                for r in self.db.execute('SELECT sheet, row, first_seen, posted_on, date_source FROM jobs')}
+
+    def known_keys(self):
+        result = set()
+        for table in ('jobs', 'old_jobs'):
+            for row in self.db.execute(f'SELECT company, role, place FROM {table}'):
+                key = freshness.job_key(*row)
+                if key is not None:
+                    result.add(key)
+        return result
 
     def import_workbook(self, path, source):
         wb = openpyxl.load_workbook(path)
