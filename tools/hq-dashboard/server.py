@@ -480,7 +480,7 @@ def main():
     p.add_argument('--set-password', action='store_true')
     p.add_argument('--unlock', action='store_true', help='clear the sign-in lockout (local use only)')
     a = p.parse_args()
-    if a.state.resolve().is_relative_to(ROOT):
+    if a.state.resolve().is_relative_to(APP) or a.state.resolve().is_relative_to(ROOT):
         p.error('Password state must be outside the repository.')
     if a.unlock:
         return unlock(a.state)
