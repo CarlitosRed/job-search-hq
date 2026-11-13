@@ -150,15 +150,16 @@ def load_rows(wb, mode, warning, revision):
             "store": mode, "mirrorWarning": warning}
 
 
-_CACHE = {"version": None, "body": ""}
+_CACHE = {"version": None, "today": None, "body": ""}
 
 
 def cached():
-    """The workbook is parsed once per file version (openpyxl is slow); 'today' is refreshed every call."""
+    """The workbook is parsed once per file version and calendar day (openpyxl is slow)."""
     v = version()
-    if v != _CACHE["version"] or not _CACHE["body"]:
-        _CACHE["body"], _CACHE["version"] = load(), v
-    d = dict(_CACHE["body"], today=date.today().isoformat(), version=v)
+    today = date.today().isoformat()
+    if v != _CACHE["version"] or today != _CACHE["today"] or not _CACHE["body"]:
+        _CACHE["body"], _CACHE["version"], _CACHE["today"] = load(), v, today
+    d = dict(_CACHE["body"], today=today, version=v)
     return json.dumps(d)
 
 
