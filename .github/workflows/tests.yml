@@ -28,6 +28,8 @@ jobs:
       - run: python -I tools/hq-dashboard/test_cv_quality.py
       - run: python -I tools/hq-dashboard/test_cv_fix.py
       - run: python -I tools/hq-dashboard/test_state_path.py
+      - run: python -I tools/hq-dashboard/test_search_profile.py
+      - run: python -I tools/hq-dashboard/test_daily_search.py
       - run: python -I tools/tracker/test_store.py
       - run: python -I tools/tracker/test_stages.py
       - run: python -I tools/tracker/test_rounds.py

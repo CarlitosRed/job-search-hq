@@ -42,6 +42,8 @@ Put the app in a folder named `app` inside your data folder, then create an empt
 
 `hq_settings.data_root()` resolves private data from `JOB_SEARCH_HQ_DATA`, a `.job-search-hq-data` marker above the app, or the app folder; bundled files always use `app_root()`.
 
+`tools/hq-dashboard/daily_search.py --profile P --output today.json` reads the profile's public boards into a SQLite backlog (default `work/search-backlog.sqlite3` in the data folder) and a new JSON landing set; `--backlog B` overrides the backlog path and `--mark-landed` records a successful landing. The Search tab uses the same board adapters and the data folder's optional `profile.json`.
+
 | Location | Contents |
 | --- | --- |
 | Repository `work/` | Default `applications-tracker.xlsx`, `.tracker-backups/`, existing `CV_*.docx`, `CL_*.docx`, `report-*.md`, and optional scan logs. Ignored by Git. |
