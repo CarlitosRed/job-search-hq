@@ -78,8 +78,8 @@ def main():
     # Data: the PC adapter instead of the plain tracker server
     h = resub(h, r"/\* ---------- data ---------- \*/.*?(?=/\* ---------- writes ---------- \*/)", lambda _: read("pc-data.js"))
     h = sub(h, 'const key=j=>j._sheet+"|"+j._row;', "const key=j=>j._id;")
-    h = sub(h, 'S.q="";S.view="overview";S.attention=false;',
-            'S.q="";S.view="overview";S.attention=false;{const v=location.hash.slice(1);if(["overview","list","board","contacts","search","review"].includes(v))S.view=v}')
+    h = sub(h, 'S.q="";S.view="list";S.attention=false;',
+            'S.q="";S.view="list";S.attention=false;{const v=location.hash.slice(1);if(["overview","list","board","contacts","search","review"].includes(v))S.view=v}')
     h = sub(h, "const p={sheet:j._sheet,row:j._row,status:s,expect:{Company:j.Company,Role:j.Role}};", "const p={id:j._id,sheet:j._sheet,status:s};")
     h = sub(h, 'post("/api/update",{sheet:j._sheet,row:j._row,status:e.status,date:e.date,expect:{Company:j.Company,Role:j.Role}})',
             'post("/api/update",{id:j._id,sheet:j._sheet,status:e.status,date:e.date})')
