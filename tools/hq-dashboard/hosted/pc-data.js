@@ -88,6 +88,9 @@ async function reloadJobs(silent=false){
 function syncLabel(){ $('#sync').textContent=`${D.jobs.length} jobs · spreadsheet connected`; }
 async function boot(){
  $('#requests').textContent='Search automation is awaiting setup. Your existing daily scan stays in place.';
+ /* Load documents before jobs draw; older servers still provide the CV list. */
+ try{pcDocs(await pcFetch('/api/docs').catch(()=>pcFetch('/api/cvs').then(d=>({cvs:d.files}))))}
+ catch(e){toast(e.message,null,true)}
  await reloadJobs(true);
  await pcWrites();
  await pcHealth();
