@@ -795,6 +795,7 @@ try {
                 self.browser_login(page)
                 expect(page.locator('#sync')).to_contain_text('2 jobs', timeout=10000)
                 page.click('.seg [data-v="board"]')
+                page.locator('.jobviews [data-jv="all"]').click()  # Exercise every stage and move destination.
                 self.assertEqual(page.eval_on_selector_all('.board-cols > .col[data-stage]', 'cs => cs.map(c => c.dataset.stage)'), ids, name)
                 dot = "(stage) => getComputedStyle(document.querySelector(`.col[data-stage='${stage}'] .col-h .dot`)).backgroundColor"
                 colors = {stage: page.evaluate(dot, stage) for stage in ids}
@@ -1223,6 +1224,7 @@ class IntegrationSQLite(Integration):
                 expect(page.locator('#sync')).to_contain_text('1 job', timeout=10000)
                 page.click('.seg [data-v="board"]')
                 wanted = 1 if name == 'desktop' else 2
+                page.locator('.jobviews [data-jv="progress"]').click()  # Interview belongs to In progress.
                 expect(page.locator('.bcard-round').first).to_have_text(f'Round {wanted} of ?')
                 job = self.app.data()['jobs'][0]
                 page.evaluate('(id) => openJob(id)', job['_id'])
@@ -1351,6 +1353,116 @@ class IntegrationSQLite(Integration):
                 context.close()
             browser.close()
 
+
+    def test_job_views_browser(self):
+        """Build step 1 (S1-S3): five job views, To do by default; closed postings and Skipped out of it; a simpler filter panel (desktop, then phone)."""
+        from playwright.sync_api import sync_playwright, expect
+        store_spec = importlib.util.spec_from_file_location('tracker_store_views', HERE.parent / 'tracker' / 'store.py')
+        store = importlib.util.module_from_spec(store_spec)
+        store_spec.loader.exec_module(store)
+        store.db_path(self.book).unlink()
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Fictional jobs'
+        ws.append(['#', 'Company', 'Role', 'My status', 'Date applied', 'Notes', 'Link', 'Open check 2026-01-05'])
+        rows = [('Open Review Co', 'Review', 'OPEN (fictional)'), ('Unchecked Tracked Co', 'Tracked', None),
+                ('Open Apply Co', 'Apply', 'OPEN (fictional)'), ('Closed Review Co', 'Review', 'CLOSED (fictional)'),
+                ('Applied Closed Co', 'Applied', 'CLOSED (fictional)'), ('Interview Co', 'Interview', 'OPEN (fictional)'),
+                ('Skipped Co', 'Skipped', 'OPEN (fictional)'), ('Rejected Co', 'Rejected', None)]
+        for n, (company, status, check) in enumerate(rows, 1):
+            ws.append([n, company, 'Example Analyst', status, '', 'Example only', f'https://example.com/{n}', check])
+        wb.save(self.book)
+        wb.close()
+        self.assertTrue(store.migrate(self.book, apply=True)['ok'])
+        views = {'todo': ('To do', ['Open Review Co', 'Unchecked Tracked Co', 'Open Apply Co']),
+                 'progress': ('In progress', ['Applied Closed Co', 'Interview Co']),
+                 'skipped': ('Skipped', ['Skipped Co']),
+                 'closed': ('Closed', ['Closed Review Co', 'Rejected Co']),
+                 'all': ('All', [r[0] for r in rows])}
+        self.login()
+        self.serve_tls()
+        shots = os.environ.get('HQ_SHOT_DIR')
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            for name, options in (('desktop', {'viewport': {'width': 1440, 'height': 900}}), ('phone', p.devices['iPhone 15'])):
+                context = browser.new_context(**options, ignore_https_errors=True)
+                page = context.new_page()
+                errors = []
+                page.on('pageerror', lambda e: errors.append(str(e)))
+                self.browser_login(page)
+                expect(page.locator('#sync')).to_contain_text('8 jobs', timeout=10000)
+                # The page opens on the List tab with the To do view.
+                expect(page.locator('.seg [data-v="list"]')).to_have_attribute('aria-selected', 'true')
+                bar = page.locator('.jobviews')
+                expect(bar.locator('[data-jv="todo"]')).to_have_attribute('aria-pressed', 'true')
+                for key, (label, companies) in views.items():
+                    button = bar.locator(f'[data-jv="{key}"]')
+                    expect(button).to_contain_text(label)
+                    expect(button.locator('.n')).to_have_text(str(len(companies)))
+                if shots:
+                    page.wait_for_timeout(1000)
+                    page.screenshot(path=str(Path(shots) / f'01d-todo-{name}.png'), full_page=False)
+                for key, (label, companies) in views.items():
+                    bar.locator(f'[data-jv="{key}"]').click()
+                    expect(bar.locator(f'[data-jv="{key}"]')).to_have_attribute('aria-pressed', 'true')
+                    expect(page.locator('.lcard')).to_have_count(len(companies))
+                    for company in companies:
+                        expect(page.locator('.lcard', has_text=company)).to_have_count(1)
+                    expect(page.locator('.list-view-wrap h2').first).to_contain_text(label)
+                # Board: only the columns of the stages in the view.
+                bar.locator('[data-jv="todo"]').click()
+                page.click('.seg [data-v="board"]')
+                expect(page.locator('.jobviews [data-jv="todo"]')).to_have_attribute('aria-pressed', 'true')
+                expect(page.locator('.col[data-stage]')).to_have_count(3)
+                for stage in ('tracked', 'review', 'apply'):
+                    expect(page.locator(f'.col[data-stage="{stage}"]')).to_have_count(1)
+                expect(page.locator('.bcard')).to_have_count(3)
+                page.locator('.jobviews [data-jv="progress"]').click()
+                for stage in ('applied', 'interview', 'offer'):
+                    expect(page.locator(f'.col[data-stage="{stage}"]')).to_have_count(1)
+                expect(page.locator('.col[data-stage="skipped"]')).to_have_count(0)
+                expect(page.locator('.bcard')).to_have_count(2)
+                page.locator('.jobviews [data-jv="all"]').click()
+                expect(page.locator('.bcard')).to_have_count(8)
+                # The filter panel: Posted, Place, Posting, Fit score, Needs attention; no Status, Verdict, List or "Hide closed".
+                page.evaluate('openFilters()')
+                panel = page.locator('#fdrawer')
+                for heading in ('Posted', 'Place', 'Posting'):
+                    expect(panel.get_by_role('heading', name=heading, exact=True)).to_be_visible()
+                for gone in ('Status', 'Verdict', 'List', 'Country / region'):
+                    expect(panel.get_by_role('heading', name=gone, exact=True)).to_have_count(0)
+                expect(panel).not_to_contain_text('Hide closed')
+                expect(panel).not_to_contain_text('Posting open only')
+                for label, n in (('Open', 4), ('Closed', 2), ('Not checked', 2)):
+                    expect(panel.locator('label.opt', has_text=label).locator('.n')).to_have_text(str(n))
+                panel.locator('label.opt', has_text='Closed').locator('input').check()
+                page.evaluate('closeDrawers()')
+                expect(page.locator('.bcard')).to_have_count(2)
+                for company in ('Closed Review Co', 'Applied Closed Co'):
+                    expect(page.locator('.bcard', has_text=company)).to_have_count(1)
+                page.evaluate('clearFilters()')
+                expect(page.locator('.bcard')).to_have_count(8)
+                expect(page.locator('body')).not_to_contain_text('Hide closed')
+                # The chosen view survives a reload; the page still opens on List.
+                page.locator('.jobviews [data-jv="skipped"]').click()
+                page.reload()
+                expect(page.locator('#sync')).to_contain_text('8 jobs', timeout=10000)
+                expect(page.locator('.seg [data-v="list"]')).to_have_attribute('aria-selected', 'true')
+                expect(page.locator('.jobviews [data-jv="skipped"]')).to_have_attribute('aria-pressed', 'true')
+                expect(page.locator('.lcard')).to_have_count(1)
+                # Overview still counts every job.
+                page.click('.seg [data-v="overview"]')
+                expect(page.locator('#main')).to_contain_text('8')
+                no_scroll = page.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')
+                self.assertTrue(no_scroll, f'{name}: page scrolls sideways')
+                if shots:
+                    page.click('.seg [data-v="list"]')
+                    page.wait_for_timeout(1000)
+                    page.screenshot(path=str(Path(shots) / f'01d-skipped-{name}.png'), full_page=False)
+                page.evaluate('localStorage.clear()')
+                self.assertEqual(errors, [], name)
+                context.close()
+            browser.close()
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
