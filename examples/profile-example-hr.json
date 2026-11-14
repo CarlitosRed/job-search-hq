@@ -1,0 +1,36 @@
+{
+  "id": "fictional-hr-person",
+  "version": 1,
+  "revision": 1,
+  "updated": "2026-11-13",
+  "goals": {
+    "lanes": [
+      {"id": "people", "label": "People operations", "titles": ["hr generalist", "people operations"], "duties": ["employee onboarding", "employee records"]},
+      {"id": "recruiting", "label": "Recruiting coordination", "titles": ["recruiting coordinator", "recruiter"], "duties": ["interview scheduling", "candidate communication"]}
+    ],
+    "seniority": {"allowed": ["generalist", "coordinator", "specialist", "recruiter"], "stretch": ["senior", "manager"]},
+    "stretch_interests": ["Learning and development"]
+  },
+  "proven": {"skills": [{"name": "Interview coordination", "evidence": ["E-002"], "status": "stated"}]},
+  "work_rules": {
+    "home_country": "Amberglass Federation",
+    "authorized_countries": ["Amberglass Federation", "Cloudmere Republic"],
+    "remote_regions": ["Silver Archipelago", "Worldwide"],
+    "work_modes": ["remote", "onsite"],
+    "relocation_wish": true,
+    "sponsorship_needed": true
+  },
+  "search": {
+    "companies": [
+      {"label": "Grafana Labs", "provider": "greenhouse", "board": "grafanalabs", "found_by": "Fictional example using a public board; availability is not guaranteed."},
+      {"label": "Included Health", "provider": "lever", "board": "includedhealth", "found_by": "Fictional example using a public board; availability is not guaranteed."}
+    ],
+    "exclude_titles": [{"pattern": "unpaid", "reason": "This fictional search seeks paid employment."}],
+    "exclude_companies": [],
+    "daily_land_limit": 30,
+    "judge_budget": 20,
+    "max_per_company": 3,
+    "wild_cards": 3
+  },
+  "review": {"reviewed_by": "Fictional HR person", "reviewed_on": "2026-11-13", "open_questions": ["All personal facts and places in this example are invented."]}
+}

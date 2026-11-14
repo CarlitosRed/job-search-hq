@@ -1,6 +1,6 @@
 """Bounded public job-board discovery.
 
-Only published Greenhouse and Lever GET endpoints are queried. Search results are
+Only public employer board endpoints are queried. Search results are
 snapshots, not applications or eligibility decisions. No workbook, model, API key,
 browser session, user-supplied URL or shell is used. The dashboard owner explicitly
 chooses whether to add each result through the existing workbook save queue.
@@ -8,9 +8,10 @@ chooses whether to add each result through the existing workbook save queue.
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import closing
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import html
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -36,8 +37,11 @@ SOURCES = (
 )
 MAX_RESULTS = 40
 MAX_BYTES = 4 * 1024 * 1024
+MAX_BOARD_BYTES = 32 * 1024 * 1024
 MAX_POSTINGS = 5000
 TIMEOUT = 12
+_HOST_LOCK = threading.Lock()
+_HOST_SLOTS = {}
 STOP_WORDS = {'the', 'and', 'or', 'for', 'with', 'jobs', 'job', 'roles', 'role', 'to', 'in', 'a', 'an'}
 
 
@@ -46,7 +50,36 @@ def now():
 
 
 def clean_text(value, limit):
-    return re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]*>', ' ', str(value or '')))).strip()[:limit]
+    value = html.unescape(html.unescape(str(value or '')))
+    return re.sub(r'\s+', ' ', re.sub(r'<[^>]*>', ' ', value)).strip()[:limit]
+
+
+def load_component(name):
+    spec = importlib.util.spec_from_file_location('search_' + name, Path(__file__).with_name(name + '.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def configured_sources():
+    path = load_component('hq_settings').data_root() / 'profile.json'
+    if not path.exists():
+        return SOURCES
+    companies = load_component('search_profile').load(path)['search']['companies']
+    return tuple(dict(company, id=f'profile-{index}') for index, company in enumerate(companies))
+
+
+def phrase_matches(phrase, text):
+    """Match a complete phrase after ignoring case and punctuation."""
+    words = re.findall(r'\w+', str(phrase).casefold())
+    haystack = re.findall(r'\w+', str(text).casefold())
+    return bool(words) and (' ' + ' '.join(words) + ' ') in (' ' + ' '.join(haystack) + ' ')
+
+
+def profile_posting_matches(profile, title, text):
+    return any(any(phrase_matches(phrase, title) for phrase in lane['titles']) or
+               any(phrase_matches(phrase, title + ' ' + text) for phrase in lane['duties'])
+               for lane in profile['goals']['lanes'])
 
 
 def validate(payload):
@@ -83,16 +116,109 @@ def source_url(source):
         return 'https://boards-api.greenhouse.io/v1/boards/' + quote(board) + '/jobs'
     if source.get('provider') == 'lever':
         return 'https://api.lever.co/v0/postings/' + quote(board) + '?mode=json&limit=500'
-    raise ValueError('Only Greenhouse and Lever public job boards are supported.')
+    if source.get('provider') == 'ashby':
+        return 'https://api.ashbyhq.com/posting-api/job-board/' + quote(board)
+    if source.get('provider') == 'workday':
+        host, site = source.get('host', ''), source.get('site', '')
+        if not re.fullmatch(r'[A-Za-z0-9-]+\.wd\d+\.myworkdayjobs\.com', host) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', site):
+            raise ValueError('Use a public Workday jobs host and site token.')
+        return f'https://{host}/wday/cxs/{board}/{site}/jobs'
+    raise ValueError('Only Greenhouse, Lever, Ashby and Workday public job boards are supported.')
 
 
-def fetch_source(source):
-    request = Request(source_url(source), headers={'Accept': 'application/json', 'User-Agent': 'JobSearchHQ/1.0 (public job-board reader)'})
-    with build_opener(NoRedirect).open(request, timeout=TIMEOUT) as response:
-        data = response.read(MAX_BYTES + 1)
-    if len(data) > MAX_BYTES:
+def fetch_json(method, url, body=None):
+    """Bounded, paced HTTP transport for the fixed public board endpoints."""
+    parsed = urlsplit(url)
+    host = parsed.hostname or ''
+    fixed = host in ('boards-api.greenhouse.io', 'api.lever.co', 'api.ashbyhq.com')
+    workday = re.fullmatch(r'[A-Za-z0-9-]+\.wd\d+\.myworkdayjobs\.com', host)
+    if not safe_link(url) or not (fixed or workday) or method not in ('GET', 'POST') or (method == 'POST' and not workday):
+        raise ValueError('Use a supported public job-board endpoint.')
+    data = None if body is None else json.dumps(body).encode('utf-8')
+    request = Request(url, data=data, method=method, headers={'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'JobSearchHQ/1.0 (public job-board reader)'})
+    with _HOST_LOCK:
+        slot = _HOST_SLOTS.setdefault(host, threading.BoundedSemaphore(2))
+    with slot:
+        with build_opener(NoRedirect).open(request, timeout=TIMEOUT) as response:
+            data = response.read(MAX_BOARD_BYTES + 1)
+    if len(data) > MAX_BOARD_BYTES:
         raise ValueError('Job board response exceeded the size limit.')
     return json.loads(data)
+
+
+def board_rows(source, fetch=fetch_json, detail_match=None, today=None):
+    """Shared board adapters; detail_match gates the bounded Workday detail reads."""
+    url = source_url(source)
+    provider = source['provider']
+    if provider != 'workday':
+        if provider == 'greenhouse':
+            url += '?content=true'
+        data = fetch('GET', url)
+        rows = data.get('jobs') if provider in ('greenhouse', 'ashby') and isinstance(data, dict) else data
+        if not isinstance(rows, list) or len(rows) > MAX_POSTINGS:
+            raise ValueError('Unexpected or oversized job-board response.')
+        return rows
+    rows, offset, details = [], 0, 0
+    today = today or date.today()
+    while True:
+        data = fetch('POST', url, {'appliedFacets': {}, 'limit': 20, 'offset': offset, 'searchText': ''})
+        if not isinstance(data, dict) or not isinstance(data.get('jobPostings'), list):
+            raise ValueError('Unexpected Workday response.')
+        total, page = data.get('total'), data['jobPostings']
+        if type(total) is not int or not 0 <= total <= MAX_POSTINGS or len(page) > 20 or len(rows) + len(page) > MAX_POSTINGS:
+            raise ValueError('Unexpected or oversized Workday response.')
+        for listing in page:
+            if not isinstance(listing, dict):
+                continue
+            raw = dict(listing)
+            path = raw.get('externalPath', '')
+            if not isinstance(path, str) or not re.fullmatch(r'/job/[A-Za-z0-9_/%.-]+', path) or '..' in path or '%' in path:
+                continue
+            raw['_link'] = f"https://{source['host']}/{source['site']}" + path
+            raw['_posted'], raw['_date_source'] = '', ''
+            posted = clean_text(raw.get('postedOn'), 100).casefold()
+            days = re.fullmatch(r'posted (\d+) days? ago', posted)
+            count = int(days[1]) if days else 0 if posted == 'posted today' else 1 if posted == 'posted yesterday' else None
+            if count is not None and count <= 36500:
+                raw['_posted'] = (today - timedelta(days=count)).isoformat()
+                raw['_date_source'] = 'workday-about'
+            listing_text = clean_text(' '.join(
+                ' '.join(str(part) for part in value) if isinstance(value, list) else str(value)
+                for key, value in listing.items() if key not in ('externalPath', 'postedOn')
+            ), 20000)
+            raw['description'] = listing_text
+            if details < 40 and detail_match and detail_match(raw.get('title', ''), listing_text):
+                details += 1
+                detail = fetch('GET', url.rsplit('/', 1)[0] + path)
+                info = detail.get('jobPostingInfo') if isinstance(detail, dict) else None
+                if not isinstance(info, dict):
+                    raise ValueError('Unexpected Workday job details.')
+                raw['description'] = listing_text + ' ' + str(info.get('jobDescription') or '')
+                raw['posting_id'] = info.get('jobReqId')
+                exact = iso_day(info.get('startDate'))
+                if exact:
+                    raw['_posted'], raw['_date_source'] = exact, 'workday'
+            rows.append(raw)
+        offset += len(page)
+        if offset >= total:
+            break
+        if not page:
+            raise ValueError('Workday paging stopped before all postings were read.')
+    return rows
+
+
+def fetch_source(source, detail_match=None):
+    rows = board_rows(source, detail_match=detail_match)
+    return rows if source['provider'] == 'lever' else {'jobs': rows}
+
+
+def iso_day(value):
+    if isinstance(value, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}', value[:10]):
+        try:
+            return date.fromisoformat(value[:10]).isoformat()
+        except ValueError:
+            pass
+    return ''
 
 
 def safe_link(value):
@@ -125,7 +251,7 @@ def normalize(source, raw, checked):
                 date_source = 'greenhouse'
             except ValueError:
                 pass
-    else:
+    elif source['provider'] == 'lever':
         role = clean_text(raw.get('text'), 200)
         categories = raw.get('categories') or {}
         location = clean_text(categories.get('location') if isinstance(categories, dict) else '', 300)
@@ -139,10 +265,30 @@ def normalize(source, raw, checked):
                 date_source = 'lever'
             except (ValueError, OverflowError, OSError):
                 pass
+    elif source['provider'] == 'ashby':
+        role = clean_text(raw.get('title'), 200)
+        location = clean_text(raw.get('location'), 300)
+        if raw.get('isRemote') is True and 'remote' not in location.casefold():
+            location = (location + ' Remote').strip()
+        link = safe_link(raw.get('jobUrl'))
+        posted = iso_day(raw.get('publishedAt'))
+        date_source = 'ashby' if posted else ''
+    else:
+        role = clean_text(raw.get('title'), 200)
+        location = clean_text(raw.get('locationsText'), 300)
+        link = safe_link(raw.get('_link'))
+        posted, date_source = raw.get('_posted', ''), raw.get('_date_source', '')
     if not role or not link:
         return None
-    key = hashlib.sha256((source['id'] + '\n' + link).encode()).hexdigest()[:24]
+    key = hashlib.sha256((source.get('id', source['label']) + '\n' + link).encode()).hexdigest()[:24]
+    posting_id = raw.get('posting_id') or raw.get('id')
+    if posting_id is None and source['provider'] == 'workday':
+        posting_id = (raw.get('bulletFields') or [None])[0]
+    description = raw.get('content') if source['provider'] == 'greenhouse' else raw.get('descriptionPlain') if source['provider'] in ('lever', 'ashby') else raw.get('description')
     return {'id': key, 'company': source['label'], 'role': role, 'location': location or 'Not specified',
+            'provider': source['provider'], 'posting_id': str(posting_id) if posting_id is not None else link,
+            'remote': bool(re.search(r'\b(remote|anywhere|distributed)\b', location, re.I)),
+            'description': clean_text(description, 20000),
             'postedOn': posted, 'dateSource': date_source,
             'link': link, 'source': source['label'] + ' (' + source['provider'].title() + ')', 'checkedAt': checked,
             'summary': 'Listed on the employer job board when checked. Read the posting for country and work-authorization requirements.'}
@@ -161,22 +307,39 @@ def matches(result, query):
     return True
 
 
-def discover(query, fetcher=fetch_source, sources=SOURCES, progress=None):
+def discover(query, fetcher=fetch_source, sources=None, progress=None):
     """Fetch a bounded source set; retain partial results and visible errors."""
     query = validate(query)
-    if not 1 <= len(sources) <= 12:
-        raise ValueError('Choose between one and twelve job-board sources.')
+    sources = configured_sources() if sources is None else sources
+    if not 1 <= len(sources) <= 300:
+        raise ValueError('Choose between one and 300 job-board sources.')
+    profile = None
+    if fetcher is fetch_source:
+        path = load_component('hq_settings').data_root() / 'profile.json'
+        if path.exists():
+            profile = load_component('search_profile').load(path)
+
+    def detail_match(title, text):
+        if profile is not None:
+            return profile_posting_matches(profile, title, text)
+        return any(phrase_matches(word, title + ' ' + text) for word in keywords(query['query']))
+
     checked = now()
     results, errors, completed = [], [], 0
     # Apply ordering after concurrent reads so repeated fixtures remain stable.
     by_source = {}
     with ThreadPoolExecutor(max_workers=4, thread_name_prefix='hq-job-board') as pool:
-        pending = {pool.submit(fetcher, source): source for source in sources}
+        def read(source):
+            if fetcher is fetch_source:
+                return fetch_source(source, detail_match)
+            return fetcher(source)
+        pending = {pool.submit(read, source): index for index, source in enumerate(sources)}
         for future in as_completed(pending):
-            source = pending[future]
+            index = pending[future]
+            source = sources[index]
             try:
                 data = future.result()
-                rows = data.get('jobs') if source['provider'] == 'greenhouse' and isinstance(data, dict) else data
+                rows = data.get('jobs') if source['provider'] != 'lever' and isinstance(data, dict) else data
                 if not isinstance(rows, list) or len(rows) > MAX_POSTINGS:
                     raise ValueError('Unexpected or oversized job-board response.')
                 found = []
@@ -184,7 +347,7 @@ def discover(query, fetcher=fetch_source, sources=SOURCES, progress=None):
                     result = normalize(source, raw, checked)
                     if result and matches(result, query):
                         found.append(result)
-                by_source[source['id']] = found
+                by_source[index] = found
             except Exception:
                 errors.append({'source': source['label'], 'message': 'This job board could not be checked. It may be unavailable or its format may have changed.'})
             completed += 1
@@ -192,8 +355,8 @@ def discover(query, fetcher=fetch_source, sources=SOURCES, progress=None):
                 progress(completed, len(sources))
     seen = set()
     total = 0
-    for source in sources:
-        for result in by_source.get(source['id'], []):
+    for index, source in enumerate(sources):
+        for result in by_source.get(index, []):
             if result['link'] in seen:
                 continue
             seen.add(result['link'])
@@ -205,9 +368,11 @@ def discover(query, fetcher=fetch_source, sources=SOURCES, progress=None):
 
 
 class Searches:
-    def __init__(self, state, fetcher=fetch_source, sources=SOURCES):
+    def __init__(self, state, fetcher=fetch_source, sources=None):
         self.path = Path(state) / 'job-searches.sqlite3'
-        self.fetcher, self.sources = fetcher, sources
+        self.fetcher = fetcher
+        self.use_profile = sources is None
+        self.sources = configured_sources() if sources is None else sources
         self.lock = threading.RLock()
         self.stop_event = threading.Event()
         self.thread = None
@@ -242,6 +407,8 @@ class Searches:
         return request_id
 
     def state(self):
+        if self.use_profile:
+            self.sources = configured_sources()
         with self.connect() as db:
             db.row_factory = sqlite3.Row
             rows = db.execute('SELECT id,body,status,message,created,finished,result FROM searches ORDER BY rowid DESC LIMIT 20').fetchall()
@@ -268,6 +435,8 @@ class Searches:
             with self.connect() as db, db:
                 db.execute('UPDATE searches SET message=? WHERE id=?', (f'Checked {done} of {total} public job boards.', key))
         try:
+            if self.use_profile:
+                self.sources = configured_sources()
             result = discover(json.loads(body), self.fetcher, self.sources, progress)
             status = 'completed' if result['sourcesChecked'] else 'failed'
             message = f"Found {len(result['results'])} matching postings across {result['sourcesChecked']} checked job boards."
