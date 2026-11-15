@@ -198,6 +198,7 @@ class SaveNoticeUI(unittest.TestCase):
                 page.evaluate('(items)=>{writes=items;return pcWrites()}', items)
 
             saved = dict(id='fictional-1', label='<Example>', status='saved', message='Saved to your spreadsheet.')
+            poll([])  # B5: the page opens first; only saves finished after that are announced.
             poll([saved])
             box = page.locator('#pc-saves')
             expect(box).to_be_visible()
