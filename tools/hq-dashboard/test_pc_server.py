@@ -1263,6 +1263,69 @@ class IntegrationSQLite(Integration):
                 context.close()
             browser.close()
 
+    def test_round_saved_while_add_round_is_finishing(self):
+        """Bug B4: a Save round click while the Add round write is still reloading must not be dropped."""
+        from playwright.sync_api import sync_playwright, expect
+        self.login_and_move_to_interview()
+        self.serve_tls()
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            context = browser.new_context(viewport={'width': 1440, 'height': 900}, ignore_https_errors=True)
+            page = context.new_page()
+            self.browser_login(page)
+            expect(page.locator('#sync')).to_contain_text('1 job', timeout=10000)
+            page.click('.seg [data-v="board"]')
+            page.locator('.jobviews [data-jv="progress"]').click()  # Interview belongs to In progress.
+            job = self.app.data()['jobs'][0]
+            page.evaluate('(id) => openJob(id)', job['_id'])
+            drawer = page.locator('#drawer')
+            expect(drawer.locator('.round')).to_have_count(1, timeout=10000)
+            # Hold back the reload that follows Add round, as a slow computer does.
+            page.evaluate("""() => { const f = window.fetch; let armed = true; window.HELD = [];
+                window.fetch = (u, o) => { if (armed && String(u).includes('/api/data')) { armed = false;
+                    return new Promise(r => window.HELD.push(r)).then(() => f(u, o)); } return f(u, o); }; }""")
+            drawer.get_by_role('button', name='Add round').click()
+            for _ in range(100):
+                if len(self.app.data()['jobs'][0]['_rounds']) == 2:
+                    break
+                time.sleep(0.05)
+            for _ in range(100):
+                if page.evaluate('() => HELD.length') == 1:
+                    break
+                time.sleep(0.05)
+            # Another refresh (the page's own poll) draws round 2 while the first reload is still held.
+            page.evaluate('() => reloadJobs(true)')
+            expect(drawer.locator('.round')).to_have_count(2, timeout=10000)
+            second = drawer.locator('.round[data-round="2"]')
+            second.locator('input[data-field="type"]').fill('Recruiter call')
+            second.locator('input[data-field="note"]').fill('Fictional note')
+            self.assertTrue(page.evaluate('() => PENDING.size > 0 && HELD.length === 1'), 'precondition: the Add round write is still finishing')
+            second.get_by_role('button', name='Save round 2').click()
+            page.evaluate('() => HELD.forEach(r => r())')
+            rounds = []
+            for _ in range(150):
+                rounds = self.app.data()['jobs'][0]['_rounds']
+                if len(rounds) == 2 and rounds[1]['type'] == 'Recruiter call':
+                    break
+                time.sleep(0.1)
+            self.assertEqual([(r['type'], r['note']) for r in rounds], [('', ''), ('Recruiter call', 'Fictional note')],
+                             'the Save round click was dropped while Add round was finishing')
+            browser.close()
+
+    def test_sign_out_reaches_sign_in_when_request_fails(self):
+        """Bug B4: Sign out always ends on the sign-in page, even if the sign-out request fails."""
+        from playwright.sync_api import sync_playwright, expect
+        self.serve_tls()
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            context = browser.new_context(viewport={'width': 1440, 'height': 900}, ignore_https_errors=True)
+            page = context.new_page()
+            self.browser_login(page)
+            page.route('**/api/logout', lambda route: route.abort())
+            page.get_by_role('button', name='Sign out', exact=True).click()
+            expect(page.locator('#password')).to_be_visible(timeout=5000)
+            browser.close()
+
     def test_posted_filter_browser(self):
         """Step 02b: each card says how old the job is; the Posted filter narrows Board and List (desktop, then phone)."""
         from datetime import date, timedelta
