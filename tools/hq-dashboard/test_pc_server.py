@@ -993,7 +993,10 @@ try {
             self.assertNotIn('DRAFT', download.value.suggested_filename)
             self.assertEqual(errors, [])
             page.get_by_role('button', name='Sign out', exact=True).click()
-            page.wait_for_selector('#password')
+            try:
+                page.wait_for_selector('#password', timeout=15000)
+            except Exception:
+                self.fail('Sign out did not reach the sign-in page: ' + page.url + ' ' + page.locator('body').inner_text()[:300])
             browser.close()
 
     # Step 01b: interview rounds
@@ -1324,6 +1327,12 @@ class IntegrationSQLite(Integration):
             page.route('**/api/logout', lambda route: route.abort())
             page.get_by_role('button', name='Sign out', exact=True).click()
             expect(page.locator('#password')).to_be_visible(timeout=5000)
+            # A sign-out request that never answers must not keep the person on the page either.
+            page = browser.new_context(viewport={'width': 1440, 'height': 900}, ignore_https_errors=True).new_page()
+            self.browser_login(page)
+            page.route('**/api/logout', lambda route: None)
+            page.get_by_role('button', name='Sign out', exact=True).click()
+            expect(page.locator('#password')).to_be_visible(timeout=8000)
             browser.close()
 
     def test_posted_filter_browser(self):
