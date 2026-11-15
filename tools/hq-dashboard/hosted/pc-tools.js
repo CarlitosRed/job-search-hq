@@ -1,5 +1,5 @@
 /* PC career tasks. Server owns prompts and records. */
-let PC_LETTER='',CLS=[],REPORTS=[];
+let PC_LETTER='',CLS=[],REPORTS=[],PC_DOC_STAMP='';
 async function pcState(){
  const data=await pcFetch('/api/ai/state');
  // Refuse a stale server/page pair.
@@ -16,8 +16,7 @@ async function pcInit(){
  PH={maxCount:5,maxInputBytes:8*1024*1024,mediaTypes:['image/jpeg','image/png']};
  $('#r-file').accept=PH.mediaTypes.join(',');$('#r-photos').hidden=false;renderThumbs();
  $('#r-go').disabled=false;$('#s-go').disabled=false;
- /* A server started before the Documents routes existed still lists CVs (the page file is read on every request). */
- const [state,files]=await Promise.all([pcState(),pcFetch('/api/docs').catch(()=>pcFetch('/api/cvs').then(d=>({cvs:d.files})))]);pcDocs(files);
+ const state=await pcState();
  await pcSearchState();
  setInterval(()=>{if(!document.hidden&&(S.view==='search'||PC_SEARCHES.some(s=>['queued','running'].includes(s.status))))pcSearchState()},2500);
  const active=state.tasks.find(t=>['queued','running'].includes(t.status));
@@ -83,6 +82,7 @@ function pcDocs(data){
  CLS=(Array.isArray(data.letters)?data.letters:[]).slice().sort((a,b)=>String(b.updated).localeCompare(String(a.updated))||String(a.title).localeCompare(String(b.title)));
  REPORTS=Array.isArray(data.reports)?data.reports:[];
  const notes=Array.isArray(data.evidence_notes)?data.evidence_notes:[],box=$('#evidence-notes');
+ const stamp=JSON.stringify([CVS,CLS,REPORTS,notes]);if(stamp===PC_DOC_STAMP)return;PC_DOC_STAMP=stamp;
  box.replaceChildren();box.hidden=!notes.length;
  if(notes.length){const h=document.createElement('b');h.textContent='Evidence that needs fixing';box.append(h);const list=document.createElement('ul');for(const note of notes){const li=document.createElement('li');li.textContent=String(note.id||'')+': '+String(note.note||'');list.append(li)}box.append(list)}
  $('#cvs').innerHTML=CVS.length?`<ul class="cvl">${CVS.map(d=>pcDocRow(d,'cl')).join('')}</ul>`:'<p class="mut">No CV files yet.</p>';

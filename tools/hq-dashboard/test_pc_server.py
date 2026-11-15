@@ -1464,5 +1464,47 @@ class IntegrationSQLite(Integration):
                 context.close()
             browser.close()
 
+    def test_background_refresh_keeps_clicks_and_typing(self):
+        """Bug B3 (2026-11-14): a background refresh must not replace the buttons a person is clicking or wipe what they typed.
+
+        CI lost clicks on the job views and typed round details because the documents list arriving
+        after load re-rendered the whole List view. Same data must not re-render; a re-render keeps typed text.
+        """
+        from playwright.sync_api import sync_playwright, expect
+        self.login_and_move_to_interview()
+        self.serve_tls()
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            context = browser.new_context(viewport={'width': 1440, 'height': 900}, ignore_https_errors=True)
+            page = context.new_page()
+            errors = []
+            page.on('pageerror', lambda e: errors.append(str(e)))
+            self.browser_login(page)
+            expect(page.locator('#sync')).to_contain_text('1 job', timeout=10000)
+            expect(page.locator('.seg [data-v="list"]')).to_have_attribute('aria-selected', 'true')
+            # 1. The same documents arriving again does not rebuild the view.
+            page.evaluate('window.__jv = document.querySelector(".jobviews [data-jv=skipped]")')
+            page.evaluate('pcDocs({cvs: CVS, letters: CLS, reports: REPORTS})')
+            self.assertTrue(page.evaluate('window.__jv && window.__jv.isConnected'),
+                            'unchanged documents must not replace the view buttons')
+            # 2. A re-render keeps round details that are typed but not saved yet (drawer opens from the Board).
+            page.click('.seg [data-v="board"]')
+            page.locator('.jobviews [data-jv="progress"]').click()
+            job = self.app.data()['jobs'][0]
+            page.evaluate('(id) => openJob(id)', job['_id'])
+            drawer = page.locator('#drawer')
+            drawer.get_by_role('button', name='Add round').click()
+            expect(drawer.locator('.round')).to_have_count(2, timeout=10000)
+            second = drawer.locator('.round[data-round="2"]')
+            second.locator('input[data-field="type"]').fill('Recruiter call')
+            second.locator('input[data-field="note"]').fill('Fictional note')
+            page.evaluate('render()')
+            second = drawer.locator('.round[data-round="2"]')
+            expect(second.locator('input[data-field="type"]')).to_have_value('Recruiter call')
+            expect(second.locator('input[data-field="note"]')).to_have_value('Fictional note')
+            self.assertEqual(errors, [])
+            context.close()
+            browser.close()
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

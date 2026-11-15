@@ -1248,8 +1248,10 @@ function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
 
 /* ---------- render ---------- */
 function render(){const keep=$$("textarea[data-note][data-dirty='1']").map(t=>[t.closest("[data-k]").dataset.k,t.value,t===document.activeElement,t.selectionStart]);
+ const rounds=$$(".round input[data-field]").filter(t=>t.value!==t.defaultValue||t===document.activeElement).map(t=>[t.closest("[data-k]").dataset.k,t.closest(".round").dataset.id,t.dataset.field,t.value,t===document.activeElement,t.selectionStart,t.selectionEnd,t.selectionDirection]);
  renderInner();
- keep.forEach(([k,v,f,pos])=>{$$(`[data-k="${CSS.escape(k)}"] textarea[data-note]`).forEach(t=>{t.value=v;noteState(t);if(f){t.focus();t.setSelectionRange(pos,pos)}})})}
+ keep.forEach(([k,v,f,pos])=>{$$(`[data-k="${CSS.escape(k)}"] textarea[data-note]`).forEach(t=>{t.value=v;noteState(t);if(f){t.focus();t.setSelectionRange(pos,pos)}})});
+ rounds.forEach(([k,id,field,v,f,start,end,direction])=>{$$(`[data-k="${CSS.escape(k)}"] .round[data-id="${CSS.escape(id)}"] input[data-field="${CSS.escape(field)}"]`).forEach(t=>{t.value=v;if(f){t.focus();if(start!==null)t.setSelectionRange(start,end,direction)}})})}
 function renderInner(){const js=filtered();$$(".seg button").forEach(b=>b.setAttribute("aria-selected",b.dataset.v===S.view));
  const ac=activeCount();$("#fcount").hidden=!ac;$("#fcount").textContent=ac;$("#fbtn").hidden=S.view==="contacts";
  activebar();const m=$("#main");const scroll=$(".board")?.scrollLeft;
