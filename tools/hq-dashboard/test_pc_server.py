@@ -1315,6 +1315,29 @@ class IntegrationSQLite(Integration):
                              'the Save round click was dropped while Add round was finishing')
             browser.close()
 
+    def test_view_buttons_stay_put_after_sign_in(self):
+        """Bug B5: a save made before sign-in must not push the view buttons down after the page appears."""
+        from playwright.sync_api import sync_playwright, expect
+        self.login_and_move_to_interview()  # leaves finished saves in the queue
+        self.serve_tls()
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            context = browser.new_context(**p.devices['iPhone 15'], ignore_https_errors=True)
+            # Hold the first save-notice request until the test releases it, as a slow computer does.
+            context.add_init_script("""(() => { const f = window.fetch; let armed = true; window.HELD = [];
+                window.fetch = (u, o) => { if (armed && String(u).includes('/api/writes')) { armed = false;
+                    return new Promise(r => window.HELD.push(r)).then(() => f(u, o)); } return f(u, o); }; })()""")
+            page = context.new_page()
+            self.browser_login(page)
+            expect(page.locator('#sync')).to_contain_text('1 job', timeout=10000)
+            page.click('.seg [data-v="board"]')
+            button = page.locator('.jobviews [data-jv="progress"]')
+            before = button.bounding_box()['y']
+            page.evaluate('() => HELD.forEach(r => r())')
+            time.sleep(1.5)
+            self.assertEqual(button.bounding_box()['y'], before, 'the view buttons moved after sign-in')
+            browser.close()
+
     def test_sign_out_reaches_sign_in_when_request_fails(self):
         """Bug B4: Sign out always ends on the sign-in page, even if the sign-out request fails."""
         from playwright.sync_api import sync_playwright, expect
