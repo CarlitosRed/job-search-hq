@@ -915,12 +915,17 @@ setInterval(async()=>{if(document.hidden||busy||$("#addDlg").open||$$("textarea[
  try{const r=await fetch("/api/version",{cache:"no-store"});const v=(await r.json()).version;if(v&&D.version&&v!==D.version)load(true)}catch{}},15000);
 
 /* ---------- writes ---------- */
-async function saveRound(j,button){if(!j)return;const roundKey=key(j);if(PENDING.has(roundKey))return;
+const ROUND_NEXT=new Map();
+async function saveRound(j,button){if(!j)return;
  const p={sheet:j._sheet,row:j._row,version:D.version,requestId:crypto.randomUUID(),expect:{Company:j.Company,Role:j.Role},action:button.dataset.act==="add-round"?"add":"edit"};
  if(p.action==="edit"){const round=button.closest(".round");p.id=Number(round.dataset.id);round.querySelectorAll("[data-field]").forEach(input=>p[input.dataset.field]=input.value)}
- PENDING.add(roundKey);busy=true;button.disabled=true;
+ return writeRound(key(j),button,p)}
+async function writeRound(roundKey,button,p){
+ // Keep the latest click's values even if a reload replaces the fields while this job is saving.
+ if(PENDING.has(roundKey)){const prev=ROUND_NEXT.get(roundKey);if(prev)prev.button.disabled=false;ROUND_NEXT.set(roundKey,{button,p});button.disabled=true;return}
+ p.version=D.version;PENDING.add(roundKey);busy=true;button.disabled=true;
  try{if(await post("/api/rounds",p)){await load();toast(p.action==="add"?"Round added":"Round saved")}}
- finally{PENDING.delete(roundKey);busy=PENDING.size>0;button.disabled=false}}
+ finally{PENDING.delete(roundKey);busy=PENDING.size>0;button.disabled=false;if(ROUND_NEXT.has(roundKey)){const n=ROUND_NEXT.get(roundKey);ROUND_NEXT.delete(roundKey);await writeRound(roundKey,n.button,n.p)}}}
 const PRE_APPLIED=STAGES.filter(s=>["tracked","review","apply","skipped"].includes(s.id)).map(s=>s.drop),POST_APPLIED=STAGE_DATA.rejected_from;
 const PENDING=new Set();
 /* One change = one save. The page updates at once (optimistic) and rolls back if the save fails. */

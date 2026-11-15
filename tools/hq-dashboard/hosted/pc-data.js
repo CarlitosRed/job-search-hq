@@ -96,7 +96,7 @@ async function boot(){
  await pcHealth();
  await pcInit();
  const b=document.createElement('button');b.className='btn ghost';b.textContent='Sign out';
- b.onclick=async()=>{await pcFetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});location.assign('/login')};
+ b.onclick=async()=>{try{await pcFetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})}catch{}finally{location.assign('/login')}};
  $('#sync').parentNode.append(b);
  setInterval(async()=>{if(busy||document.hidden)return;await pcWrites();await pcHealth();try{const d=await pcFetch('/api/version');if(d.version!==D.version)await reloadJobs(true)}catch{}},5000);
 }
