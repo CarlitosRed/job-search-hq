@@ -307,5 +307,70 @@ class Output(Base):
         self.assertEqual(output.read_text(encoding='utf-8'), 'keep')
 
 
+def gh_row(n, title, location, content='Partner operations work.', days=1):
+    return {'id': n, 'title': title, 'location': {'name': location}, 'absolute_url': f'https://example.com/gh/{n}',
+            'first_published': ago(days), 'content': content}
+
+
+class LandingRules(Base):
+    """Ranking and landing rules decided after the 06-1b trial (spec 06, 2026-11-14)."""
+
+    def search(self, rows, today=TODAY, **search):
+        profile = ops_profile(**{'max_per_company': 10, 'wild_cards': 0, **search})
+        profile['search']['companies'] = [COMPANIES[0]]
+        return ds.run(profile, lambda method, url, body=None: {'jobs': rows}, self.backlog, today)
+
+    def test_a_job_posted_several_times_lands_once_a_day(self):
+        rows = [gh_row(501, 'Partner Operations Analyst', 'Remote - Worldwide'),
+                gh_row(502, 'partner operations analyst!', 'Remote - Latin America'),
+                gh_row(503, 'Partner Operations Analyst', 'Exampleland City, Exampleland'),
+                gh_row(504, 'Partner Programs Analyst', 'Remote - Worldwide')]
+        first = self.search(rows, daily_land_limit=10)
+        titles = [j['title'].casefold().rstrip('!') for j in first['landing']]
+        self.assertEqual(titles.count('partner operations analyst'), 1, 'same company and title land once a day')
+        self.assertIn('partner programs analyst', titles)
+        self.assertEqual(first['metadata']['counts']['candidates'], 4, 'every copy stays in the backlog')
+        second = self.search(rows, today=TODAY + timedelta(days=1), daily_land_limit=10)
+        self.assertEqual(len(second['landing']), 1, 'the next copy waits for another day')
+
+    def test_on_site_abroad_without_help_ranks_six_lower(self):
+        rows = [gh_row(511, 'Partner Operations Analyst North', 'Farland City, Farland', 'Partner operations work.'),
+                gh_row(512, 'Partner Operations Analyst South', 'Farland City, Farland', 'Partner operations work. Relocation package offered.'),
+                gh_row(513, 'Partner Operations Analyst East', 'Farland City, Farland', 'Partner operations work. We provide visa sponsorship.')]
+        jobs = {j['posting_id']: j for j in self.search(rows, daily_land_limit=10)['landing']}
+        self.assertEqual(jobs['512']['score'] - jobs['511']['score'], 6)
+        self.assertEqual(jobs['513']['score'], jobs['512']['score'], 'visa help counts like relocation')
+        self.assertEqual(jobs['511']['place'], 'check', 'ranked lower, never Out and never dropped')
+
+    def test_remote_limited_to_another_place_is_check(self):
+        rows = [gh_row(521, 'Partner Operations Analyst A', 'Remote - Farland', 'Partner operations work. Teams across Latin America.'),
+                gh_row(522, 'Partner Operations Analyst B', 'Remote - Latin America'),
+                gh_row(523, 'Partner Operations Analyst C', 'Remote', 'Partner operations work. We hire worldwide.'),
+                gh_row(524, 'Partner Operations Analyst D', 'Farland, Remote', 'Partner operations work. Open to Latin America.')]
+        jobs = {j['posting_id']: j for j in self.search(rows, daily_land_limit=10)['landing']}
+        self.assertEqual(jobs['521']['place'], 'check', 'a region named only in the description does not make it OK')
+        self.assertEqual(jobs['524']['place'], 'check')
+        self.assertEqual(jobs['522']['place'], 'ok')
+        self.assertEqual(jobs['523']['place'], 'ok', 'plain remote still reads the description')
+
+    def test_reachable_jobs_land_first(self):
+        strong = 'Own partner incentive plans and incentive reporting.'
+        rows = [gh_row(531, 'Partner Operations Analyst One', 'Remote - Farland', strong),
+                gh_row(532, 'Partner Operations Analyst Two', 'Remote - Farland', strong),
+                gh_row(533, 'Partner Operations Analyst Three', 'Exampleland City, Exampleland'),
+                gh_row(534, 'Partner Operations Analyst Four', 'Farland City, Farland', 'Partner operations work. Relocation package offered.')]
+        out = self.search(rows, daily_land_limit=2)
+        scores = {j['posting_id']: j['score'] for j in out['landing']}
+        self.assertEqual(set(scores), {'533', '534'}, 'reachable jobs fill the places before higher-scored Check jobs')
+
+    def test_check_jobs_fill_only_the_places_left_over(self):
+        strong = 'Own partner incentive plans and incentive reporting.'
+        rows = [gh_row(541, 'Partner Operations Analyst One', 'Remote - Farland', strong),
+                gh_row(542, 'Partner Operations Analyst Two', 'Remote - Farland', strong, days=2),
+                gh_row(543, 'Partner Operations Analyst Three', 'Exampleland City, Exampleland')]
+        landing = self.search(rows, daily_land_limit=2)['landing']
+        self.assertEqual({j['posting_id'] for j in landing}, {'543', '541'}, 'the one reachable job, then the best Check job')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
