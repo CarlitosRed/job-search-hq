@@ -61,7 +61,7 @@ def greenhouse_jobs():
          'absolute_url': 'https://example.com/gh/103', 'first_published': ago(3), 'content': 'Run partner incentive plans for resellers.'},
         {'id': 104, 'title': 'Partner Programs Analyst', 'location': {'name': 'Farland City, Farland'},
          'absolute_url': 'https://example.com/gh/104', 'first_published': ago(4), 'content': 'We are unable to sponsor visas for this role.'},
-        {'id': 105, 'title': 'Partner Operations Analyst', 'location': {'name': 'Farland City, Farland'},
+        {'id': 105, 'title': 'Partner Operations Associate', 'location': {'name': 'Farland City, Farland'},
          'absolute_url': 'https://example.com/gh/105', 'first_published': ago(5), 'content': 'Relocation package offered.'},
         {'id': 106, 'title': 'Partner Operations Specialist', 'location': {'name': 'Remote'},
          'absolute_url': 'https://example.com/gh/106', 'first_published': ago(60), 'content': 'Old posting.'},
@@ -315,17 +315,17 @@ def gh_row(n, title, location, content='Partner operations work.', days=1):
 class LandingRules(Base):
     """Ranking and landing rules decided after the 06-1b trial (spec 06, 2026-11-14)."""
 
-    def search(self, rows, today=TODAY, **search):
+    def search(self, rows, today=TODAY, mark_landed=False, **search):
         profile = ops_profile(**{'max_per_company': 10, 'wild_cards': 0, **search})
         profile['search']['companies'] = [COMPANIES[0]]
-        return ds.run(profile, lambda method, url, body=None: {'jobs': rows}, self.backlog, today)
+        return ds.run(profile, lambda method, url, body=None: {'jobs': rows}, self.backlog, today, mark_landed=mark_landed)
 
     def test_a_job_posted_several_times_lands_once_a_day(self):
         rows = [gh_row(501, 'Partner Operations Analyst', 'Remote - Worldwide'),
                 gh_row(502, 'partner operations analyst!', 'Remote - Latin America'),
                 gh_row(503, 'Partner Operations Analyst', 'Exampleland City, Exampleland'),
                 gh_row(504, 'Partner Programs Analyst', 'Remote - Worldwide')]
-        first = self.search(rows, daily_land_limit=10)
+        first = self.search(rows, daily_land_limit=10, mark_landed=True)
         titles = [j['title'].casefold().rstrip('!') for j in first['landing']]
         self.assertEqual(titles.count('partner operations analyst'), 1, 'same company and title land once a day')
         self.assertIn('partner programs analyst', titles)

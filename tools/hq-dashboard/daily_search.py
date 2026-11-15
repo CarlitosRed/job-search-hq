@@ -63,10 +63,28 @@ def place_facts(profile, job):
             if any(boards.phrase_matches(phrase, sentence) for phrase in refusals):
                 return 'out', sentence
     if job['remote']:
+        # Rule 3 (spec 06 ranking and landing rules, 2026-11-14)
+        remaining = ' '.join(word for word in re.findall(r'\w+', location.casefold())
+                             if word not in ('remote', 'anywhere', 'distributed', 'hybrid', 'office', 'home', 'based'))
+        if remaining:
+            regions = [*rules['remote_regions'], *countries, 'worldwide', 'anywhere', 'global']
+            return ('ok' if any(boards.phrase_matches(region, remaining) for region in regions) else 'check'), location
         for sentence in [location, *sentences]:
             if any(boards.phrase_matches(region, sentence) for region in [*rules['remote_regions'], 'worldwide', 'anywhere']):
                 return 'ok', sentence
     return 'check', location
+
+
+# Rule 2 (spec 06 ranking and landing rules, 2026-11-14)
+def offers_help(description):
+    help_phrases = ('relocation', 'relocation package', 'relocation assistance', 'relocation support',
+                    'visa sponsorship', 'sponsor a visa', 'sponsor your visa', 'will sponsor',
+                    'we sponsor', 'provide visa sponsorship')
+    refusals = ('no visa sponsorship', 'unable to sponsor', 'without sponsorship')
+    sentences = re.split(r'(?<=[.!?])\s+|[\r\n]+', description)
+    return any(not any(boards.phrase_matches(phrase, sentence) for phrase in refusals) and
+               any(boards.phrase_matches(phrase, sentence) for phrase in help_phrases)
+               for sentence in sentences)
 
 
 def rank(profile, job):
@@ -85,6 +103,8 @@ def rank(profile, job):
                   not any(boards.phrase_matches(allowed_word, word) for allowed_word in seniority['allowed'])
                   for word in seniority['stretch'])
     penalty = -1 if stretch else 0 if allowed else -3
+    if not job['remote'] and place == 'check' and not offers_help(job['description']):
+        penalty -= 6
     return dict(job, lane=lane, score=(6 if titles else 0) + min(10, 2 * len(duties)) +
                 {'ok': 3, 'check': 0, 'out': -10}[place] + penalty,
                 matched_titles=titles, matched_duties=duties, place=place,
@@ -109,9 +129,12 @@ def order(job):
 def landing_set(profile, waiting):
     search = {**profiles.DEFAULTS, **profile['search']}
     limit, wild = search['daily_land_limit'], search['wild_cards']
-    ranked = sorted(waiting, key=order)
-    active = [lane['id'] for lane in profile['goals']['lanes']
-              if any(job['lane'] == lane['id'] for job in ranked)]
+    # Rule 1 (spec 06 ranking and landing rules, 2026-11-14)
+    copies = {}
+    for job in sorted(waiting, key=order):
+        key = (job['company'], tuple(re.findall(r'\w+', job['title'].casefold())))
+        copies.setdefault(key, job)
+    ranked = list(copies.values())
     selected, seen, company_counts = [], set(), {}
 
     def take(jobs, count):
@@ -127,14 +150,25 @@ def landing_set(profile, waiting):
             company_counts[job['company']] = company_counts.get(job['company'], 0) + 1
             taken += 1
 
-    ordinary = max(0, limit - wild)
-    if active:
-        quota, remainder = divmod(ordinary, len(active))
-        for index, lane in enumerate(active):
-            take([job for job in ranked if job['lane'] == lane], quota + (index < remainder))
-    # Reuse unfilled lane slots, then reserve the final wild slots for any lane.
-    take(ranked, ordinary - len(selected))
-    take(ranked, min(wild, limit - len(selected)))
+    def fill(jobs):
+        active = [lane['id'] for lane in profile['goals']['lanes']
+                  if any(job['lane'] == lane['id'] for job in jobs)]
+        start = len(selected)
+        ordinary = max(0, limit - start - wild)
+        if active:
+            quota, remainder = divmod(ordinary, len(active))
+            for index, lane in enumerate(active):
+                take([job for job in jobs if job['lane'] == lane], quota + (index < remainder))
+        # Reuse unfilled lane slots, then reserve the final wild slots for any lane.
+        take(jobs, ordinary - (len(selected) - start))
+        take(jobs, min(wild, limit - len(selected)))
+
+    # Rule 4 (spec 06 ranking and landing rules, 2026-11-14)
+    reachable, rest = [], []
+    for job in ranked:
+        (reachable if job['place'] == 'ok' or offers_help(job['description']) else rest).append(job)
+    fill(reachable)
+    fill(rest)
     selected.sort(key=order)
     for job in selected[:search['judge_budget']]:
         job['judge'] = True
