@@ -1023,8 +1023,11 @@ try {
             self.assertEqual(letter_task['status'], 'queued')
             self.app.ai.process_one()
             expect(page.locator('#result')).to_contain_text('Dear Example Company team', timeout=10000)
-            with page.expect_download() as download:
-                page.locator('#result [data-pc-doc="cl"]').click()
+            # B6: the export reloads the document list, which moves the footer (and Sign out) on a phone; wait for it.
+            with page.expect_response(lambda r: r.url.endswith('/api/docs') and r.request.method == 'GET') as docs_reloaded:
+                with page.expect_download() as download:
+                    page.locator('#result [data-pc-doc="cl"]').click()
+            self.assertTrue(docs_reloaded.value.ok)
             letter = docx.Document(download.value.path())
             self.assertEqual({x.style.name for x in letter.paragraphs}, {'Normal'})
             self.assertNotIn('Sentiment', '\n'.join(x.text for x in letter.paragraphs))
@@ -1040,7 +1043,15 @@ try {
             page.on('framenavigated', lambda f: note('navigated', f.url) if f == page.main_frame else None)
             page.on('console', lambda m: note('console', m.type + ' ' + m.text[:200]))
             page.on('pageerror', lambda e: note('pageerror', str(e)[:200]))
-            page.get_by_role('button', name='Sign out', exact=True).click()
+            sign_out = page.get_by_role('button', name='Sign out', exact=True)
+            sign_out.scroll_into_view_if_needed()
+            boxes = []
+            for _ in range(50):  # the list redraw lands just after its response; tap once the button holds still
+                boxes.append(sign_out.bounding_box())
+                if len(boxes) > 2 and boxes[-1] == boxes[-2] == boxes[-3]:
+                    break
+                page.wait_for_timeout(100)
+            sign_out.click()
             note('clicked', 'Sign out')
             try:
                 page.wait_for_selector('#password', timeout=15000)
