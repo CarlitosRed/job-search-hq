@@ -62,7 +62,7 @@ def load_component(name):
 
 
 def configured_sources():
-    path = load_component('hq_settings').data_root() / 'profile.json'
+    path = load_component('search_profile').default_path()
     if not path.exists():
         return SOURCES
     companies = load_component('search_profile').load(path)['search']['companies']
@@ -335,7 +335,7 @@ def discover(query, fetcher=fetch_source, sources=None, progress=None):
         raise ValueError('Choose between one and 300 job-board sources.')
     profile = None
     if fetcher is fetch_source:
-        path = load_component('hq_settings').data_root() / 'profile.json'
+        path = load_component('search_profile').default_path()
         if path.exists():
             profile = load_component('search_profile').load(path)
 

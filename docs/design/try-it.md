@@ -55,6 +55,7 @@ python -I tools/tracker/test_fresh.py
 python -I tools/tracker/test_archive.py
 python -I tools/tracker/test_age_rollover.py
 python -I tools/tracker/test_migrations.py
+python -I tools/tracker/test_land_search.py
 ```
 
 ## Now: screenshots and PR proof

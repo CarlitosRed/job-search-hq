@@ -1,5 +1,6 @@
 """Read and check the portable, version-one search profile."""
 from datetime import date
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -8,6 +9,13 @@ import re
 DEFAULTS = {'daily_land_limit': 30, 'judge_budget': 20,
             'max_per_company': 3, 'wild_cards': 3}
 PROVIDERS = ('greenhouse', 'lever', 'ashby', 'workday')
+
+
+def default_path():
+    spec = importlib.util.spec_from_file_location('profile_settings', Path(__file__).with_name('hq_settings.py'))
+    settings = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(settings)
+    return settings.data_root() / 'profile.json'
 
 
 class ProfileError(ValueError):

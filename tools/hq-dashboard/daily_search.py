@@ -279,11 +279,13 @@ def run(profile, fetch, backlog, today, mark_landed=False):
 
 def main():
     parser = argparse.ArgumentParser(description='Search public job boards using a profile and save a new daily JSON snapshot.')
-    parser.add_argument('--profile', type=Path, required=True)
+    parser.add_argument('--profile', type=Path, default=profiles.default_path())
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--backlog', type=Path, default=settings.data_root() / 'work' / 'search-backlog.sqlite3')
     parser.add_argument('--mark-landed', action='store_true', help='Mark the selected jobs landed after the snapshot is saved.')
     args = parser.parse_args()
+    if not args.profile.is_file():
+        parser.exit(1, 'The profile file is missing. Create profile.json in the data folder or use --profile.\n')
     if args.output.suffix.lower() != '.json':
         parser.error('--output must be a .json snapshot path.')
     # Reserve before reading the profile, opening the backlog or using the network.

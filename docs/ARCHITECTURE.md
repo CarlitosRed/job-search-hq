@@ -44,7 +44,9 @@ Put the app in a folder named `app` inside your data folder, then create an empt
 
 `hq_settings.data_root()` resolves private data from `JOB_SEARCH_HQ_DATA`, a `.job-search-hq-data` marker above the app, or the app folder; bundled files always use `app_root()`.
 
-`tools/hq-dashboard/daily_search.py --profile P --output today.json` reads the profile's public boards into a SQLite backlog (default `work/search-backlog.sqlite3` in the data folder) and a new JSON landing set; `--backlog B` overrides the backlog path and `--mark-landed` records a successful landing. The Search tab uses the same Greenhouse, Lever, Ashby and Workday board adapters and the data folder's optional `profile.json`. The command does not schedule itself or import the landing set into the tracker.
+`tools/hq-dashboard/daily_search.py --output today.json` reads the data folder's `profile.json` (or `--profile P`) and its public boards into a SQLite backlog (default `work/search-backlog.sqlite3` in the data folder) and a new JSON landing set; `--backlog B` overrides the backlog path and `--mark-landed` records a successful landing. The Search tab uses the same Greenhouse, Lever, Ashby and Workday board adapters and profile path. The command does not schedule itself or import the landing set into the tracker.
+
+`tools/tracker/land_search.py --snapshot today.json` previews landing into the standing `Daily search` sheet; `--apply` commits rows and posting links together in the SQLite tracker, then marks linked jobs landed in the backlog and refreshes the Excel mirror. It validates the whole snapshot first, backs up the database before writing, and safely retries known postings without adding copies; `--tracker` and `--backlog` override the data folder's `work` paths.
 
 | Location | Contents |
 | --- | --- |
