@@ -720,15 +720,52 @@ try {
         openssl = Path('C:/Program Files/Git/usr/bin/openssl.exe')
         subprocess.run([str(openssl),'req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(key),'-out',str(cert),'-days','1','-subj','/CN=localhost'],
                        check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        self.server = hq.BoundedHTTPServer(('127.0.0.1',0),hq.handler(self.app))
+        # B6: bound TLS handshakes in worker threads so idle preconnects cannot stall accept().
+        class TLSServer(hq.BoundedHTTPServer):
+            def finish_request(self, request, client_address):
+                request.settimeout(10)
+                request.do_handshake()
+                super().finish_request(request, client_address)
+
+            def handle_error(self, request, client_address):
+                if isinstance(sys.exc_info()[1], (ssl.SSLError, TimeoutError, ConnectionError, OSError)):
+                    return
+                super().handle_error(request, client_address)
+
+        self.server = TLSServer(('127.0.0.1',0),hq.handler(self.app))
         tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         tls.load_cert_chain(cert,key)
-        self.server.socket = tls.wrap_socket(self.server.socket,server_side=True)
+        self.server.socket = tls.wrap_socket(self.server.socket,server_side=True,do_handshake_on_connect=False)
         self.port = self.server.server_port
         self.app.origin = f'https://127.0.0.1:{self.port}'
         self.app.host = f'127.0.0.1:{self.port}'
         self.thread = threading.Thread(target=self.server.serve_forever,daemon=True)
         self.thread.start()
+
+    def test_tls_server_survives_idle_connection(self):
+        # B6: a browser may open a connection and send nothing (a preconnect). The test HTTPS server must keep
+        # answering other requests meanwhile; before the fix the TLS handshake ran on the one accept thread.
+        import socket, http.client
+        self.serve_tls()
+        idle = socket.create_connection(('127.0.0.1', self.port))
+        try:
+            time.sleep(0.3)
+            result = {}
+            def fetch():
+                try:
+                    conn = http.client.HTTPSConnection('127.0.0.1', self.port, timeout=5,
+                                                       context=ssl._create_unverified_context())
+                    conn.request('GET', '/login', headers={'Host': self.app.host})
+                    result['status'] = conn.getresponse().status
+                    conn.close()
+                except Exception as error:
+                    result['error'] = repr(error)
+            worker = threading.Thread(target=fetch, daemon=True)
+            worker.start()
+            worker.join(8)
+            self.assertEqual(result.get('status'), 200, 'Sign-in page did not load while another connection was idle: '+str(result))
+        finally:
+            idle.close()
 
     def browser_login(self, page):
         page.goto(self.app.origin)
