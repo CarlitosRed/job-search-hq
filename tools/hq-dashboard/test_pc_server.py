@@ -1030,11 +1030,28 @@ try {
             self.assertNotIn('Sentiment', '\n'.join(x.text for x in letter.paragraphs))
             self.assertNotIn('DRAFT', download.value.suggested_filename)
             self.assertEqual(errors, [])
+            # B6 diagnostics: on failure, report every request, response, navigation and console line after the click.
+            trail, started = [], time.monotonic()
+            def note(kind, text):
+                trail.append(f'{time.monotonic()-started:6.2f}s {kind} {text}')
+            page.on('request', lambda r: note('request', r.method + ' ' + r.url))
+            page.on('response', lambda r: note('response', str(r.status) + ' ' + r.url))
+            page.on('requestfailed', lambda r: note('failed', r.url + ' ' + str(r.failure)))
+            page.on('framenavigated', lambda f: note('navigated', f.url) if f == page.main_frame else None)
+            page.on('console', lambda m: note('console', m.type + ' ' + m.text[:200]))
+            page.on('pageerror', lambda e: note('pageerror', str(e)[:200]))
             page.get_by_role('button', name='Sign out', exact=True).click()
+            note('clicked', 'Sign out')
             try:
                 page.wait_for_selector('#password', timeout=15000)
             except Exception:
-                self.fail('Sign out did not reach the sign-in page: ' + page.url + ' ' + page.locator('body').inner_text()[:300])
+                workers = self.server._workers._value
+                try:
+                    state = page.evaluate('() => [document.readyState, location.href, document.title, document.body ? document.body.innerHTML.length : -1]')
+                except Exception as error:
+                    state = repr(error)
+                self.fail('Sign out did not reach the sign-in page: ' + page.url + ' ' + page.locator('body').inner_text()[:300]
+                          + f'\nfree server workers: {workers}; threads: {threading.active_count()}; page: {state}\n' + '\n'.join(trail[-60:]))
             browser.close()
 
     # Step 01b: interview rounds
