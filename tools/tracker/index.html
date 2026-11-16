@@ -1265,6 +1265,7 @@ function renderInner(){const js=filtered();$$(".seg button").forEach(b=>b.setAtt
  else if(S.view==="board")m.innerHTML=board(js);
  else if(S.view==="list")m.innerHTML=listView(js);
  else m.innerHTML=contactsView();
+ if(["overview","board","list"].includes(S.view)&&D.daily_run){const tone=["a","n"].includes(D.daily_run.tone)?" "+D.daily_run.tone:"";m.insertAdjacentHTML("afterbegin",`<div class="banner${tone}" role="status" style="margin-bottom:10px">${esc(D.daily_run.message)}</div>`)}
  if(usesJobView())m.insertAdjacentHTML("afterbegin",jobViews());
  if(scroll&&$(".board"))$(".board").scrollLeft=scroll;
  const sp=$("#split");if(sp&&!sp.querySelector(".side"))sp.classList.add("noside");

@@ -126,6 +126,25 @@ chip; Clear filters resets it. It applies to Board, List and the filtered
 Overview. Board and List cards show posting age, or First seen when no posted
 date is available, with "about" for estimates. Unknown ages show no age line.
 
+## Daily search runner
+
+Run `python -I tools/tracker/daily_run.py` to search and land the latest daily
+slot, normally at 06:00 local time. The data folder comes from
+`JOB_SEARCH_HQ_DATA` or the usual data-folder marker. Configure `daily_run.at`,
+`daily_run.before` and `daily_run.copies` in its `settings.json`; each step needs
+a name, owner, destination and command as a list of strings. Commands run without
+a shell, with a ten-minute timeout. A failed before step stops the search;
+failed copies and unavailable individual boards produce warnings.
+
+The runner keeps its phase record in `work/daily-runs.sqlite3` and search
+snapshots in `work/daily-runs/`. An OS lock permits one runner at a time. A
+successful slot is skipped; an interrupted or failed slot resumes, reusing a
+completed search snapshot. `--force` starts another run, `--now` accepts a local
+ISO date and time, and `--trigger` accepts scheduled, catch-up or manual. Run it
+on PC startup with `--trigger catch-up` to catch up a missed slot. The Jobs view
+shows the last search, missed days and any failure or warning. Rechecking and
+judging are recorded as skipped until those pieces are built.
+
 ## Document records
 
 Opening a tracker database adds the missing `documents` table without changing

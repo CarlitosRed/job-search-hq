@@ -6,6 +6,7 @@ Secrets and login throttle state live outside the checkout, in LOCALAPPDATA.
 """
 import argparse
 from contextlib import closing
+from datetime import datetime
 import getpass
 import hashlib
 import hmac
@@ -27,6 +28,9 @@ HERE = Path(__file__).resolve().parent
 _settings_spec = importlib.util.spec_from_file_location('server_owner_settings', HERE / 'hq_settings.py')
 hq_settings = importlib.util.module_from_spec(_settings_spec)
 _settings_spec.loader.exec_module(hq_settings)
+_daily_spec = importlib.util.spec_from_file_location('hq_daily_run', HERE.parent / 'tracker' / 'daily_run.py')
+daily_run = importlib.util.module_from_spec(_daily_spec)
+_daily_spec.loader.exec_module(daily_run)
 ROOT = hq_settings.data_root()
 APP = hq_settings.app_root()
 DEFAULT_STATE = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'JobSearchHQ'
@@ -190,6 +194,14 @@ class App:
                 j['_id'] = j['_sheet'] + '|' + str(j['_row'])
             for c in d['contacts']:
                 c['_id'] = 'Contacts|' + str(c['_row'])
+            try:
+                at = hq_settings.load()['daily_run']['at']
+                d['daily_run'] = daily_run.status(self.tracker.XLSX.parent / 'daily-runs.sqlite3',
+                                                  datetime.now(), at=at)
+            except (OSError, ValueError, sqlite3.Error, KeyError, TypeError):
+                d['daily_run'] = dict(state='failed', tone='r',
+                                     message='The daily search record could not be read.',
+                                     last_success=None, last_run=None, missed_since=None)
             return d
 
     def write(self, path, payload):

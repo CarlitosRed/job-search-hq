@@ -38,3 +38,4 @@ jobs:
       - run: python -I tools/tracker/test_age_rollover.py
       - run: python -I tools/tracker/test_migrations.py
       - run: python -I tools/tracker/test_land_search.py
+      - run: python -I tools/tracker/test_daily_run.py

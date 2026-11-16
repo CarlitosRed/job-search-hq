@@ -20,9 +20,9 @@ def data_root():
     return app
 
 
-def load(root=None):
+def load(root=None, defaults_root=None):
     """Read neutral defaults and optional private overrides on every call."""
-    defaults = Path(root) if root is not None else app_root()
+    defaults = Path(defaults_root) if defaults_root is not None else Path(root) if root is not None else app_root()
     root = Path(root) if root is not None else data_root()
     values = json.loads((defaults / 'settings.example.json').read_text(encoding='utf-8'))
     values = {key: value for key, value in values.items() if not key.startswith('_')}

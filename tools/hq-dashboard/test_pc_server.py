@@ -418,6 +418,14 @@ class Integration(unittest.TestCase):
         app2.queue.process_one()
         self.assertEqual(len(self.data()['jobs']),2)
 
+    def test_data_carries_the_daily_run_banner(self):
+        # Piece 2c: the run record sits next to the tracker; none yet means "hasn't run yet".
+        self.login()
+        banner = self.data()['daily_run']
+        self.assertEqual(banner['state'], 'never')
+        self.assertEqual(banner['message'], "Daily search hasn't run yet.")
+        self.assertFalse((self.book.parent / 'daily-runs.sqlite3').exists())
+
     def test_authentication_and_logout(self):
         self.assertEqual(self.request('GET', '/')[0], 303)
         self.assertEqual(self.request('GET', '/api/data')[0], 401)
