@@ -16,7 +16,7 @@
 
 **Now:** Start with [contributing](../../CONTRIBUTING.md) and [architecture](../ARCHITECTURE.md); use [screens](screens.md), [API](api.md), [rules](stages-and-rules.md) and [try it](try-it.md) for this brief.
 
-**Now:** Stage wording in [the quickstart](../CONTRIBUTOR-QUICKSTART.md), [review guide](../REVIEWING-PULL-REQUESTS.md) and [SETUP](../../SETUP.md) is out of date: [tools/tracker/stages.json](../../tools/tracker/stages.json) and [stages-and-rules.md](stages-and-rules.md) are the truth; follow [try it](try-it.md) for the demo, not SETUP step 3.
+**Now:** Use [tools/tracker/stages.json](../../tools/tracker/stages.json) and [stages-and-rules.md](stages-and-rules.md) for stage wording; follow [try it](try-it.md) for the demo, not SETUP step 3.
 
 ## Where the look lives
 
@@ -34,7 +34,7 @@
 | --- | --- |
 | Database? | **Now:** SQLite is implemented, with an automatic Excel mirror. It is selected when the neighboring database exists. No Postgres. |
 | AI provider? | **Coming:** No provider is chosen for the finished design; the person connects their own AI tool. **Now:** The bundled worker specifically uses Codex CLI with ChatGPT authentication. Provider choice/settings are not yet a screen. Do not make that current adapter a design requirement. |
-| Job sources? | **Now:** Manual Search queries public Greenhouse and Lever APIs. LinkedIn is links only; no LinkedIn or Indeed scraping. **Coming:** Ashby and Workday public APIs, plus a daily search at a fixed early-morning time. |
+| Job sources? | **Now:** Manual Search supports public Greenhouse, Lever, Ashby and Workday boards. A profile-driven daily search command saves a JSON landing set. LinkedIn is links only; no LinkedIn or Indeed scraping. **Coming:** Daily search at a fixed early-morning time. |
 | Stack? | **Now:** A Python standard-library HTTP server runs on the person's computer; SQLite, local files and plain HTML/CSS/JavaScript support the page. Workbook, Word and image handling use installed packages. No hosted app or Docker is needed. Optional phone forwarding is setup, not a separate app. |
 
 ## Decided for the finished site

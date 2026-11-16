@@ -219,7 +219,7 @@ Back up first. Keep private data in a personal installation, not a contribution 
 | `CV used`, `Source`, `Link` | Document reference and posting context; links start with HTTP or HTTPS. |
 | `Open check YYYY-MM-DD` (optional) | Reader selects the newest dated check matching a recognized status (OPEN, CLOSED, REDIRECTED, UNKNOWN), falling back to the newest nonempty value only when none match. |
 
-Stored statuses are exactly `Suggested (not applied)`, `Message drafted`, `CV ready`, `Applied`, `Interview`, `Rejected`, `Offer`, and `Skipped`. UI Interviewing corresponds to stored `Interview`. Applications means Applied + Interviewing + Offer + Rejected. Skipped is not an application. Each job counts once by its current status; charts do not reconstruct history.
+Stages are `Tracked`, `Review`, `Apply`, `Skipped`, `Applied`, `Interview`, `Offer`, and `Rejected`. Applications means Applied + Interview + Offer + Rejected. Skipped is not an application. Each job counts once by its current status; charts do not reconstruct history.
 
 Contacts use a sheet named `Contacts`, with `Person` first, then `Where now`, `How you know them`, `Status`, `Date sent`, `Reply`, `Notes`. Keep headers unchanged. The protected writer rejects formula-like text starting with `=` after whitespace/control characters and text exceeding 32,767 characters or UTF-16 units.
 
@@ -343,7 +343,7 @@ Stop HQ and its scheduled task, close Excel, and inspect unresolved edits before
 | `%LOCALAPPDATA%\JobSearchHQ\` or custom state | Copy the entire folder while stopped: `password.json`, `login-throttle.sqlite3`, `pending-writes.sqlite3`, `career-tasks.sqlite3`, `ai-tasks/`, `generated-documents/`, settings, logs, and any SQLite sidecar files. |
 | Browser site data, if needed | Theme/filter preferences, unfinished review form, and sentiment use localStorage. They are not in the server backup; do not export them into Git. |
 
-State includes sensitive photos, postings, drafts, and a password hash. Keep backups access-controlled. Codex manages sign-in separately; reauthenticate on a replacement computer rather than sharing credentials. Workbook saves make one pre-write backup per day and retain the latest seven backup files. That does not protect evidence or journals.
+State includes sensitive photos, postings, drafts, and a password hash. Keep backups access-controlled. Codex manages sign-in separately; reauthenticate on a replacement computer rather than sharing credentials. Tracker writes make one pre-write backup per day of the active database or workbook and retain the latest seven backups of each type. That does not protect evidence or journals.
 
 For a clean personal clone on `main`, after reviewing local changes:
 
@@ -392,7 +392,7 @@ To uninstall, disable the Funnel rule from step 8, end/delete `JobSearchHQ-Serve
 | Cannot open resource in CV tests | Fixed Windows Arial font paths unavailable. | Verify Arial on Windows. Cross-platform fitting needs an owner-approved code change. |
 | Execution policy blocks scripts | PowerShell blocks activation/helper. | Use the environment interpreter directly; see step 9 for the helper and respect managed policy. |
 | AI fails / no eligible evidence | CLI missing/incompatible, signed out, usage exhausted, or bank excluded. | Check step 7 and evidence format. Health is not a connectivity test. Do not bypass permissions. |
-| Search disabled / scan status unknown | No on-demand search integration or bundled scan runner. | Manual tracking and posting review still work; automation needs separate setup. |
+| Search disabled / scan status unknown | A board may be unavailable or the profile may be invalid. | Check the source errors and profile; try again. |
 | Document missing | Wrong prefix/location, oversized file, symlink, or export only in state. | Follow step 6's limits; review before copying an AI export into `work/`. |
 
 ## Known gaps
@@ -405,6 +405,6 @@ Maintainer checklist before merge:
 4. **Local HTTP login.** Cookies are always Secure; automated browser coverage uses HTTPS. Browser acceptance of loopback HTTP is **Unverified**. Verify supported browsers or provide a supported local HTTPS route separately.
 5. **Dependencies and worker.** Packages and CLI are unpinned, while worker flags are specific. Compatible versions, live-call success on a fresh install, account allowance, and per-task cost are **Unverified**. Record tested versions; keep paid checks outside offline tests.
 6. **Phone and boot.** Funnel commands follow official guidance, but fresh-device proxy headers, sign-in, reboot recovery, and pre-login Tailscale/Codex readiness are **Unverified** here. Confirm task interpreter and account.
-7. **Automation and exports.** No daily scan runner or hosted-store sync service is included. On-demand PC search is disconnected. Export copying is not backup; AI exports do not automatically enter the `work/` Documents list.
+7. **Automation and exports.** The daily search command needs separate scheduling. No hosted-store sync service is included. Export copying is not backup; AI exports do not automatically enter the `work/` Documents list.
 8. **Draft truth and pagination.** Evidence-map checks do not prove claim coverage or support. Page fit uses font metrics; actual Word/Pages rendering is **Unverified** here. Human wording and layout review remain necessary.
 9. **Contributor policy alignment.** The contributor guides now state three review rounds. The unchanged owner review guide and PR template do not state this; the maintainer should align those separate files before merge. Contributors must not edit `tools/hq-dashboard/port_tracker.py`. If a UI edit changes an anchor string that the build expects, report exactly which string changed so the owner can perform any port-script adjustment.

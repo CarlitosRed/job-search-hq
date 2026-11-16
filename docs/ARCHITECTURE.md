@@ -12,7 +12,9 @@ flowchart LR
     PC --> Server
     Server --> Queue[Durable single-edit queue]
     Queue --> Lock[Windows workbook mutex]
-    Lock --> Workbook[Excel workbook and backups]
+    Lock --> Tracker[SQLite tracker or Excel workbook]
+    Tracker --> Backup[Daily tracker backups]
+    Tracker --> Mirror[Excel mirror in SQLite mode]
     Server --> Tasks[AI task journal]
     Evidence[Eligible evidence and rules] --> Tasks
     Tasks --> CLI[Restricted Codex CLI]
@@ -34,7 +36,7 @@ With the server stopped, preview `python -I tools/tracker/migrate_stages.py --wo
 
 ## State and persistence
 
-`tools/tracker/store.py` preserves ordered sheet layouts, typed rows and original row numbers in a neighboring `.sqlite3` file; `migrate_to_sqlite.py` offers a disk-free dry run and a backed-up, count-checked migration. The server selects storage on each call, uses database revisions for caching, and commits row changes and status history together. In SQLite mode Excel becomes a read-only mirror rebuilt through a verified temporary file: an Excel lock defers rebuilding until a later write, external Excel edits are copied into `logs/` with a warning, and a missing mirror is recreated. Daily `.tracker-backups` copies and workbook modification-time conflicts apply only in Excel mode; the existing writer mutex still coordinates both modes.
+`tools/tracker/store.py` preserves ordered sheet layouts, typed rows and original row numbers in a neighboring `.sqlite3` file; `migrate_to_sqlite.py` offers a disk-free dry run and a backed-up, count-checked migration. The server selects storage on each call, uses database revisions for caching, and commits row changes and status history together. In SQLite mode Excel becomes a read-only mirror rebuilt through a verified temporary file: an Excel lock defers rebuilding until a later write, external Excel edits are copied into `logs/` with a warning, and a missing mirror is recreated. Both modes make daily pre-write backups in `.tracker-backups`, retaining seven files for each type. Workbook modification-time conflicts apply only in Excel mode; the writer mutex still coordinates both modes.
 
 ### Keep your data outside the app folder (optional)
 
@@ -42,11 +44,11 @@ Put the app in a folder named `app` inside your data folder, then create an empt
 
 `hq_settings.data_root()` resolves private data from `JOB_SEARCH_HQ_DATA`, a `.job-search-hq-data` marker above the app, or the app folder; bundled files always use `app_root()`.
 
-`tools/hq-dashboard/daily_search.py --profile P --output today.json` reads the profile's public boards into a SQLite backlog (default `work/search-backlog.sqlite3` in the data folder) and a new JSON landing set; `--backlog B` overrides the backlog path and `--mark-landed` records a successful landing. The Search tab uses the same board adapters and the data folder's optional `profile.json`.
+`tools/hq-dashboard/daily_search.py --profile P --output today.json` reads the profile's public boards into a SQLite backlog (default `work/search-backlog.sqlite3` in the data folder) and a new JSON landing set; `--backlog B` overrides the backlog path and `--mark-landed` records a successful landing. The Search tab uses the same Greenhouse, Lever, Ashby and Workday board adapters and the data folder's optional `profile.json`. The command does not schedule itself or import the landing set into the tracker.
 
 | Location | Contents |
 | --- | --- |
-| Repository `work/` | Default `applications-tracker.xlsx`, `.tracker-backups/`, existing `CV_*.docx`, `CL_*.docx`, `report-*.md`, and optional scan logs. Ignored by Git. |
+| Repository `work/` | Default `applications-tracker.sqlite3` when migrated, `applications-tracker.xlsx`, `.tracker-backups/`, existing `CV_*.docx`, `CL_*.docx`, `report-*.md`, and optional scan logs. Ignored by Git. |
 | `evidence/`, `rules.md` | Local facts and drafting rules. Only fictional `*-example-*.md` evidence is tracked. Missing rules fall back to tracked `rules.example.md`. |
 | `%LOCALAPPDATA%\JobSearchHQ` by default | Salted scrypt password hash, persistent login throttle, pending write journal, career task journal, uploaded images/task files, generated Word exports, and optional startup settings/logs. `--state` must be outside the repository. |
 | Browser | Session cookie; localStorage for theme/filter preferences, an unfinished posting form, and sentiment. Photos remain in memory until submitted; submitted photos are stored with tasks. |
@@ -67,10 +69,10 @@ Posting text, photos, and sentiment are untrusted input. `ai_tasks.py` builds ty
 
 Only eligible `E-*.md` entries marked verified/stated and public-safe, with usable CV-ready wording, enter the prompt. Optional `- role: Title | Company | Dates` lines supply job headings alongside the CV-ready wording. This filters the owner's labels; it does not verify those labels or facts. Draft validation checks cited-ID eligibility and the presence of listed claim strings. It does not establish complete factual-claim coverage or whether evidence supports a claim. Offline tests explicitly demonstrate acceptance of unlisted factual prose. Every draft needs human truth review.
 
-Running AI tasks become interrupted after restart and are not blindly rerun; already queued tasks can still run. Word export code removes defined note markers and keeps results as drafts in state. Existing document listings read `work/` separately; exports are not automatically enrolled there. CV fitting uses Windows Arial metrics and deletes lines/sentences without rewording; actual Word/Pages pagination still needs visual review. On-demand PC search and a daily scan runner are not supplied.
+Running AI tasks become interrupted after restart and are not blindly rerun; already queued tasks can still run. Word export code removes defined note markers and keeps results as drafts in state. Existing document listings read `work/` separately; exports are not automatically enrolled there. CV fitting uses Windows Arial metrics and deletes lines/sentences without rewording; actual Word/Pages pagination still needs visual review. On-demand PC search and the daily search command are available. No daily scheduler is supplied.
 
 ## Test strategy
 
-Windows CI uses Python 3.12, installs requirements plus Playwright/WebKit, builds PC HTML, and runs `test_ai_tasks.py`, `test_cv_onepage.py`, and `test_pc_server.py`. These cover fake-provider task validation, claim-map limits, document conversion/layout invariants, queue recovery, authentication, Host/Origin checks, request bounds, workbook conflicts, downloads, and browser flows. Browser geometry is checked at four widths including 375 px; local HTTPS tests require a fixed Git for Windows OpenSSL executable. CV fitting loads fixed Windows font paths.
+Windows CI uses Python 3.12, installs requirements plus Playwright/WebKit, builds PC HTML, and runs the suites listed in the [README](../README.md#tests). These cover fake-provider task validation, claim-map limits, document conversion/layout invariants, queue recovery, authentication, Host/Origin checks, request bounds, workbook conflicts, downloads, and browser flows. Browser geometry is checked at four widths including 375 px; local HTTPS tests require a fixed Git for Windows OpenSSL executable. CV fitting loads fixed Windows font paths.
 
 No suite requires a live model or private career data. `check_codex_worker.py` is a separate live, usage-consuming check. Tests do not establish public tunnel behavior, boot recovery, real-device usability, or actual Word rendering. Runtime checks for this documentation change are **Unverified**; see [SETUP Known gaps](../SETUP.md#known-gaps).

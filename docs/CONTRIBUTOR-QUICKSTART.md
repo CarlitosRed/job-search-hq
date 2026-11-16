@@ -31,6 +31,6 @@ Before requesting review, check:
 
 - Keyboard access, visible focus, labels, selected tab state, readable contrast, and sensible dialog focus/close behavior.
 - No horizontal page overflow at 375 px; tabs stay in place across views; touch controls and drawers remain usable. Check unsaved notes and saving/conflict messages.
-- **Applications = Applied + Interviewing + Offer + Rejected. Skipped is not an application.** Count each job once by current status. The workbook stores `Interview` for the UI's Interviewing stage.
+- **Applications = Applied + Interview + Offer + Rejected. Skipped is not an application.** Count each job once by current status.
 - No third-party requests, libraries, fonts, analytics, or remote assets added. Preserve the PC build's same-origin behavior.
 - Do not change backend `.py` files, tracker server/lock, workflows, requirements, license, evidence, or rules. Contributors must not edit `port_tracker.py`. If a UI edit changes an anchor string that the build expects, tell the owner exactly which string changed so the owner can adjust the script.

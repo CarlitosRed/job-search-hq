@@ -22,9 +22,9 @@ python -I tools/hq-dashboard/server.py
 
 **Now:** Inspect each dry-run result before applying; stop on a failure. The database gives the demo round saving and stage history; the stage migration removes legacy fixture labels. Open the local address printed by the server and sign in with the password entered locally. The password prompt is private; never record it. The workbook has three fictional jobs and one fictional contact. The bundled contact is fictional and may appear in screenshots. Its card is sparse; choosing Sent fails because the demo lacks `Date sent` (see [API](api.md)).
 
-**Now:** Visit Overview, List, Board, Contacts, a job drawer, Add lead, Search and Documents. Search always names the built-in public company boards from `SOURCES` in `tools/hq-dashboard/job_search.py`, even before a search. These names come from public code, not any person's data, so they may appear in screenshots; identify them as the built-in board list in the PR. Search requests are live and may return real jobs: use fictional fixtures for results and offline tests. Review forms and empty/failed AI states need no AI login; fake providers cover completed behavior in tests.
+**Now:** Visit Overview, List, Board, Contacts, a job drawer, Add lead, Search and Documents. Without a profile, Search names the built-in public company boards from `SOURCES` in `tools/hq-dashboard/job_search.py`, even before a search. These names come from public code, not any person's data, so they may appear in screenshots; identify them as the built-in board list in the PR. Search requests are live and may return real jobs: use fictional fixtures for results and offline tests. Review forms and empty/failed AI states need no AI login; fake providers cover completed behavior in tests.
 
-**Now:** After every page edit, rebuild and refresh. If the build stops, report its quoted anchor; do not change the builder. Edit source only, never generated HTML. For Mac's limited read-only tracker preview, local cookie issues and actual phone connection, follow [setup](../../SETUP.md) and [the quickstart](../CONTRIBUTOR-QUICKSTART.md); their old stage wording is superseded by [the rules](stages-and-rules.md). Do not expose the plain tracker.
+**Now:** After every page edit, rebuild and refresh. If the build stops, report its quoted anchor; do not change the builder. Edit source only, never generated HTML. For Mac's limited read-only tracker preview, local cookie issues and actual phone connection, follow [setup](../../SETUP.md) and [the quickstart](../CONTRIBUTOR-QUICKSTART.md); use [the rules](stages-and-rules.md) for stage details. Do not expose the plain tracker.
 
 ## Now: checks before a PR
 
@@ -46,6 +46,8 @@ python -I tools/hq-dashboard/test_data_root.py
 python -I tools/hq-dashboard/test_cv_quality.py
 python -I tools/hq-dashboard/test_cv_fix.py
 python -I tools/hq-dashboard/test_state_path.py
+python -I tools/hq-dashboard/test_search_profile.py
+python -I tools/hq-dashboard/test_daily_search.py
 python -I tools/tracker/test_store.py
 python -I tools/tracker/test_stages.py
 python -I tools/tracker/test_rounds.py

@@ -35,9 +35,9 @@ Compare with `main` (it passes everything). Things that broke in PR #1 and are w
 
 ## 4. Check meaning, not only looks
 Every count must still mean what it says. Agreed meanings:
-- **Applications** = Applied + Interviewing + Offer + Rejected. Skipped is not an application.
+- **Applications** = Applied + Interview + Offer + Rejected. Skipped is not an application.
 - Each job counts once, by its current status. The tiles add up to Tracked.
-- Intended flow: every job starts in Wishlist, then goes to Skipped or Ready to send, then Applied, then Interviewing, then Offer or Rejected. The overview should read as one connected flow, not separate boxes. (The spreadsheet only stores the current status, so the chart shows where jobs are now, not their history.)
+- Intended flow: jobs start in Tracked. Review and Apply lead toward Applied, while Skipped records a decision not to apply. Applied jobs can reach Interview, Offer or Rejected. The overview should read as one connected flow, not separate boxes. The chart shows current stages, not stage history.
 
 ## 5. Review
 Someone who did not write the change reviews it (a person or a separate agent). Leave notes on the PR that say what must change, what can stay, and how to fix each thing. If a fix is small and the owner agrees, push it to the PR branch (GitHub's "allow edits from maintainers" is on for the PR) and say so in a comment.
