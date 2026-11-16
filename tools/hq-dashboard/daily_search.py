@@ -197,12 +197,18 @@ def run(profile, fetch, backlog, today, mark_landed=False):
     def detail_match(title, text):
         return boards.profile_posting_matches(profile, title, text)
 
+    # Card 06-1d: home-country reads first, place from the job page
+    def home_first(text):
+        rules = profile['work_rules']
+        return any(boards.phrase_matches(country, text)
+                   for country in [rules['home_country'], *rules['authorized_countries']])
+
     companies = profile['search']['companies']
     if not 1 <= len(companies) <= 300:
         raise ValueError('Choose between one and 300 job-board sources.')
     for company in companies:
         try:
-            rows = boards.board_rows(company, fetch, detail_match, today)
+            rows = boards.board_rows(company, fetch, detail_match, today, home_first=home_first)
             counts['fetched'] += len(rows)
             found = []
             for raw in rows:

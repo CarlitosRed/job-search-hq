@@ -146,7 +146,8 @@ def fetch_json(method, url, body=None):
     return json.loads(data)
 
 
-def board_rows(source, fetch=fetch_json, detail_match=None, today=None):
+# Card 06-1d: home-country reads first, place from the job page
+def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_first=None):
     """Shared board adapters; detail_match gates the bounded Workday detail reads."""
     url = source_url(source)
     provider = source['provider']
@@ -158,7 +159,7 @@ def board_rows(source, fetch=fetch_json, detail_match=None, today=None):
         if not isinstance(rows, list) or len(rows) > MAX_POSTINGS:
             raise ValueError('Unexpected or oversized job-board response.')
         return rows
-    rows, offset, details = [], 0, 0
+    rows, offset = [], 0
     today = today or date.today()
     while True:
         data = fetch('POST', url, {'appliedFacets': {}, 'limit': 20, 'offset': offset, 'searchText': ''})
@@ -187,23 +188,42 @@ def board_rows(source, fetch=fetch_json, detail_match=None, today=None):
                 for key, value in listing.items() if key not in ('externalPath', 'postedOn')
             ), 20000)
             raw['description'] = listing_text
-            if details < 40 and detail_match and detail_match(raw.get('title', ''), listing_text):
-                details += 1
-                detail = fetch('GET', url.rsplit('/', 1)[0] + path)
-                info = detail.get('jobPostingInfo') if isinstance(detail, dict) else None
-                if not isinstance(info, dict):
-                    raise ValueError('Unexpected Workday job details.')
-                raw['description'] = listing_text + ' ' + str(info.get('jobDescription') or '')
-                raw['posting_id'] = info.get('jobReqId')
-                exact = iso_day(info.get('startDate'))
-                if exact:
-                    raw['_posted'], raw['_date_source'] = exact, 'workday'
             rows.append(raw)
         offset += len(page)
         if offset >= total:
             break
         if not page:
             raise ValueError('Workday paging stopped before all postings were read.')
+
+    def priority(raw):
+        place = raw.get('locationsText', '')
+        if home_first and home_first(place):
+            return 0
+        return 1 if isinstance(place, str) and re.fullmatch(r'\d+ Locations?', place, re.IGNORECASE) else 2
+
+    matches = [raw for raw in rows if detail_match and detail_match(raw.get('title', ''), raw['description'])]
+    for raw in sorted(matches, key=priority)[:40]:
+        detail = fetch('GET', url.rsplit('/', 1)[0] + raw['externalPath'])
+        info = detail.get('jobPostingInfo') if isinstance(detail, dict) else None
+        if not isinstance(info, dict):
+            raise ValueError('Unexpected Workday job details.')
+        raw['description'] += ' ' + str(info.get('jobDescription') or '')
+        raw['posting_id'] = info.get('jobReqId')
+        exact = iso_day(info.get('startDate'))
+        if exact:
+            raw['_posted'], raw['_date_source'] = exact, 'workday'
+        places = [info.get('location')]
+        additional = info.get('additionalLocations')
+        if isinstance(additional, list):
+            places.extend(additional)
+        places = dict.fromkeys(clean_text(place, 300) for place in places if isinstance(place, str))
+        place = clean_text(' · '.join(part for part in places if part), 300)
+        if not place:
+            place = raw.get('locationsText', '')
+        remote = info.get('remoteType')
+        if isinstance(remote, str) and 'remote' in remote.casefold() and 'remote' not in str(place).casefold():
+            place = clean_text(place, 291) + ' · Remote'
+        raw['locationsText'] = place
     return rows
 
 

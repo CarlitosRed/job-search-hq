@@ -372,5 +372,73 @@ class LandingRules(Base):
         self.assertEqual({j['posting_id'] for j in landing}, {'543', '541'}, 'the one reachable job, then the best Check job')
 
 
+class WorkdayHomeFirst(Base):
+    """Workday: description reads go to home-country jobs first; the place comes from the job's own page."""
+    SOURCE = {'label': 'Big Example', 'provider': 'workday', 'board': 'bigex', 'host': 'bigex.wd1.myworkdayjobs.com', 'site': 'Careers'}
+
+    @staticmethod
+    def listing(n, place):
+        return {'title': f'Partner Operations Analyst {n}', 'externalPath': f'/job/Far-City/Partner-Ops_R{n}',
+                'locationsText': place, 'postedOn': 'Posted 2 Days Ago', 'bulletFields': [f'R{n}']}
+
+    def fake(self, listings, details):
+        calls = []
+        def fetch(method, url, body=None):
+            calls.append((method, url))
+            if url.endswith('/Careers/jobs'):
+                return {'total': len(listings), 'jobPostings': listings[body['offset']:body['offset'] + body['limit']]}
+            path = url.split('/Careers', 1)[1]
+            job = next(j for j in listings if j['externalPath'] == path)
+            info = {'title': job['title'], 'jobDescription': 'Read in full: ' + path, 'startDate': ago(2), 'jobReqId': job['bulletFields'][0],
+                    'location': job['locationsText']}
+            info.update(details.get(path, {}))
+            return {'jobPostingInfo': info}
+        return fetch, calls
+
+    def test_description_reads_go_to_home_country_jobs_first(self):
+        listings = [self.listing(n, 'Far City, Otherland') for n in range(45)]
+        listings[43] = self.listing(43, '2 Locations')
+        listings[44] = self.listing(44, 'Exampleland City, Exampleland')
+        fetch, calls = self.fake(listings, {listings[43]['externalPath']: {'location': 'Exampleland City, Exampleland'}})
+        home = lambda text: ds.boards.phrase_matches('Exampleland', text)
+        rows = ds.boards.board_rows(self.SOURCE, fetch, lambda title, text: True, TODAY, home_first=home)
+        reads = [url for method, url in calls if method == 'GET']
+        self.assertEqual(len(reads), 40, 'still at most 40 description reads per board')
+        self.assertTrue(any(url.endswith(listings[44]['externalPath']) for url in reads), 'the home-country job is read first, not dropped')
+        self.assertTrue(any(url.endswith(listings[43]['externalPath']) for url in reads), 'a job hiding its places ("2 Locations") is read next')
+        self.assertEqual([r['title'] for r in rows], [l['title'] for l in listings], 'rows keep the board order')
+        self.assertIn('Read in full', rows[44]['description'])
+        place = ds.boards.normalize(self.SOURCE, rows[43], TODAY.isoformat())['location']
+        self.assertIn('Exampleland', place, 'the place comes from the job page, not "2 Locations"')
+
+    def test_place_comes_from_the_job_page(self):
+        listings = [self.listing(1, '3 Locations'), self.listing(2, 'Far City, Otherland')]
+        fetch, calls = self.fake(listings, {
+            listings[0]['externalPath']: {'location': 'Far City, Otherland', 'additionalLocations': ['Exampleland City, Exampleland', 'Third Town, Otherland'],
+                                          'remoteType': 'Remote'}})
+        matches = lambda title, text: title.endswith(' 1')
+        rows = ds.boards.board_rows(self.SOURCE, fetch, matches, TODAY)
+        first = ds.boards.normalize(self.SOURCE, rows[0], TODAY.isoformat())
+        for part in ('Far City, Otherland', 'Exampleland City, Exampleland', 'Third Town, Otherland'):
+            self.assertIn(part, first['location'])
+        self.assertNotIn('3 Locations', first['location'])
+        self.assertTrue(first['remote'], 'a Remote job page marks the job remote')
+        second = ds.boards.normalize(self.SOURCE, rows[1], TODAY.isoformat())
+        self.assertEqual(second['location'], 'Far City, Otherland', 'jobs without a page read keep the list text')
+
+    def test_daily_search_asks_for_the_home_country_first(self):
+        from unittest import mock
+        seen = []
+        real = ds.boards.board_rows
+        def spy(*args, **kwargs):
+            seen.append(kwargs.get('home_first'))
+            return real(*args, **kwargs)
+        with mock.patch.object(ds.boards, 'board_rows', spy):
+            self.run_search()
+        self.assertTrue(seen and all(callable(h) for h in seen), 'every board read gets the home-country check')
+        self.assertTrue(seen[0]('Exampleland City, Exampleland'))
+        self.assertFalse(seen[0]('Far City, Otherland'))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
