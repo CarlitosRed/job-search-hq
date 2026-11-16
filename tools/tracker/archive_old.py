@@ -50,10 +50,6 @@ def move(db, preview=False):
     if not candidates or preview:
         return report
 
-    # Keep the original active id beside the archive row for history and allocation.
-    columns = [r['name'] for r in db.execute('PRAGMA table_info(old_jobs)')]
-    if 'original_job_id' not in columns:
-        db.execute('ALTER TABLE old_jobs ADD COLUMN original_job_id INTEGER')
     headers = {r['sheet']: store.decode(r['header']) for r in db.execute(
         "SELECT sheet, header FROM layouts WHERE source='main'")}
     layout = db.execute("SELECT * FROM layouts WHERE source='old' AND sheet='Old'").fetchone()
@@ -127,8 +123,12 @@ def archive(xlsx, apply=False):
             db.backup(memory)
         working = db if apply else memory
         working.row_factory = sqlite3.Row
+        if apply:
+            store.migrations.upgrade(working, target)
         with working:
             working.execute('BEGIN IMMEDIATE' if apply else 'BEGIN')
+            if not apply:
+                store.migrations.baseline(working)
             report = move(working)
         report['backup'] = backup
     finally:

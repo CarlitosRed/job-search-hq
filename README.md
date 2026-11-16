@@ -81,6 +81,7 @@ python -I tools/tracker/test_rounds.py
 python -I tools/tracker/test_fresh.py
 python -I tools/tracker/test_archive.py
 python -I tools/tracker/test_age_rollover.py
+python -I tools/tracker/test_migrations.py
 ```
 
 The suites use fictional fixtures and never call a live model. First run `python tools/hq-dashboard/port_tracker.py --backend pc`. Node is needed for the JavaScript suite. The two browser cases need Playwright, WebKit, and Git for Windows OpenSSL at the fixed path described in [SETUP.md](SETUP.md#5-build-the-page-and-run-tests); CV fitting needs Windows Arial fonts. Runtime validation of this documentation change is Unverified.

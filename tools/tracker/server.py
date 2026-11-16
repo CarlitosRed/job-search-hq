@@ -84,7 +84,7 @@ def load():
     job_rounds = {}
     job_dates = {}
     if sqlite_mode():
-        storage = store.Store(store.db_path(XLSX))
+        storage = store.Store(store.db_path(XLSX), upgrade=False)
         try:
             with storage.db:
                 storage.db.execute('BEGIN')
@@ -165,7 +165,7 @@ def cached():
 
 def version():
     if sqlite_mode():
-        storage = store.Store(store.db_path(XLSX))
+        storage = store.Store(store.db_path(XLSX), upgrade=False)
         try:
             return 'db-' + str(storage.meta('revision'))
         finally:

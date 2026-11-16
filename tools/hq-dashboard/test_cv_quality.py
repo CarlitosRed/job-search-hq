@@ -197,7 +197,7 @@ class Records(unittest.TestCase):
         with closing(sqlite3.connect(self.db)) as db, db:
             columns = [r[1] for r in db.execute('PRAGMA table_info(documents)')]
         self.assertEqual(columns, ['id', 'job_id', 'kind', 'file_name', 'sha256', 'made_by', 'created',
-                                   'posting_id', 'evidence_ids', 'checks'])
+                                   'posting_id', 'evidence_ids', 'checks', 'job_ref'])
 
     def test_add_and_list_documents(self):
         s = store.Store(self.db)

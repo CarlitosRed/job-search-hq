@@ -1,0 +1,101 @@
+"""Numbered tracker schema upgrades, backed up before any change."""
+from datetime import datetime
+from pathlib import Path
+import sqlite3
+
+
+def columns(db, table):
+    return {row[1] for row in db.execute(f'PRAGMA table_info({table})')}
+
+
+def baseline(db):
+    for table in ('jobs', 'old_jobs'):
+        if columns(db, table) and 'posted_on' not in columns(db, table):
+            db.execute(f'ALTER TABLE {table} ADD COLUMN posted_on TEXT')
+    db.execute('''CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY,
+        job_id TEXT, kind TEXT, file_name TEXT, sha256 TEXT, made_by TEXT, created TEXT,
+        posting_id TEXT, evidence_ids TEXT, checks TEXT)''')
+    if columns(db, 'old_jobs') and 'original_job_id' not in columns(db, 'old_jobs'):
+        db.execute('ALTER TABLE old_jobs ADD COLUMN original_job_id INTEGER')
+
+
+def job_ref(db, text_id):
+    if not isinstance(text_id, str) or '|' not in text_id:
+        return None
+    sheet, number = text_id.rsplit('|', 1)
+    if not sheet or not number.isascii() or not number.isdecimal():
+        return None
+    if len(number) > 19 or int(number) > 9223372036854775807:
+        return None
+    table, field = ('old_jobs', 'original_job_id') if sheet == 'Old' else ('jobs', 'id')
+    row = db.execute(f'SELECT {field} FROM {table} WHERE sheet=? AND row=?',
+                     (sheet, int(number))).fetchone()
+    return row[0] if row else None
+
+
+def document_refs(db):
+    if 'job_ref' not in columns(db, 'documents'):
+        db.execute('ALTER TABLE documents ADD COLUMN job_ref INTEGER')
+    for row in db.execute('SELECT id, job_id FROM documents WHERE job_ref IS NULL').fetchall():
+        ref = job_ref(db, row[1])
+        if ref is not None:
+            db.execute('UPDATE documents SET job_ref=? WHERE id=?', (ref, row[0]))
+
+
+def postings(db):
+    db.execute('''CREATE TABLE IF NOT EXISTS postings (id INTEGER PRIMARY KEY,
+        job_id INTEGER NOT NULL, profile_id TEXT NOT NULL, provider TEXT NOT NULL,
+        board TEXT NOT NULL, posting_id TEXT NOT NULL, link TEXT, first_seen TEXT,
+        last_seen TEXT, source TEXT, UNIQUE(profile_id, provider, board, posting_id))''')
+
+
+STEPS = [(1, 'baseline', baseline), (2, 'document job numbers', document_refs),
+         (3, 'posting links', postings)]
+
+
+def __getattr__(name):
+    if name == 'LATEST':
+        return STEPS[-1][0]
+    raise AttributeError(name)
+
+
+def upgrade(db, db_file):
+    if not columns(db, 'meta'):
+        return
+    row = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+    version = int(row[0]) if row else 0
+    # Older tools can leave a version marker beside an incomplete baseline.
+    # Re-run the safe steps when the actual schema still needs that upgrade.
+    if (any(columns(db, table) and 'posted_on' not in columns(db, table)
+            for table in ('jobs', 'old_jobs'))
+            or not columns(db, 'documents')
+            or (columns(db, 'old_jobs') and 'original_job_id' not in columns(db, 'old_jobs'))):
+        version = 0
+    pending = [step for step in STEPS if step[0] > version]
+    if not pending:
+        return
+    latest = STEPS[-1][0]
+    path = Path(db_file)
+    folder = path.parent / '.tracker-backups'
+    folder.mkdir(exist_ok=True)
+    stamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')
+    name = f'{path.stem}-before-migration-{version}-to-{latest}-{stamp}'
+    target, index = folder / f'{name}.sqlite3', 1
+    while True:
+        try:
+            with target.open('xb'):
+                pass
+            break
+        except FileExistsError:
+            target = folder / f'{name}-{index}.sqlite3'
+            index += 1
+    backup = sqlite3.connect(target)
+    try:
+        db.backup(backup)
+    finally:
+        backup.close()
+    with db:
+        db.execute('BEGIN IMMEDIATE')
+        for number, name, step in pending:
+            step(db)
+        db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)", (latest,))

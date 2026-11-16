@@ -19,6 +19,9 @@ _stage_spec.loader.exec_module(stages)
 _fresh_spec = importlib.util.spec_from_file_location('tracker_store_freshness', Path(__file__).with_name('freshness.py'))
 freshness = importlib.util.module_from_spec(_fresh_spec)
 _fresh_spec.loader.exec_module(freshness)
+_migration_spec = importlib.util.spec_from_file_location('tracker_store_migrations', Path(__file__).with_name('migrations.py'))
+migrations = importlib.util.module_from_spec(_migration_spec)
+_migration_spec.loader.exec_module(migrations)
 STATUSES = stages.NAMES
 NAMED = {'company': 'Company', 'role': 'Role', 'place': 'Where', 'link': 'Link',
          'status': 'My status', 'fit': 'Verdict', 'notes': 'Notes',
@@ -78,29 +81,60 @@ def copy_log(path, label):
 
 
 class Store:
-    def __init__(self, path):
-        self.db = sqlite3.connect(str(path))
+    def __init__(self, path, upgrade=True):
+        self.db = sqlite3.connect(str(path), uri=str(path).startswith('file:'))
         self.db.row_factory = sqlite3.Row
-        for table in ('jobs', 'old_jobs'):
-            columns = [r['name'] for r in self.db.execute(f'PRAGMA table_info({table})')]
-            if columns and 'posted_on' not in columns:
-                self.db.execute(f'ALTER TABLE {table} ADD COLUMN posted_on TEXT')
-        self.db.execute('''CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY,
-            job_id TEXT, kind TEXT, file_name TEXT, sha256 TEXT, made_by TEXT, created TEXT,
-            posting_id TEXT, evidence_ids TEXT, checks TEXT)''')
+        try:
+            db_file = self.db.execute('PRAGMA database_list').fetchone()[2]
+            if upgrade and db_file:
+                migrations.upgrade(self.db, db_file)
+        except Exception:
+            self.db.close()
+            raise
+
+    def job_ref(self, text_id):
+        return migrations.job_ref(self.db, text_id)
+
+    def link_posting(self, job_id, profile_id, provider, board, posting_id, link=None, seen=None, source=None):
+        identity = (profile_id, provider, board, posting_id)
+        # One statement also protects the identity when two writers link it at once.
+        row = self.db.execute('''INSERT INTO postings
+            (job_id, profile_id, provider, board, posting_id, link, first_seen, last_seen, source)
+            VALUES (?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(profile_id, provider, board, posting_id) DO UPDATE SET
+                link=COALESCE(NULLIF(excluded.link, ''), postings.link),
+                first_seen=CASE WHEN postings.first_seen IS NULL THEN excluded.first_seen
+                    WHEN excluded.first_seen IS NULL THEN postings.first_seen
+                    ELSE MIN(postings.first_seen, excluded.first_seen) END,
+                last_seen=COALESCE(excluded.last_seen, postings.last_seen)
+            WHERE postings.job_id=excluded.job_id''',
+            (job_id, *identity, link, seen, seen, source))
+        if not row.rowcount:
+            raise ValueError('Posting is already linked to another job.')
+
+    def job_for_posting(self, profile_id, provider, board, posting_id):
+        row = self.db.execute('''SELECT job_id FROM postings
+            WHERE profile_id=? AND provider=? AND board=? AND posting_id=?''',
+            (profile_id, provider, board, posting_id)).fetchone()
+        return row[0] if row else None
+
+    def postings_for(self, job_id):
+        return [dict(row) for row in self.db.execute('SELECT * FROM postings WHERE job_id=? ORDER BY id', (job_id,))]
 
     def add_document(self, kind, file_name, sha256, made_by, created, job_id=None,
                      posting_id=None, evidence_ids=(), checks=()):
         if kind not in ('cv', 'letter') or made_by not in ('site', 'outside'):
             raise ValueError('Invalid document kind or origin.')
         row = self.db.execute('''INSERT INTO documents
-            (job_id, kind, file_name, sha256, made_by, created, posting_id, evidence_ids, checks)
-            VALUES (?,?,?,?,?,?,?,?,?)''', (job_id, kind, file_name, sha256, made_by, created,
+            (job_id, job_ref, kind, file_name, sha256, made_by, created, posting_id, evidence_ids, checks)
+            VALUES (?,?,?,?,?,?,?,?,?,?)''', (job_id, self.job_ref(job_id), kind, file_name, sha256, made_by, created,
                                            posting_id, json.dumps(list(evidence_ids)), json.dumps(list(checks))))
         return row.lastrowid
 
     def documents(self):
         result = []
+        if not migrations.columns(self.db, 'documents'):
+            return result
         for row in self.db.execute('SELECT * FROM documents ORDER BY id'):
             item = dict(row)
             for key in ('evidence_ids', 'checks'):
@@ -145,16 +179,24 @@ class Store:
                 cv_file TEXT, cv_hash TEXT, letter_file TEXT, letter_hash TEXT,
                 sentiment TEXT, where_sent TEXT, recorded_later INTEGER);
             CREATE TABLE checks (id INTEGER PRIMARY KEY, job_id INTEGER, date TEXT, result TEXT);
+            CREATE TABLE documents (id INTEGER PRIMARY KEY, job_id TEXT, job_ref INTEGER,
+                kind TEXT, file_name TEXT, sha256 TEXT, made_by TEXT, created TEXT,
+                posting_id TEXT, evidence_ids TEXT, checks TEXT);
+            CREATE TABLE postings (id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL,
+                profile_id TEXT NOT NULL, provider TEXT NOT NULL, board TEXT NOT NULL,
+                posting_id TEXT NOT NULL, link TEXT, first_seen TEXT, last_seen TEXT,
+                source TEXT, UNIQUE(profile_id, provider, board, posting_id));
         ''')
         for table in TABLES:
             posted_column = 'posted_on TEXT,' if table in ('jobs', 'old_jobs') else ''
+            original_column = 'original_job_id INTEGER,' if table == 'old_jobs' else ''
             self.db.execute(f'''CREATE TABLE {table} (id INTEGER PRIMARY KEY,
                 sheet TEXT, row INTEGER, company TEXT, role TEXT, place TEXT, link TEXT,
                 status TEXT, fit TEXT, notes TEXT, agent_notes TEXT, posted TEXT,
-                {posted_column} date_source TEXT, first_seen TEXT, old_status TEXT, fields TEXT,
+                {posted_column} {original_column} date_source TEXT, first_seen TEXT, old_status TEXT, fields TEXT,
                 UNIQUE(sheet, row))''')
         for key, value in (('revision', 1), ('mirror_hash', ''),
-                           ('mirror_warning', ''), ('mirror_stale', 0)):
+                           ('mirror_warning', ''), ('mirror_stale', 0), ('schema_version', migrations.LATEST)):
             self.set_meta(key, value)
 
     def meta(self, key):
@@ -217,8 +259,9 @@ class Store:
                 self.add_round(job_id, date.today().isoformat(), '', '')
 
     def dates(self):
+        posted = 'posted_on' if 'posted_on' in migrations.columns(self.db, 'jobs') else 'NULL AS posted_on'
         return {(r['sheet'], r['row']): {k: r[k] for k in ('first_seen', 'posted_on', 'date_source')}
-                for r in self.db.execute('SELECT sheet, row, first_seen, posted_on, date_source FROM jobs')}
+                for r in self.db.execute(f'SELECT sheet, row, first_seen, {posted}, date_source FROM jobs')}
 
     def known_keys(self):
         result = set()

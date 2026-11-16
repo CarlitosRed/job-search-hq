@@ -88,7 +88,7 @@ def migrate(xlsx, apply=False):
     storage, wb, temporary = None, None, None
     try:
         if store.db_path(xlsx).exists():
-            storage = store.Store(store.db_path(xlsx))
+            storage = store.Store(store.db_path(xlsx), upgrade=apply)
             if apply:
                 backup = database_backup(storage, xlsx)
             # Keep the read, plan, verification and updates in one snapshot.

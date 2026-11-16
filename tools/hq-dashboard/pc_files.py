@@ -31,18 +31,18 @@ _store=None
 _export_lock=threading.RLock()
 
 
-def document_store(path):
+def document_store(path,upgrade=True):
     global _store
     if _store is None:
         spec=importlib.util.spec_from_file_location('hq_document_store',HERE.parent/'tracker'/'store.py')
         _store=importlib.util.module_from_spec(spec)
         spec.loader.exec_module(_store)
-    return _store.Store(path)
+    return _store.Store(path,upgrade=upgrade)
 
 
 def document_records(store_path):
     if store_path is None or not Path(store_path).is_file():return []
-    storage=document_store(store_path)
+    storage=document_store(store_path,upgrade=False)
     try:return storage.documents()
     finally:storage.close()
 
