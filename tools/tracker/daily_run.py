@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import sqlite3
 import subprocess
+import time as clock
 import traceback
 import uuid
 
@@ -23,6 +24,8 @@ HERE = Path(__file__).resolve().parent
 land_search = load_component('land_search', HERE)
 # Card 03: closing and re-check.
 recheck = load_component('recheck', HERE)
+# Card 04a: qualification judge.
+judge = load_component('judge', HERE)
 daily_search = land_search.daily_search
 settings = daily_search.settings
 SUCCESS = ('done', 'done_with_warnings')
@@ -88,9 +91,12 @@ def configuration(root):
     config = settings.load(root, defaults_root=settings.app_root())['daily_run']
     if not isinstance(config, dict):
         raise ValueError('Daily settings must be an object.')
-    config = {'at': '06:00', 'before': [], 'copies': [], 'recheck': 'on', **config}
+    config = {'at': '06:00', 'before': [], 'copies': [], 'recheck': 'on', 'judge': 'on', **config}
     if config['recheck'] not in ('on', 'preview'):
         raise ValueError('The daily recheck setting must be on or preview.')
+    # Card 04a: qualification judge.
+    if config['judge'] not in ('on', 'preview'):
+        raise ValueError('The daily judge setting must be on or preview.')
     try:
         at = config['at']
         if not isinstance(at, str) or time.fromisoformat(at).strftime('%H:%M') != at:
@@ -136,7 +142,7 @@ def command_step(step, root):
         return 'failed', 'Command could not run: ' + str(error)[-500:]
 
 
-def run_daily(root, now, fetch=None, force=False, trigger='scheduled', link_check=None):
+def run_daily(root, now, fetch=None, force=False, trigger='scheduled', link_check=None, complete=None):
     root = Path(root)
     config = configuration(root)  # Validate every command before any writable work.
     slot = slot_date(now, config['at'])
@@ -144,12 +150,12 @@ def run_daily(root, now, fetch=None, force=False, trigger='scheduled', link_chec
     try:
         with run_lock(root):
             return run_locked(root, now, fetch or daily_search.boards.fetch_json, force, trigger, config, slot,
-                              link_check or recheck.link_status)
+                              link_check or recheck.link_status, complete or judge.seam.complete)
     except RunBusy:
         return empty
 
 
-def run_locked(root, now, fetch, force, trigger, config, slot, link_check):
+def run_locked(root, now, fetch, force, trigger, config, slot, link_check, complete):
     work = root / 'work'
     with closing(sqlite3.connect(work / 'daily-runs.sqlite3')) as db:
         db.executescript('''
@@ -273,6 +279,51 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check):
                 detail += f' {errors} jobs could not be checked.'
             return ('partial' if errors else 'done'), detail
 
+        # Card 04a: qualification judge.
+        def judge_jobs():
+            preview = config['judge'] == 'preview'
+            tracker = work / 'applications-tracker.sqlite3'
+            profile = daily_search.profiles.load(root / 'profile.json')
+            excluded = settings.load(root, defaults_root=settings.app_root())['excluded_evidence_ids']
+            evidence = judge.judge_evidence(root, excluded)
+            with closing(land_search.store.Store(':memory:' if preview else tracker)) as storage:
+                if preview:
+                    with closing(sqlite3.connect(tracker.resolve().as_uri() + '?mode=ro', uri=True)) as source:
+                        source.backup(storage.db)
+                    with storage.db:
+                        for _, _, step in land_search.store.migrations.STEPS:
+                            step(storage.db)
+                waiting = judge.pending_jobs(storage, json.loads(snapshot.read_text(encoding='utf-8')))
+                report = judge.judge_pending(storage, profile, evidence, now.date(), run_id, complete,
+                                             profile['search']['judge_budget'], dry_run=preview, jobs=waiting,
+                                             deadline=clock.monotonic() + 30 * 60, backlog=backlog,
+                                             # Previews run on a copy, so the real usage file is named here.
+                                             usage=work / 'ai-usage.sqlite3',
+                                             preview_cache=snapshot.with_name('judge-preview-cache.json'))
+            if preview:
+                target = snapshot.with_name(run_id + '-judge-preview.json')
+                temporary = target.with_suffix('.tmp')
+                temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+                temporary.replace(target)
+            if report['ai_unavailable'] and not report['judged']:
+                return 'skipped', 'AI unavailable; Fit stays pending.'
+
+            def count(n):
+                return f"{n} {'job' if n == 1 else 'jobs'}"
+            detail = (f"{count(report['judged'])} {'would be ' if preview else ''}judged; "
+                      f"{report['pending']} waiting for tomorrow.")
+            if preview:
+                detail = 'Preview: ' + detail + ' Nothing was saved.'
+            if report['failed']:
+                detail += f" {count(len(report['failed']))} could not be judged."
+            if report['skipped']:
+                detail += f" {count(report['skipped'])} without posting text yet."
+            if report['backed_off']:
+                detail += f" {count(report['backed_off'])} failed recently and will be tried again later."
+            if report['ai_unavailable']:
+                return 'partial', detail + ' The AI became unavailable; Fit stays pending for the rest.'
+            return 'done', detail
+
         for step in config['before']:
             if phase('before:' + step['name'], lambda step=step: command_step(step, root)) == 'failed':
                 return finish('failed')
@@ -283,7 +334,7 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check):
             return finish('failed')
         if phase('recheck', check_postings) == 'failed':
             return finish('failed')
-        phase('judge', lambda: ('skipped', 'not built yet (piece 4)'))
+        phase('judge', judge_jobs)
         for step in config['copies']:
             phase('copy:' + step['name'], lambda step=step: command_step(step, root))
         warning = any(p['status'] in ('failed', 'partial') for p in phases.values())
@@ -344,6 +395,8 @@ def status(record_path, now, at='06:00'):
                     warnings.append('some job boards could not be checked')
                 if phases.get('recheck', {}).get('status') == 'partial':
                     warnings.append(last_output_line(phases['recheck']['detail']))
+                if phases.get('judge', {}).get('status') == 'partial':
+                    warnings.append('the AI became unavailable while judging; Fit stays pending for the rest')
                 if warnings:
                     message = prefix + ' finished, but ' + '; '.join(warnings)
                     result.update(state='warning', tone='a', message=message if message.endswith('.') else message + '.')

@@ -42,3 +42,5 @@ jobs:
       - run: python -I tools/tracker/test_land_search.py
       - run: python -I tools/tracker/test_daily_run.py
       - run: python -I tools/tracker/test_recheck.py
+      # Card 04a: qualification judge.
+      - run: python -I tools/tracker/test_judge.py

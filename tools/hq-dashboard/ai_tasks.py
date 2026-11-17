@@ -173,27 +173,10 @@ def read_link(link):
 
 
 def run_codex(prompt, kind, folder, images):
-    executable=shutil.which('codex')
-    if not executable:
-        raise RuntimeError('Codex CLI is not installed.')
-    output=folder/'answer.json'
-    schema_path=folder/'schema.json'
-    schema_path.write_text(json.dumps(schema(kind)),encoding='utf-8')
-    args=[executable,'exec','--ignore-user-config','--sandbox','read-only','--disable','shell_tool','--disable','plugins','--disable','hooks',
-          '--ephemeral','--skip-git-repo-check','-C',str(folder),'-c','approval_policy="never"','-c','web_search="disabled"',
-          '--output-schema',str(schema_path),'--output-last-message',str(output),'--color','never']
-    for path in images:
-        args.extend(['--image',str(path)])
-    args.append('-')
-    # Never inherit API-key routing from a parent terminal; auth remains CLI ChatGPT auth.
-    env={k:v for k,v in os.environ.items() if k not in ('OPENAI_API_KEY','CODEX_API_KEY')}
-    completed=subprocess.run(args,input=prompt,text=True,encoding='utf-8',env=env,capture_output=True,timeout=600,
-                             creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
-    if completed.returncode or not output.exists():
-        raise RuntimeError('Codex could not finish. Check its login, usage limit or local permissions. No permission bypass was used.')
-    if output.stat().st_size>262144:
-        raise ValueError('The generated answer is too large.')
-    return json.loads(output.read_text(encoding='utf-8'))
+    # Card 04a: qualification judge. One shared Codex command lives in the AI seam;
+    # it is loaded here so this module still opens where the seam file is absent.
+    import ai_seam
+    return ai_seam.run_cli(prompt, schema(kind), folder, images)
 
 
 class Tasks:

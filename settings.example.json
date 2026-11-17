@@ -5,7 +5,7 @@
     "document_prefix":  "",
     "cv_blocked_terms":  ["BOM", "UTF-16", "UTF-8"],
     "copy_folder":  "",
-    "daily_run": {"at": "06:00", "before": [], "copies": []},
+    "daily_run": {"at": "06:00", "before": [], "copies": [], "judge": "on"},
     "copy_subfolder":  "Drafts from HQ",
     "home_places_pattern":  "",
     "home_country_label":  "Home country",

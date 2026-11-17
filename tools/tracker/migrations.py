@@ -64,8 +64,35 @@ def posting_checks(db):
         db.execute('ALTER TABLE board_reads ADD COLUMN read_at TEXT')
 
 
+# Card 04a: qualification judge.
+JUDGE_TABLES = '''
+    CREATE TABLE IF NOT EXISTS judgements (id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL,
+        posting_row INTEGER, pass TEXT NOT NULL DEFAULT 'qualification', posting_hash TEXT,
+        profile_id TEXT, profile_revision INTEGER, evidence_revision TEXT, model TEXT,
+        prompt_version TEXT, schema_version TEXT, rule_version TEXT, cache_key TEXT,
+        requirements TEXT, fit TEXT, suggestion TEXT, why TEXT, notes TEXT, place_sentence TEXT,
+        complete INTEGER, created TEXT, day TEXT, run_id TEXT, error TEXT, current INTEGER NOT NULL DEFAULT 0);
+    CREATE INDEX IF NOT EXISTS judgements_by_job ON judgements (job_id, pass, current);
+    CREATE TABLE IF NOT EXISTS choice_signals (id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL,
+        kind TEXT NOT NULL, value TEXT, at TEXT, origin TEXT, active INTEGER NOT NULL DEFAULT 1,
+        supersedes INTEGER, reason TEXT, idempotency_key TEXT UNIQUE);
+'''
+
+
+def judge(db):
+    for statement in JUDGE_TABLES.split(';'):
+        if statement.strip():
+            db.execute(statement)
+    if 'day' not in columns(db, 'judgements'):
+        db.execute('ALTER TABLE judgements ADD COLUMN day TEXT')
+    # Archive and restore copy whole rows, so both tables carry the star.
+    for table in ('jobs', 'old_jobs'):
+        if columns(db, table) and 'starred' not in columns(db, table):
+            db.execute(f'ALTER TABLE {table} ADD COLUMN starred INTEGER DEFAULT 0')
+
+
 STEPS = [(1, 'baseline', baseline), (2, 'document job numbers', document_refs),
-         (3, 'posting links', postings), (4, 'posting checks', posting_checks)]
+         (3, 'posting links', postings), (4, 'posting checks', posting_checks), (5, 'judge', judge)]
 
 
 def __getattr__(name):
@@ -89,6 +116,11 @@ def upgrade(db, db_file):
     if version >= 4 and (not {'title', 'place'} <= columns(db, 'postings')
                          or 'read_at' not in columns(db, 'board_reads')):
         version = 3
+    # Card 04a: qualification judge.
+    if version >= 5 and ('day' not in columns(db, 'judgements') or not columns(db, 'choice_signals')
+                         or any(columns(db, table) and 'starred' not in columns(db, table)
+                                for table in ('jobs', 'old_jobs'))):
+        version = 4
     pending = [step for step in STEPS if step[0] > version]
     if not pending:
         return

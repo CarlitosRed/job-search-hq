@@ -196,13 +196,16 @@ class Store:
                 source TEXT, state TEXT DEFAULT 'open', closed_on TEXT, close_reason TEXT, title TEXT, place TEXT,
                 UNIQUE(profile_id, provider, board, posting_id));
         ''')
+        # Card 04a: qualification judge.
+        self.db.executescript(migrations.JUDGE_TABLES)
         for table in TABLES:
             posted_column = 'posted_on TEXT,' if table in ('jobs', 'old_jobs') else ''
             original_column = 'original_job_id INTEGER,' if table == 'old_jobs' else ''
+            star_column = 'starred INTEGER DEFAULT 0,' if table in ('jobs', 'old_jobs') else ''
             self.db.execute(f'''CREATE TABLE {table} (id INTEGER PRIMARY KEY,
                 sheet TEXT, row INTEGER, company TEXT, role TEXT, place TEXT, link TEXT,
                 status TEXT, fit TEXT, notes TEXT, agent_notes TEXT, posted TEXT,
-                {posted_column} {original_column} date_source TEXT, first_seen TEXT, old_status TEXT, fields TEXT,
+                {posted_column} {original_column} {star_column} date_source TEXT, first_seen TEXT, old_status TEXT, fields TEXT,
                 UNIQUE(sheet, row))''')
         for key, value in (('revision', 1), ('mirror_hash', ''),
                            ('mirror_warning', ''), ('mirror_stale', 0), ('schema_version', migrations.LATEST)):

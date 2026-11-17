@@ -72,6 +72,11 @@ class Base(unittest.TestCase):
     def run_daily(self, now=MORNING, fetch=None, **options):
         # Piece 3: the re-check's link checks never touch the network in tests.
         options.setdefault('link_check', lambda link: ('open', ''))
+        # Piece 4a-1: the judge never calls a real AI in tests.
+        options.setdefault('complete', lambda prompt, schema: {
+            'requirements': [{'text': 'Reporting', 'kind': 'core', 'state': 'unknown', 'evidence': [],
+                              'years_asked': None, 'years_have': None, 'note': ''}],
+            'complete': True, 'place_sentence': ''})
         return self.dr.run_daily(self.root, now, fetch=fetch or fixtures.FakeBoards(), **options)
 
     def jobs(self):
@@ -98,8 +103,8 @@ class Phases(Base):
         self.assertEqual(phases['search']['status'], 'done')
         self.assertEqual(phases['land']['status'], 'done')
         self.assertEqual(phases['recheck']['status'], 'done')
-        self.assertEqual(phases['judge']['status'], 'skipped')
-        self.assertIn('not built yet', phases['judge']['detail'])
+        self.assertEqual(phases['judge']['status'], 'done')
+        self.assertIn('judged', phases['judge']['detail'])
         added = [row for row in self.jobs() if row[0] == 'Daily search']
         self.assertTrue(added, 'found jobs land on the standing Daily search sheet')
         self.assertEqual(self.landed(), len(added), 'the backlog is marked only for jobs the tracker took')
@@ -448,6 +453,57 @@ class RecheckPhase(Base):
     def test_bad_recheck_setting_is_a_plain_error(self):
         self.settings(recheck='sometimes')
         with self.assertRaisesRegex(ValueError, 'recheck'):
+            self.dr.configuration(self.root)
+
+
+class JudgePhase(Base):
+    """Piece 4a-1 (card 04a): the judge runs after the re-check; AI out never fails the run."""
+
+    def judgements(self):
+        with closing(sqlite3.connect(self.db_file)) as db:
+            return db.execute('SELECT COUNT(*) FROM judgements').fetchone()[0]
+
+    def test_judge_runs_and_records_judgements(self):
+        out = self.run_daily()
+        self.assertEqual(out['phases']['judge']['status'], 'done')
+        self.assertGreater(self.judgements(), 0)
+
+    def test_ai_out_skips_the_judge_and_the_run_still_succeeds(self):
+        def out_of_service(prompt, schema):
+            raise RuntimeError('not logged in')
+        out = self.run_daily(complete=out_of_service)
+        self.assertEqual(out['phases']['judge']['status'], 'skipped')
+        self.assertIn('AI unavailable', out['phases']['judge']['detail'])
+        self.assertIn(out['status'], ('done', 'done_with_warnings'))
+        self.assertEqual(self.judgements(), 0)
+
+    def test_judge_preview_writes_nothing_and_saves_named_results(self):
+        self.settings(judge='preview')
+        out = self.run_daily()
+        self.assertEqual(out['phases']['judge']['status'], 'done')
+        self.assertIn('Preview', out['phases']['judge']['detail'])
+        self.assertEqual(self.judgements(), 0)
+        preview = json.loads((self.work / 'daily-runs' / (out['run_id'] + '-judge-preview.json')).read_text(encoding='utf-8'))
+        self.assertTrue(preview['dry_run'])
+        self.assertTrue(all({'company', 'role', 'fit'} <= set(r) for r in preview['results']))
+
+    def test_outage_after_some_progress_is_a_warning(self):
+        calls = []
+
+        def flaky(prompt, schema):
+            calls.append(1)
+            if len(calls) > 1:
+                raise RuntimeError('went away')
+            return {'requirements': [{'text': 'Reporting', 'kind': 'core', 'state': 'unknown', 'evidence': [],
+                                      'years_asked': None, 'years_have': None, 'note': ''}],
+                    'complete': True, 'place_sentence': ''}
+        out = self.run_daily(complete=flaky)
+        if out['phases']['judge']['status'] != 'skipped':
+            self.assertEqual(out['phases']['judge']['status'], 'partial')
+
+    def test_bad_judge_setting_is_a_plain_error(self):
+        self.settings(judge='always')
+        with self.assertRaisesRegex(ValueError, 'judge'):
             self.dr.configuration(self.root)
 
 

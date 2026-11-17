@@ -142,8 +142,8 @@ successful slot is skipped; an interrupted or failed slot resumes, reusing a
 completed search snapshot. `--force` starts another run, `--now` accepts a local
 ISO date and time, and `--trigger` accepts scheduled, catch-up or manual. Run it
 on PC startup with `--trigger catch-up` to catch up a missed slot. The Jobs view
-shows the last search, missed days and any failure or warning. Judging is
-recorded as skipped until that piece is built.
+shows the last search, missed days and any failure or warning. Judging runs
+after the re-check (see the qualification judge below).
 
 <!-- # Card 03: closing and re-check. -->
 After landing, re-checking records board reads and posting observations. Two
@@ -158,6 +158,52 @@ named results without saving checks or changing the backlog, and saves
 `work/daily-runs/<run_id>-recheck-preview.json` for approval before switching to
 `"on"` (the public default). To inspect a saved snapshot directly, run
 `python -I tools/tracker/recheck.py --snapshot <file> --dry-run`.
+
+<!-- # Card 04a: qualification judge. -->
+## Qualification judge
+
+After the re-check, the judge reads each waiting job's saved posting text, one
+posting per AI call, and lists its requirements as Supported, Adjacent, Gap or
+Unknown against the evidence folder. The posting is passed as untrusted data.
+Only verified and stated entries are read, minus `excluded_evidence_ids`, and
+only their title, level, skill tags, what happened, CV-ready bullets, role and
+limit. Code drops citations that are not eligible entries, turns an uncited
+Supported or Adjacent and an unexplained Gap into Unknown, and then decides
+Fit: Strong, Good, Stretch or Long shot, with a short why and a suggestion.
+A Gap whose note only says the evidence is missing, and an uncited core, licence
+or language Gap, also become Unknown. File and folder paths are removed from
+evidence text before it is sent. Only jobs in Tracked, Review and Apply are
+judged. Results are saved as versioned rows in `judgements` (tracker migration
+5, backed up first). In this piece the Verdict column, stages and notes stay as
+they are, and nothing creates a CV or letter.
+
+An unchanged posting, place result, profile revision and evidence set reuse the
+saved judgement without a call; when one of them changes the job is judged
+again after the waiting jobs. Each call, including the single retry, counts
+toward the profile's `search.judge_budget` for the day in
+`work/ai-usage.sqlite3`; dry runs, previews and the command below count too, and
+a restart does not reset it. Jobs beyond the budget wait for the next day. One
+unusable answer skips that job only, and that job is not tried again for seven
+days. If the AI cannot be reached for two jobs in a row the judge stops: with
+nothing judged the phase is recorded as skipped with "AI unavailable; Fit stays
+pending."; after some progress it is partial and the run finishes with a
+warning. Jobs without saved posting text are reported as "No posting text yet".
+
+Set `daily_run.judge` to `"preview"` to judge on an in-memory copy, save no
+judgement and write `work/daily-runs/<run_id>-judge-preview.json`; `"on"` is the
+public default. Preview results are kept in
+`work/daily-runs/judge-preview-cache.json`, so a later preview only calls the AI
+for jobs it has not seen; failures are kept there too, so a failing job waits
+seven run days in previews as well. To judge one job by its database number:
+
+```powershell
+python -I tools/tracker/judge.py --job 12
+python -I tools/tracker/judge.py --job 12 --apply
+```
+
+The default is a dry run; it prints the band, the why and the requirements.
+The AI is reached through `tools/hq-dashboard/ai_seam.py`, `complete(prompt,
+schema)`, which checks every answer against its schema.
 
 ## Document records
 
