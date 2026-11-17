@@ -815,7 +815,9 @@ function score(s){s=String(s||"");const m=/(\d+(?:\.\d+)?)/.exec(s);if(!m)return
 function verdict(v){v=String(v||"").trim();const k=(v.split(/[\s(]/)[0]||"").toUpperCase();const key=VERD[k]?k:(v?"NONE":"NONE");
  const sub=v.slice(k.length).trim().replace(/^\(|\)$/g,"").trim();return{key:v?(VERD[k]?k:"NONE"):"NONE",label:VERD[key][0],cls:VERD[key][1],sub,raw:v}}
 function daysBetween(a,b){const d=(new Date(b)-new Date(a))/864e5;return isNaN(d)?null:Math.round(d)}
-function openState(j){const c=j._check||"";if(/^CLOSED|expired|no longer/i.test(c))return"closed";if(/^OPEN/i.test(c))return"open";return"unknown"}
+// # Card 03: closing and re-check.
+function openState(j){if(j.posting&&j.posting.state!=="unknown")return["open","closed"].includes(j.posting.state)?j.posting.state:"unknown";const c=j._check||"";if(/^CLOSED|expired|no longer/i.test(c))return"closed";if(/^OPEN/i.test(c))return"open";return"unknown"}
+function postingText(j){const p=j.posting;if(!p||p.state==="unknown")return"Not checked";const day=p.since?new Date(p.since+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";if(p.state==="closed")return`Closed${day?" "+day:""}${p.reason?": "+p.reason:""}`;if(p.state==="suspected")return`Closing notice seen ${day}; checking again`;if(p.state==="open")return day?`Open, ${p.via==="link"?"link checked":"seen"} ${day}`:"Open";return`Not checked: ${p.reason}`}
 function initials(n){n=String(n||"?").replace(/\(.*?\)/g,"").replace(/[^\p{L}\p{N}\s&]/gu," ").trim();const w=n.split(/\s+/).filter(x=>x&&x!=="&");
  if(w.length>=2)return(w[0][0]+w[1][0]).toUpperCase();const caps=(w[0]||"?").match(/\p{Lu}/gu)||[];return(caps.length>=2?caps[0]+caps[1]:(w[0]||"?").slice(0,2)).toUpperCase()}
 function hue(n){let h=0;for(const c of String(n||""))h=(h*31+c.codePointAt(0))>>>0;return h%360}
@@ -978,7 +980,7 @@ function jobCard(j,opts={}){const st=stageOf(j);const dim=closedStage(st)||j._op
  return`<article class="card ${opts.list?"lcard":""} ${dim?"dim":""} ${S.sel===key(j)&&opts.list?"sel":""}" tabindex="0" ${opts.drag?'draggable="true"':""} data-k="${esc(key(j))}" aria-label="${esc(jname(j))}, ${esc(j.Role)}, ${esc(sl(j["My status"]))}">
  <div class="card-top">${av(j.Company,"sm")}<div class="t"><div class="co">${esc(j.Company)} <span class="pl">· ${flag(j._reg)}${esc(place(j))}</span></div><div class="ro">${esc(j.Role)}</div></div>${ring(j._sc,opts.list?40:36)}</div>
  ${postedAge(j)}
- <div class="card-foot"><div class="chips">${vchip(j._v)}${opts.list?`<span class="chip st"><i class="dot" style="color:${st.c}"></i>${esc(sl(j["My status"]))}</span>`:""}${j._sib.length?`<span class="chip" title="Also: ${esc(j._sib.map(x=>place(x)+" ("+sheetShort(x._sheet)+")").join("; "))}">Also in ${j._sib.length} place${j._sib.length>1?"s":""}</span>`:""}</div></div>
+ <div class="card-foot"><div class="chips">${vchip(j._v)}${j.posting?.state==="closed"?`<span class="chip">Closed</span>`:""}${opts.list?`<span class="chip st"><i class="dot" style="color:${st.c}"></i>${esc(sl(j["My status"]))}</span>`:""}${j._sib.length?`<span class="chip" title="Also: ${esc(j._sib.map(x=>place(x)+" ("+sheetShort(x._sheet)+")").join("; "))}">Also in ${j._sib.length} place${j._sib.length>1?"s":""}</span>`:""}</div></div>
  ${warnFor(j,true)||(S.attention&&attention(j)?`<div class="warn a">${IC.info}${esc(attention(j))}</div>`:"")}${opts.drag?`<span class="drag-handle" title="Arrastrar para mover" aria-label="Arrastrar para mover ${esc(j.Company)}">${IC.grip}</span>`:""}</article>`}
 
 /* ---------- sankey ---------- */
@@ -1212,7 +1214,8 @@ function roundSection(j){const rounds=j._rounds||[],interview=stageOf(j).id==="i
 function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
  const other=st.id==="other",ad=j["Date applied"];
  const steps=STAGES.filter(s=>s.id!=="other").map(s=>`<li class="${s===st?"cur":""}"><button data-step="${s.id}" title="Move to ${s.label}" ${allowedMove(j,s)?"":"disabled"} ${s===st?'aria-current="step"':""}><span class="b">${s===st?IC.check:STAGES.indexOf(s)+1}</span>${s.step}</button></li>`).join("");
- const ban=[];if(j._open==="closed"&&!closed)ban.push(`<div class="banner">${IC.warn}<span><b>This posting looks closed.</b> Last open check: ${esc(j._check)}${j._checkdate?` (${esc(j._checkdate)})`:""}. Confirm on the employer site before spending time on it.</span></div>`);
+ const ban=[];if(j.posting?.state==="closed"&&!closed)ban.push(`<div class="banner n"><span>${esc(postingText(j))}</span></div>`);
+ else if(j._open==="closed"&&!closed)ban.push(`<div class="banner">${IC.warn}<span><b>This posting looks closed.</b> Last open check: ${esc(j._check)}${j._checkdate?` (${esc(j._checkdate)})`:""}. Confirm on the employer site before spending time on it.</span></div>`);
  else if(j._checkAge!=null&&j._checkAge>3&&!closed&&si<2)ban.push(`<div class="banner a">${IC.clock}<span>Open check is ${j._checkAge} days old (${esc(j._checkdate)}). The daily rerun should refresh it.</span></div>`);
  if(other)ban.push(`<div class="banner a">${IC.info}<span>Status <b>${esc(j["My status"])}</b> isn't one of the tracker's statuses, so it's counted under “Other status”. Pick a status below to fix it.</span></div>`);
  if(closed)ban.push(`<div class="banner n">${IC.info}<span>Marked <b>${esc(sl(j["My status"]))}</b>. <button class="linkbtn" data-step="tracked" style="padding:0">Move back to first stage</button></span></div>`);
@@ -1234,7 +1237,7 @@ function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
   <p class="gd-sub">Do you have any of these qualifications?</p>
   <div class="gd-qual-list">
    <div class="gd-qual-item"><div><b>Skills alignment:</b><small>${esc(sc||v.key!=="NONE"?(v.sub||"Review recorded; no skills details saved"):"Not reviewed yet")}</small></div></div>
-   <div class="gd-qual-item">${j._open==="open"?`<span class="gd-check">${IC.check}</span>`:""}<div><b>Posting status:</b><small>${j._check?esc(j._check):"Not checked"}${j._checkdate?` · checked ${esc(j._checkdate)}`:""}</small></div></div>
+   <div class="gd-qual-item">${j._open==="open"?`<span class="gd-check">${IC.check}</span>`:""}<div><b>Posting status:</b><small>${j.posting&&j.posting.state!=="unknown"?esc(postingText(j)):j._check?esc(j._check):"Not checked"}</small></div></div>
    <div class="gd-qual-item"><div><b>Location &amp; Remote:</b><small>${flag(j._reg)} ${esc(j.Where||place(j))}${j._remote?" · Remote-friendly":""}</small></div></div>
   </div>
   <div style="margin-top:20px"><h4 style="font-size:14px;margin-bottom:12px">Application progress</h4><ol class="stepper ${closed?"closed":""}">${steps}</ol></div>
@@ -1246,7 +1249,7 @@ function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
   <h4><label for="note-${j._row}">Notes &amp; details</label></h4>
   <textarea class="inp" id="note-${j._row}" data-note rows="${Math.min(12,Math.max(4,Math.ceil((j.Notes||"").length/60)+(j.Notes||"").split("\n").length))}" placeholder="Add a note: who you spoke to, follow-up date, salary range…">${esc(j.Notes)}</textarea>
   <div class="note-bar"><small data-notestate>${j._noteSaved?"Saved to the spreadsheet · ":"Saved to the Notes column · "}<kbd>Ctrl</kbd>+<kbd>Enter</kbd></small><button class="btn" data-savenote disabled>${j._noteSaved?"Saved ✓":"Save notes"}</button></div>
-  <dl class="facts" style="margin-top:18px"><dt>Posted</dt><dd>${esc(j.Posted||"Unknown")}</dd><dt>Posting</dt><dd>${j._check?`<span class="chip ${j._open==="open"?"g":j._open==="closed"?"r":""}"><i class="dot"></i>${esc(j._check)}</span>`:"Not checked"}${j._checkdate?` <span style="color:var(--mute);font-size:12px">checked ${esc(j._checkdate)}</span>`:""}</dd>
+  <dl class="facts" style="margin-top:18px"><dt>Posted</dt><dd>${esc(j.Posted||"Unknown")}</dd><dt>Posting</dt><dd>${esc(postingText(j))}</dd>
    <dt>CV used</dt><dd>${esc(j["CV used"]||"None yet")}</dd>${j.Source?`<dt>Source</dt><dd>${esc(j.Source)}</dd>`:""}<dt>Spreadsheet</dt><dd>${esc(j._sheet)}, row ${j._row}${j["#"]?` (#${esc(j["#"])})`:""}</dd></dl>
  </section>
  </article>`}
@@ -1265,7 +1268,7 @@ function renderInner(){const js=filtered();$$(".seg button").forEach(b=>b.setAtt
  else if(S.view==="board")m.innerHTML=board(js);
  else if(S.view==="list")m.innerHTML=listView(js);
  else m.innerHTML=contactsView();
- if(["overview","board","list"].includes(S.view)&&D.daily_run){const tone=["a","n"].includes(D.daily_run.tone)?" "+D.daily_run.tone:"";m.insertAdjacentHTML("afterbegin",`<div class="banner${tone}" role="status" style="margin-bottom:10px">${esc(D.daily_run.message)}</div>`)}
+ if(["overview","board","list"].includes(S.view)&&D.daily_run){const tone=["a","n"].includes(D.daily_run.tone)?" "+D.daily_run.tone:"";const stale=D.stale_boards||[];m.insertAdjacentHTML("afterbegin",`<div class="banner${tone}" role="status" style="margin-bottom:10px">${esc(D.daily_run.message)}</div>${stale.length?`<div class="banner n" style="margin-bottom:10px">${esc(stale.map(b=>`${b.board}: not fully read since ${new Date(b.since+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}${b.reason?" ("+b.reason+")":""}`).join("; "))}</div>`:""}`)}
  if(usesJobView())m.insertAdjacentHTML("afterbegin",jobViews());
  if(scroll&&$(".board"))$(".board").scrollLeft=scroll;
  const sp=$("#split");if(sp&&!sp.querySelector(".side"))sp.classList.add("noside");

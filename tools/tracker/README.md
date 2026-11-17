@@ -142,8 +142,22 @@ successful slot is skipped; an interrupted or failed slot resumes, reusing a
 completed search snapshot. `--force` starts another run, `--now` accepts a local
 ISO date and time, and `--trigger` accepts scheduled, catch-up or manual. Run it
 on PC startup with `--trigger catch-up` to catch up a missed slot. The Jobs view
-shows the last search, missed days and any failure or warning. Rechecking and
-judging are recorded as skipped until those pieces are built.
+shows the last search, missed days and any failure or warning. Judging is
+recorded as skipped until that piece is built.
+
+<!-- # Card 03: closing and re-check. -->
+After landing, re-checking records board reads and posting observations. Two
+misses on complete reads on different days close a posting; 404 or 410 closes
+it immediately. Closing text needs two days. Sightings reopen postings. Stages
+and job rows stay as they are, and nothing is deleted. Empty boards and drops
+below half the last complete count provide no information. Boards without a
+complete read for three days appear below the daily-run banner.
+
+Set `daily_run.recheck` to `"preview"` for the first real run. It computes the
+named results without saving checks or changing the backlog, and saves
+`work/daily-runs/<run_id>-recheck-preview.json` for approval before switching to
+`"on"` (the public default). To inspect a saved snapshot directly, run
+`python -I tools/tracker/recheck.py --snapshot <file> --dry-run`.
 
 ## Document records
 

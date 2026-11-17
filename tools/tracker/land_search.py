@@ -134,6 +134,9 @@ def land_jobs(storage, snapshot, today):
         identity = (meta['profile_id'], job['provider'], job['company'], job['posting_id'])
         key = freshness.job_key(job['company'], job['title'], job['place_text'])
         if storage.job_for_posting(*identity) is not None:
+            # Card 03: closing and re-check.
+            db.execute('UPDATE postings SET title=?,place=? WHERE profile_id=? AND provider=? AND board=? AND posting_id=?',
+                       (job['title'], job['place_text'], *identity))
             report['known'] += 1
             landed.append(job)
             seen.add(job['link'])
@@ -141,7 +144,7 @@ def land_jobs(storage, snapshot, today):
         if not freshness.in_window(freshness.age_days(job['posted_on'], job['first_seen'], today)):
             report['skipped_old'] += 1
         elif key in live:
-            storage.link_posting(live[key], *identity, link=job['link'], seen=job['first_seen'], source='search')
+            storage.link_posting(live[key], *identity, link=job['link'], seen=job['first_seen'], source='search', title=job['title'], place=job['place_text'])
             report['merged'] += 1
             landed.append(job)
         elif key in archived:
@@ -172,7 +175,7 @@ def land_jobs(storage, snapshot, today):
             db.execute('UPDATE jobs SET first_seen=?, posted_on=?, date_source=? WHERE id=?',
                        (job['first_seen'], job['posted_on'] or None, job['date_source'], job_id))
             db.execute("UPDATE layouts SET max_row=? WHERE source='main' AND sheet=?", (next_row, LANDING_SHEET))
-            storage.link_posting(job_id, *identity, link=job['link'], seen=job['first_seen'], source='search')
+            storage.link_posting(job_id, *identity, link=job['link'], seen=job['first_seen'], source='search', title=job['title'], place=job['place_text'])
             live[key] = job_id
             links.add(job['link'])
             report['added'] += 1

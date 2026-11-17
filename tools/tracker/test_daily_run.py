@@ -70,6 +70,8 @@ class Base(unittest.TestCase):
                                                                            **daily_run}}), encoding='utf-8')
 
     def run_daily(self, now=MORNING, fetch=None, **options):
+        # Piece 3: the re-check's link checks never touch the network in tests.
+        options.setdefault('link_check', lambda link: ('open', ''))
         return self.dr.run_daily(self.root, now, fetch=fetch or fixtures.FakeBoards(), **options)
 
     def jobs(self):
@@ -95,9 +97,9 @@ class Phases(Base):
         self.assertEqual([name for name in phases], ['search', 'land', 'recheck', 'judge'])
         self.assertEqual(phases['search']['status'], 'done')
         self.assertEqual(phases['land']['status'], 'done')
-        self.assertEqual(phases['recheck']['status'], 'skipped')
+        self.assertEqual(phases['recheck']['status'], 'done')
         self.assertEqual(phases['judge']['status'], 'skipped')
-        self.assertIn('not built yet', phases['recheck']['detail'])
+        self.assertIn('not built yet', phases['judge']['detail'])
         added = [row for row in self.jobs() if row[0] == 'Daily search']
         self.assertTrue(added, 'found jobs land on the standing Daily search sheet')
         self.assertEqual(self.landed(), len(added), 'the backlog is marked only for jobs the tracker took')
@@ -374,6 +376,79 @@ class Cli(Base):
                                 capture_output=True, text=True, env=env, timeout=120)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('Up to date', result.stdout)
+
+
+
+class RecheckPhase(Base):
+    """Piece 3 (card 03): the re-check runs after landing; preview mode writes nothing."""
+
+    def checks(self):
+        with closing(sqlite3.connect(self.db_file)) as db:
+            return db.execute('SELECT COUNT(*) FROM checks').fetchone()[0]
+
+    def test_recheck_runs_after_landing_and_records_checks(self):
+        out = self.run_daily()
+        self.assertEqual(out['phases']['recheck']['status'], 'done')
+        self.assertIn('checked', out['phases']['recheck']['detail'])
+        self.assertGreater(self.checks(), 0)
+
+    def test_preview_writes_nothing_and_saves_named_results(self):
+        self.settings(recheck='preview')
+        out = self.run_daily()
+        self.assertEqual(out['phases']['recheck']['status'], 'done')
+        self.assertIn('Preview', out['phases']['recheck']['detail'])
+        self.assertEqual(self.checks(), 0)
+        preview = self.work / 'daily-runs' / (out['run_id'] + '-recheck-preview.json')
+        report = json.loads(preview.read_text(encoding='utf-8'))
+        self.assertTrue(report['dry_run'])
+        self.assertIn('closed', report)
+
+    def test_failed_search_skips_the_recheck(self):
+        out = self.run_daily(fetch=fixtures.FakeBoards(broken=('greenhouse', 'lever', 'ashby', 'myworkdayjobs')))
+        self.assertEqual(out['status'], 'failed')
+        self.assertNotEqual(out['phases'].get('recheck', {}).get('status'), 'done')
+        self.assertEqual(self.checks(), 0)
+
+    def test_preview_leaves_the_tracker_file_untouched(self):
+        self.run_daily()
+        self.settings(recheck='preview')
+        import hashlib
+        before = hashlib.sha256(self.db_file.read_bytes()).hexdigest()
+        out = self.run_daily(now=MORNING.replace(day=11), fetch=fixtures.FakeBoards())
+        self.assertEqual(out['phases']['recheck']['status'], 'done')
+        # Search and landing may write; the re-check preview itself must not.
+        report = json.loads((self.work / 'daily-runs' / (out['run_id'] + '-recheck-preview.json')).read_text(encoding='utf-8'))
+        self.assertTrue(report['dry_run'])
+        with closing(sqlite3.connect(self.db_file)) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM checks WHERE run_id=?", (out['run_id'],)).fetchone()[0], 0)
+        self.assertIn('two', out['phases']['recheck']['detail'])
+
+    def test_recheck_errors_make_the_phase_partial(self):
+        def broken(link):
+            raise RuntimeError('unexpected')
+        out = self.run_daily(link_check=broken)
+        self.assertEqual(out['phases']['recheck']['status'], 'partial')
+        self.assertIn('could not be checked', out['phases']['recheck']['detail'])
+
+    def test_a_failed_recheck_is_retried_without_searching_again(self):
+        fetch = fixtures.FakeBoards()
+        boom = mock.patch.object(self.dr.recheck, 'recheck', side_effect=sqlite3.OperationalError('database is locked'))
+        with boom:
+            first = self.run_daily(fetch=fetch)
+        self.assertEqual(first['phases']['recheck']['status'], 'failed')
+        self.assertNotIn(first['status'], ('done', 'done_with_warnings'))
+        state = self.dr.status(self.record, MORNING.replace(hour=7), at='06:00')
+        self.assertIn('re-check', state['message'].lower())
+        calls = len(fetch.calls)
+        again = self.run_daily(now=MORNING.replace(hour=7), fetch=fetch)
+        self.assertEqual(again['run_id'], first['run_id'])
+        self.assertEqual(again['phases']['recheck']['status'], 'done')
+        self.assertEqual(len(fetch.calls), calls, 'no second search')
+
+    def test_bad_recheck_setting_is_a_plain_error(self):
+        self.settings(recheck='sometimes')
+        with self.assertRaisesRegex(ValueError, 'recheck'):
+            self.dr.configuration(self.root)
 
 
 if __name__ == '__main__':

@@ -147,6 +147,11 @@ def fetch_json(method, url, body=None):
 
 
 # Card 06-1d: home-country reads first, place from the job page
+class BoardRows(list):
+    # Card 03: closing and re-check.
+    reason = ''
+
+
 def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_first=None):
     """Shared board adapters; detail_match gates the bounded Workday detail reads."""
     url = source_url(source)
@@ -159,7 +164,8 @@ def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_fir
         if not isinstance(rows, list) or len(rows) > MAX_POSTINGS:
             raise ValueError('Unexpected or oversized job-board response.')
         return rows
-    rows, offset = [], 0
+    # Card 03: closing and re-check.
+    rows, offset, first_total = BoardRows(), 0, None
     today = today or date.today()
     while True:
         data = fetch('POST', url, {'appliedFacets': {}, 'limit': 20, 'offset': offset, 'searchText': ''})
@@ -168,12 +174,16 @@ def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_fir
         total, page = data.get('total'), data['jobPostings']
         if type(total) is not int or not 0 <= total <= MAX_POSTINGS or len(page) > 20 or len(rows) + len(page) > MAX_POSTINGS:
             raise ValueError('Unexpected or oversized Workday response.')
+        if first_total is None:
+            first_total = total
         for listing in page:
             if not isinstance(listing, dict):
+                rows.reason = 'A returned Workday row could not be identified.'
                 continue
             raw = dict(listing)
             path = raw.get('externalPath', '')
             if not isinstance(path, str) or not re.fullmatch(r'/job/[A-Za-z0-9_/%.-]+', path) or '..' in path or '%' in path:
+                rows.reason = 'A returned Workday posting path was rejected.'
                 continue
             raw['_link'] = f"https://{source['host']}/{source['site']}" + path
             raw['_posted'], raw['_date_source'] = '', ''
@@ -190,7 +200,7 @@ def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_fir
             raw['description'] = listing_text
             rows.append(raw)
         offset += len(page)
-        if offset >= total:
+        if offset >= first_total:
             break
         if not page:
             raise ValueError('Workday paging stopped before all postings were read.')

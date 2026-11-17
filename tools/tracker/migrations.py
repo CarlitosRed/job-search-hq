@@ -49,8 +49,23 @@ def postings(db):
         last_seen TEXT, source TEXT, UNIQUE(profile_id, provider, board, posting_id))''')
 
 
+# Card 03: closing and re-check.
+def posting_checks(db):
+    for name in ('run_id', 'posting_row', 'kind', 'observation', 'detail', 'at'):
+        if name not in columns(db, 'checks'):
+            db.execute(f'ALTER TABLE checks ADD COLUMN {name} ' + ('INTEGER' if name == 'posting_row' else 'TEXT'))
+    for name, declaration in (('state', "TEXT DEFAULT 'open'"), ('closed_on', 'TEXT'), ('close_reason', 'TEXT'),
+                              ('title', 'TEXT'), ('place', 'TEXT')):
+        if name not in columns(db, 'postings'):
+            db.execute(f'ALTER TABLE postings ADD COLUMN {name} {declaration}')
+    db.execute('''CREATE TABLE IF NOT EXISTS board_reads (id INTEGER PRIMARY KEY,
+        run_id TEXT, date TEXT, provider TEXT, board TEXT, read TEXT, rows INTEGER, reason TEXT)''')
+    if 'read_at' not in columns(db, 'board_reads'):
+        db.execute('ALTER TABLE board_reads ADD COLUMN read_at TEXT')
+
+
 STEPS = [(1, 'baseline', baseline), (2, 'document job numbers', document_refs),
-         (3, 'posting links', postings)]
+         (3, 'posting links', postings), (4, 'posting checks', posting_checks)]
 
 
 def __getattr__(name):
@@ -71,6 +86,9 @@ def upgrade(db, db_file):
             or not columns(db, 'documents')
             or (columns(db, 'old_jobs') and 'original_job_id' not in columns(db, 'old_jobs'))):
         version = 0
+    if version >= 4 and (not {'title', 'place'} <= columns(db, 'postings')
+                         or 'read_at' not in columns(db, 'board_reads')):
+        version = 3
     pending = [step for step in STEPS if step[0] > version]
     if not pending:
         return

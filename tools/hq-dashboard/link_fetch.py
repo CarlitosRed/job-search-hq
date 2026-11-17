@@ -49,11 +49,25 @@ class Deadline:
         self._close()
 
 
-def public_address(host):
+# Card 03: closing and re-check.
+def public_address(host, deadline=None):
     """Return one public IP for host, or None when any resolved address is private, local or reserved."""
-    try:
-        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
-    except OSError:
+    end = deadline.end if deadline is not None else time.monotonic() + TIMEOUT
+    if time.monotonic() >= end:
+        return None
+    infos = []
+
+    def lookup():
+        try:
+            infos.extend(socket.getaddrinfo(host, None, type=socket.SOCK_STREAM))
+        except OSError:
+            pass
+
+    # Only resolve in the worker; a late result can never open a connection.
+    worker = threading.Thread(target=lookup, daemon=True)
+    worker.start()
+    worker.join(max(0, end - time.monotonic()))
+    if worker.is_alive() or time.monotonic() >= end:
         return None
     addresses = {info[4][0] for info in infos}
     if not addresses:
@@ -84,7 +98,7 @@ def workday_api(url):
     return 'https://%s%s' % (parts.hostname, path)
 
 
-def _get(url, accept, deadline=None):
+def _get(url, accept, deadline=None, with_status=False):
     """GET with manual redirects. Returns (final_url, content_type, text) or None."""
     deadline = deadline or Deadline()
     for _ in range(MAX_HOPS + 1):
@@ -96,20 +110,25 @@ def _get(url, accept, deadline=None):
         port = parts.port or (443 if parts.scheme == 'https' else 80)
         if port not in (80, 443):
             return None
-        ip = public_address(parts.hostname)
-        if not ip:
+        ip = public_address(parts.hostname, deadline)
+        if not ip or deadline.expired():
             return None
         target = (parts.path or '/') + ('?' + parts.query if parts.query else '')
         headers = {'Host': parts.netloc.split('@')[-1], 'User-Agent': AGENT, 'Accept': accept,
                    'Accept-Encoding': 'identity', 'Connection': 'close'}
         try:
+            timeout = min(TIMEOUT, max(0, deadline.end - time.monotonic()))
+            if timeout <= 0:
+                return None
             if parts.scheme == 'https':
-                raw = socket.create_connection((ip, port), timeout=TIMEOUT)
+                raw = socket.create_connection((ip, port), timeout=timeout)
+                deadline.socks.append(raw)
+                raw.settimeout(min(timeout, max(0, deadline.end - time.monotonic())))
                 sock = ssl.create_default_context().wrap_socket(raw, server_hostname=parts.hostname)
-                conn = http.client.HTTPSConnection(parts.hostname, port, timeout=TIMEOUT)
+                conn = http.client.HTTPSConnection(parts.hostname, port, timeout=timeout)
             else:
-                sock = socket.create_connection((ip, port), timeout=TIMEOUT)
-                conn = http.client.HTTPConnection(parts.hostname, port, timeout=TIMEOUT)
+                sock = socket.create_connection((ip, port), timeout=timeout)
+                conn = http.client.HTTPConnection(parts.hostname, port, timeout=timeout)
             deadline.socks.append(sock)
             conn.sock = sock  # reuse the connection to the address that was checked
             conn.request('GET', target, headers=headers)
@@ -122,8 +141,9 @@ def _get(url, accept, deadline=None):
                 url = urljoin(url, location)
                 continue
             if response.status != 200:
+                code = response.status
                 conn.close()
-                return None
+                return (code, '', '') if with_status else None
             kind = (response.getheader('Content-Type') or '').split(';')[0].strip().lower()
             chunks, size = [], 0
             while size <= MAX_BYTES and not deadline.expired():
@@ -140,8 +160,35 @@ def _get(url, accept, deadline=None):
             return None
         if len(body) > MAX_BYTES or kind not in ('text/html', 'application/json', 'text/plain', 'application/xhtml+xml'):
             return None
-        return url, kind, body.decode('utf-8', 'replace')
+        return (response.status if with_status else url), kind, body.decode('utf-8', 'replace')
     return None
+
+
+def fetch_status_text(link, timeout=None):
+    """Return status and readable text using the bounded, address-checked transport."""
+    if not isinstance(link, str) or len(link) > 2000:
+        return None, ''
+    seconds = TOTAL_SECONDS if timeout is None else min(timeout, TOTAL_SECONDS)
+    if seconds <= 0:
+        return None, ''
+    deadline = Deadline(seconds)
+    try:
+        target = workday_api(link) or link
+        got = _get(target, 'text/html,application/json,text/plain,application/xhtml+xml', deadline, with_status=True)
+        if not got:
+            return None, ''
+        code, kind, body = got
+        if kind == 'application/json':
+            try:
+                info = json.loads(body).get('jobPostingInfo') or {}
+                body = info.get('jobDescription') or ''
+            except (ValueError, AttributeError):
+                body = ''
+        return code, body if kind == 'text/plain' else html_to_text(body)
+    except (OSError, ValueError):
+        return None, ''
+    finally:
+        deadline.stop()
 
 
 class _Text(HTMLParser):

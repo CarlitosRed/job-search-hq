@@ -106,8 +106,8 @@ def main():
             "<dt>Spreadsheet</dt><dd>${j._added?`${esc(j._sheet)} · added here, goes in at the next {{SCAN_TIME}} sync`:`${esc(j._sheet)}, row ${esc(j._row)}${j[\"#\"]?` (#${esc(j[\"#\"])})`:\"\"}`}</dd>")
     h = sub(h, '<b>This posting looks closed.</b> Last open check: ${esc(j._check)}${j._checkdate?` (${esc(j._checkdate)})`:""}.',
             '<b>This posting looks closed.</b> Last check${j._checkdate?` (${esc(j._checkdate)})`:""}: ${esc(checkText(j))}.')
-    h = sub(h, '<span class="chip ${j._open==="open"?"g":j._open==="closed"?"r":""}"><i class="dot"></i>${esc(j._check)}</span>',
-            '<span class="chip ${j._open==="open"?"g":j._open==="closed"?"r":""}" title="${esc(j._check)}"><i class="dot"></i>${esc(checkText(j))}</span>')
+    # Card 03: closing and re-check.
+    # The shared Posting line already renders the re-check status in plain words.
     h = sub(h, 'No link saved</span>`}</div>',
             'No link saved</span>`}'
             '<button class="btn ghost" data-act="review" data-id="${esc(j._id)}">${IC.star}Check fit and create CV</button></div>')

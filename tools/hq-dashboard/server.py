@@ -194,6 +194,23 @@ class App:
                 j['_id'] = j['_sheet'] + '|' + str(j['_row'])
             for c in d['contacts']:
                 c['_id'] = 'Contacts|' + str(c['_row'])
+            # Card 03: closing and re-check.
+            d['stale_boards'] = []
+            for job in d['jobs']:
+                job['posting'] = dict(state='unknown', since=None, reason='', checked=None)
+            tracker_db = self.tracker.XLSX.with_suffix('.sqlite3')
+            if tracker_db.is_file():
+                with closing(daily_run.land_search.store.Store(tracker_db)) as storage:
+                    for job in d['jobs']:
+                        job_id = storage.job_ref(job['_id'])
+                        if job_id is not None:
+                            job['posting'] = daily_run.recheck.posting_status(storage, job_id)
+                    try:
+                        profile = daily_run.daily_search.profiles.load(hq_settings.data_root() / 'profile.json')
+                        current = {(c['provider'], c['label']) for c in profile['search']['companies']}
+                    except (OSError, ValueError, KeyError, TypeError):
+                        current = set()
+                    d['stale_boards'] = daily_run.recheck.stale_boards(storage, datetime.now().date(), current=current)
             try:
                 at = hq_settings.load()['daily_run']['at']
                 d['daily_run'] = daily_run.status(self.tracker.XLSX.parent / 'daily-runs.sqlite3',

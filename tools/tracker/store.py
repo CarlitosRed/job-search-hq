@@ -95,7 +95,8 @@ class Store:
     def job_ref(self, text_id):
         return migrations.job_ref(self.db, text_id)
 
-    def link_posting(self, job_id, profile_id, provider, board, posting_id, link=None, seen=None, source=None):
+    # Card 03: closing and re-check.
+    def link_posting(self, job_id, profile_id, provider, board, posting_id, link=None, seen=None, source=None, title=None, place=None):
         identity = (profile_id, provider, board, posting_id)
         # One statement also protects the identity when two writers link it at once.
         row = self.db.execute('''INSERT INTO postings
@@ -111,6 +112,9 @@ class Store:
             (job_id, *identity, link, seen, seen, source))
         if not row.rowcount:
             raise ValueError('Posting is already linked to another job.')
+        self.db.execute('''UPDATE postings SET title=COALESCE(NULLIF(?, ''),title),
+            place=COALESCE(NULLIF(?, ''),place) WHERE profile_id=? AND provider=? AND board=? AND posting_id=?''',
+                        (title, place, *identity))
 
     def job_for_posting(self, profile_id, provider, board, posting_id):
         row = self.db.execute('''SELECT job_id FROM postings
@@ -165,6 +169,7 @@ class Store:
         if not row.rowcount:
             raise ValueError('Unknown round for this job.')
 
+    # Card 03: closing and re-check.
     def create(self):
         self.db.executescript('''
             CREATE TABLE meta (key TEXT PRIMARY KEY, value);
@@ -178,14 +183,18 @@ class Store:
             CREATE TABLE sent (id INTEGER PRIMARY KEY, job_id INTEGER, date TEXT,
                 cv_file TEXT, cv_hash TEXT, letter_file TEXT, letter_hash TEXT,
                 sentiment TEXT, where_sent TEXT, recorded_later INTEGER);
-            CREATE TABLE checks (id INTEGER PRIMARY KEY, job_id INTEGER, date TEXT, result TEXT);
+            CREATE TABLE checks (id INTEGER PRIMARY KEY, job_id INTEGER, date TEXT, result TEXT,
+                run_id TEXT, posting_row INTEGER, kind TEXT, observation TEXT, detail TEXT, at TEXT);
+            CREATE TABLE board_reads (id INTEGER PRIMARY KEY, run_id TEXT, date TEXT,
+                provider TEXT, board TEXT, read TEXT, rows INTEGER, reason TEXT, read_at TEXT);
             CREATE TABLE documents (id INTEGER PRIMARY KEY, job_id TEXT, job_ref INTEGER,
                 kind TEXT, file_name TEXT, sha256 TEXT, made_by TEXT, created TEXT,
                 posting_id TEXT, evidence_ids TEXT, checks TEXT);
             CREATE TABLE postings (id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL,
                 profile_id TEXT NOT NULL, provider TEXT NOT NULL, board TEXT NOT NULL,
                 posting_id TEXT NOT NULL, link TEXT, first_seen TEXT, last_seen TEXT,
-                source TEXT, UNIQUE(profile_id, provider, board, posting_id));
+                source TEXT, state TEXT DEFAULT 'open', closed_on TEXT, close_reason TEXT, title TEXT, place TEXT,
+                UNIQUE(profile_id, provider, board, posting_id));
         ''')
         for table in TABLES:
             posted_column = 'posted_on TEXT,' if table in ('jobs', 'old_jobs') else ''

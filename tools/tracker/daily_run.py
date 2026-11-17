@@ -21,6 +21,8 @@ def load_component(name, folder):
 
 HERE = Path(__file__).resolve().parent
 land_search = load_component('land_search', HERE)
+# Card 03: closing and re-check.
+recheck = load_component('recheck', HERE)
 daily_search = land_search.daily_search
 settings = daily_search.settings
 SUCCESS = ('done', 'done_with_warnings')
@@ -86,7 +88,9 @@ def configuration(root):
     config = settings.load(root, defaults_root=settings.app_root())['daily_run']
     if not isinstance(config, dict):
         raise ValueError('Daily settings must be an object.')
-    config = {'at': '06:00', 'before': [], 'copies': [], **config}
+    config = {'at': '06:00', 'before': [], 'copies': [], 'recheck': 'on', **config}
+    if config['recheck'] not in ('on', 'preview'):
+        raise ValueError('The daily recheck setting must be on or preview.')
     try:
         at = config['at']
         if not isinstance(at, str) or time.fromisoformat(at).strftime('%H:%M') != at:
@@ -132,19 +136,20 @@ def command_step(step, root):
         return 'failed', 'Command could not run: ' + str(error)[-500:]
 
 
-def run_daily(root, now, fetch=None, force=False, trigger='scheduled'):
+def run_daily(root, now, fetch=None, force=False, trigger='scheduled', link_check=None):
     root = Path(root)
     config = configuration(root)  # Validate every command before any writable work.
     slot = slot_date(now, config['at'])
     empty = dict(run_id=None, status='already_running', slot=slot.isoformat(), phases={}, missed_since=None)
     try:
         with run_lock(root):
-            return run_locked(root, now, fetch or daily_search.boards.fetch_json, force, trigger, config, slot)
+            return run_locked(root, now, fetch or daily_search.boards.fetch_json, force, trigger, config, slot,
+                              link_check or recheck.link_status)
     except RunBusy:
         return empty
 
 
-def run_locked(root, now, fetch, force, trigger, config, slot):
+def run_locked(root, now, fetch, force, trigger, config, slot, link_check):
     work = root / 'work'
     with closing(sqlite3.connect(work / 'daily-runs.sqlite3')) as db:
         db.executescript('''
@@ -191,8 +196,9 @@ def run_locked(root, now, fetch, force, trigger, config, slot):
 
         def phase(name, action):
             old = phases.get(name, {})
-            if old.get('status') in ('done', 'partial') or (
-                    old.get('status') == 'skipped' and old.get('detail', '').startswith('not built yet')):
+            if (old.get('status') == 'done' or old.get('status') == 'partial' and name != 'recheck') or (
+                    name != 'recheck' and old.get('status') == 'skipped'
+                    and old.get('detail', '').startswith('not built yet')):
                 return old['status']
             with db:
                 db.execute('INSERT INTO phases VALUES (?,?,?,?,NULL,?) ON CONFLICT(run_id,name) '
@@ -240,6 +246,33 @@ def run_locked(root, now, fetch, force, trigger, config, slot):
                 return 'failed', 'The tracker could not take the search results. Please retry.'
             return 'done', jobs_text(report['added'])
 
+        def check_postings():
+            preview = config['recheck'] == 'preview'
+            tracker = work / 'applications-tracker.sqlite3'
+            with closing(land_search.store.Store(':memory:' if preview else tracker)) as storage:
+                if preview:
+                    with closing(sqlite3.connect(tracker.resolve().as_uri() + '?mode=ro', uri=True)) as source:
+                        source.backup(storage.db)
+                    with storage.db:
+                        for _, _, step in land_search.store.migrations.STEPS:
+                            step(storage.db)
+                report = recheck.recheck(storage, json.loads(snapshot.read_text(encoding='utf-8')),
+                                         slot, run_id, link_check, backlog=backlog, dry_run=preview)
+            if preview:
+                target = snapshot.with_name(run_id + '-recheck-preview.json')
+                temporary = target.with_suffix('.tmp')
+                temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+                temporary.replace(target)
+            detail = (f"{report['checked']} jobs checked; {len(report['closed'])} closed; "
+                      f"{len(report['not_checked'])} not checked.")
+            if preview:
+                detail = (f"Preview: {len(report['closed'])} would close now (links gone). "
+                          'Closes after two missed reads start once re-check is on.')
+            errors = len(report['errors'])
+            if errors:
+                detail += f' {errors} jobs could not be checked.'
+            return ('partial' if errors else 'done'), detail
+
         for step in config['before']:
             if phase('before:' + step['name'], lambda step=step: command_step(step, root)) == 'failed':
                 return finish('failed')
@@ -248,7 +281,8 @@ def run_locked(root, now, fetch, force, trigger, config, slot):
             return finish('failed')
         if phase('land', land) == 'failed':
             return finish('failed')
-        phase('recheck', lambda: ('skipped', 'not built yet (piece 3)'))
+        if phase('recheck', check_postings) == 'failed':
+            return finish('failed')
         phase('judge', lambda: ('skipped', 'not built yet (piece 4)'))
         for step in config['copies']:
             phase('copy:' + step['name'], lambda step=step: command_step(step, root))
@@ -284,7 +318,9 @@ def status(record_path, now, at='06:00'):
             elif latest['status'] == 'failed':
                 failed = next((name for name, p in phases.items() if p['status'] == 'failed'), '')
                 label = 'searching' if failed == 'search' else 'landing' if failed == 'land' else 'preparing the search'
-                if failed.startswith('before:'):
+                if failed == 'recheck':
+                    message = 'Daily search found jobs, but the re-check could not finish; it will retry.'
+                elif failed.startswith('before:'):
                     detail = last_output_line(phases[failed]['detail'])
                     message = f'Daily search stopped because the {failed[7:]} step failed: {detail}'
                     if not message.endswith('.'):
@@ -306,6 +342,8 @@ def status(record_path, now, at='06:00'):
                             if name.startswith('copy:') and p['status'] == 'failed']
                 if phases.get('search', {}).get('status') == 'partial':
                     warnings.append('some job boards could not be checked')
+                if phases.get('recheck', {}).get('status') == 'partial':
+                    warnings.append(last_output_line(phases['recheck']['detail']))
                 if warnings:
                     message = prefix + ' finished, but ' + '; '.join(warnings)
                     result.update(state='warning', tone='a', message=message if message.endswith('.') else message + '.')

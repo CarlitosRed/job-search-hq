@@ -1,12 +1,16 @@
 """Profile-driven public job discovery and a durable, deterministic landing queue."""
 import argparse
 from contextlib import closing
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import importlib.util
 import json
 from pathlib import Path
 import re
 import sqlite3
+import time
+from urllib.error import HTTPError
+
+# Card 03: closing and re-check.
 
 
 def load_component(name):
@@ -187,12 +191,23 @@ def mark_jobs(db, profile_id, jobs):
                    [(profile_id, identity(job)) for job in jobs])
 
 
-def run(profile, fetch, backlog, today, mark_landed=False):
+def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
     """Fetch and rank all candidates; return a landing set without importing it."""
     if isinstance(today, str):
         today = date.fromisoformat(today)
     counts = dict.fromkeys(('fetched', 'candidates', 'excluded', 'too_old', 'backlog_waiting', 'landing'), 0)
-    errors, fetched = [], []
+    errors, fetched, board_reads = [], [], []
+
+    def retry_fetch(method, url, body=None):
+        nonlocal retried
+        try:
+            return fetch(method, url, body)
+        except HTTPError as error:
+            if error.code != 429 or retried:
+                raise
+            retried = True
+            time.sleep(wait)
+            return fetch(method, url, body)
 
     def detail_match(title, text):
         return boards.profile_posting_matches(profile, title, text)
@@ -207,20 +222,39 @@ def run(profile, fetch, backlog, today, mark_landed=False):
     if not 1 <= len(companies) <= 300:
         raise ValueError('Choose between one and 300 job-board sources.')
     for company in companies:
+        retried = False
+        reading = dict(provider=company['provider'], board=company['label'], read='failed',
+                       reason='', rows=0, seen=[])
+        board_reads.append(reading)
         try:
-            rows = boards.board_rows(company, fetch, detail_match, today, home_first=home_first)
+            rows = boards.board_rows(company, retry_fetch, detail_match, today, home_first=home_first)
+            reading.update(read='complete', rows=len(rows))
+            if getattr(rows, 'reason', ''):
+                reading.update(read='partial', reason=rows.reason)
+            if company['provider'] == 'lever' and len(rows) >= 500:
+                reading.update(read='partial', reason='Lever returned 500 or more rows.')
             counts['fetched'] += len(rows)
             found = []
             for raw in rows:
                 result = boards.normalize(company, raw, today.isoformat())
                 if result:
+                    reading['seen'].append([result['posting_id'], result['link'], result['role'], result['location']])
                     found.append({'provider': result['provider'], 'company': result['company'],
                                   'posting_id': result['posting_id'], 'title': result['role'],
                                   'place_text': result['location'], 'remote': result['remote'],
                                   'posted_on': result['postedOn'], 'date_source': result['dateSource'],
                                   'link': result['link'], 'description': result['description']})
+                else:
+                    raw = raw if isinstance(raw, dict) else {}
+                    posting_id = raw.get('posting_id') or raw.get('id')
+                    link = boards.safe_link(raw.get('absolute_url') or raw.get('hostedUrl') or raw.get('jobUrl') or raw.get('_link'))
+                    if posting_id or link:
+                        reading['seen'].append([str(posting_id or ''), link, str(raw.get('title') or raw.get('text') or ''), ''])
+                    else:
+                        reading.update(read='partial', reason='A returned row has no posting id or link.')
             fetched.extend(found)
         except Exception:
+            reading.update(read='failed', reason='This job board could not be checked.')
             errors.append({'company': company['label'], 'message': 'This job board could not be checked. It may be unavailable or its format may have changed.'})
 
     with connect(backlog) as db, db:
@@ -235,7 +269,15 @@ def run(profile, fetch, backlog, today, mark_landed=False):
                 continue
             seen.add(key)
             old = previous.get(key)
+            if old:
+                job = {**old[1], **job}
             job['first_seen'] = old[0] if old else today.isoformat()
+            if old:
+                job['gone'] = False
+                job['missed_days'] = []
+                job.pop('missed_at', None)
+                if len(old[1].get('description', '')) > len(job['description']):
+                    job['description'] = old[1]['description']
             # A refreshed publication date must not make an old posting young again.
             if old and old[1]['posted_on'] and (not job['posted_on'] or old[1]['posted_on'] < job['posted_on']):
                 job['posted_on'] = old[1]['posted_on']
@@ -245,6 +287,8 @@ def run(profile, fetch, backlog, today, mark_landed=False):
                 # or no longer matches; its earlier snapshot must not land instead.
                 db.execute('UPDATE search_backlog SET body=? WHERE profile_id=? AND identity=?',
                            (json.dumps({**old[1], **job}, ensure_ascii=False), profile['id'], key))
+            if job.get('gone'):
+                continue
             if exclusion_reason(profile, job):
                 counts['excluded'] += 1
                 continue
@@ -260,7 +304,7 @@ def run(profile, fetch, backlog, today, mark_landed=False):
         waiting = []
         for (body,) in db.execute('SELECT body FROM search_backlog WHERE profile_id=? AND landed=0', (profile['id'],)).fetchall():
             job = json.loads(body)
-            if too_old(job, today) or exclusion_reason(profile, job):
+            if job.get('gone') or too_old(job, today) or exclusion_reason(profile, job):
                 continue
             ranked = rank(profile, job)
             if ranked:
@@ -272,9 +316,9 @@ def run(profile, fetch, backlog, today, mark_landed=False):
             mark_jobs(db, profile['id'], landing)
         counts['backlog_waiting'] = len(waiting) - (len(landing) if mark_landed else 0)
         counts['landing'] = len(landing)
-    return {'metadata': {'date': today.isoformat(), 'profile_id': profile['id'],
+    return {'metadata': {'date': today.isoformat(), 'read_at': datetime.now().isoformat(timespec='minutes'), 'profile_id': profile['id'],
                          'profile_revision': profile['revision'], 'counts': counts},
-            'landing': landing, 'source_errors': errors}
+            'landing': landing, 'source_errors': errors, 'boards': board_reads}
 
 
 def main():

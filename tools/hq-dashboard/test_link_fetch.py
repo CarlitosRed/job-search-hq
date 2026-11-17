@@ -157,5 +157,24 @@ class Parsing(unittest.TestCase):
             self.assertIsNone(lf.fetch_posting_text(bad))
 
 
+class DeadlineDns(unittest.TestCase):
+    """Piece 3 re-check (Astra round 3): a slow name lookup must not outlast the caller's time budget."""
+
+    def test_slow_lookup_returns_within_the_timeout_and_never_connects(self):
+        def slow(*args, **kwargs):
+            time.sleep(1.5)
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 0))]
+        connects = []
+        with mock.patch.object(lf.socket, 'getaddrinfo', side_effect=slow), \
+                mock.patch.object(lf.socket, 'create_connection', side_effect=lambda *a, **k: connects.append(a)):
+            started = time.monotonic()
+            result = lf.fetch_status_text('https://slow.example/jobs/1', timeout=0.3)
+            elapsed = time.monotonic() - started
+            time.sleep(1.6)
+        self.assertEqual(result, (None, ''))
+        self.assertLess(elapsed, 1.0)
+        self.assertEqual(connects, [])
+
+
 if __name__ == '__main__':
     unittest.main()

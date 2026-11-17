@@ -75,6 +75,7 @@ python -I tools/hq-dashboard/test_cv_fix.py
 python -I tools/hq-dashboard/test_state_path.py
 python -I tools/hq-dashboard/test_search_profile.py
 python -I tools/hq-dashboard/test_daily_search.py
+python -I tools/hq-dashboard/test_board_reads.py
 python -I tools/tracker/test_store.py
 python -I tools/tracker/test_stages.py
 python -I tools/tracker/test_rounds.py
@@ -84,6 +85,7 @@ python -I tools/tracker/test_age_rollover.py
 python -I tools/tracker/test_migrations.py
 python -I tools/tracker/test_land_search.py
 python -I tools/tracker/test_daily_run.py
+python -I tools/tracker/test_recheck.py
 ```
 
 The suites use fictional fixtures and never call a live model. First run `python tools/hq-dashboard/port_tracker.py --backend pc`. Node is needed for the JavaScript suite. The two browser cases need Playwright, WebKit, and Git for Windows OpenSSL at the fixed path described in [SETUP.md](SETUP.md#5-build-the-page-and-run-tests); CV fitting needs Windows Arial fonts. Runtime validation of this documentation change is Unverified.
