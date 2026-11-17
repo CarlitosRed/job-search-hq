@@ -940,7 +940,7 @@ try {
             self.assertEqual(wb.active.cell(2,6).value,'Phone queued note')
             wb.close()
             # Entire UI path uses a fake provider and fictional evidence, never a live call.
-            self.app.ai.bank_loader=lambda:{'rubric_version':'v3.2','rules':'Fictional only','entries':{'E-999':{'level':'stated','text':'Fictional skill'}}}
+            self.app.ai.bank_loader=lambda:{'rubric_version':'v3.2','rules':'Fictional only','entries':{'E-999':{'level':'stated','text':'Fictional skill.'}}}
             def fake_runner(prompt,kind,folder,images):
                 if kind=='analyze':return {'is_job_posting':True,'readable':True,'company':'Example Company','role':'Example Role','link':'','posting_text':'',
                                           'rubric_version':'v3.2','analysis':__import__('lead_policy_fixtures').fictional_analysis(),'summary':'Fictional result only','location_ok':'unclear','matches':[],'gaps':[],'flags':[]}

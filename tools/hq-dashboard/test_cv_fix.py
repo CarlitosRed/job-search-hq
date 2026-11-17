@@ -143,8 +143,12 @@ class SiteHead(unittest.TestCase):
                 return {'is_job_posting': True, 'readable': True, 'company': 'Example Company', 'role': 'Example Engineer', 'link': '',
                         'posting_text': '', 'rubric_version': 'v3.2', 'analysis': fictional_analysis(), 'summary': 'Fictional.',
                         'location_ok': 'unclear', 'matches': [], 'gaps': [], 'flags': []}
+            claims = [{'text': 'Ran the fictional process.', 'evidence': ['E-999']}]
+            for text in ('Fictional analyst.', 'Business analyst for fictional workflows'):
+                if text in self.cv:
+                    claims.append({'text': text, 'kind': 'summary', 'evidence': ['E-999']})
             return {'cv_markdown': self.cv, 'sources': ['E-999'], 'flags': [],
-                    'claims': [{'text': 'Ran the fictional process.', 'evidence': ['E-999']}]}
+                    'claims': claims}
         self.tasks = ai.Tasks(self.state, runner=runner, bank_loader=lambda: self.bank, link_reader=lambda link: None)
 
     def tearDown(self):

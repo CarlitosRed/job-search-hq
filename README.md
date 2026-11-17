@@ -72,6 +72,7 @@ python -I tools/hq-dashboard/test_rubric_versions.py
 python -I tools/hq-dashboard/test_data_root.py
 python -I tools/hq-dashboard/test_cv_quality.py
 python -I tools/hq-dashboard/test_cv_fix.py
+python -I tools/hq-dashboard/test_strong_cv.py
 python -I tools/hq-dashboard/test_state_path.py
 python -I tools/hq-dashboard/test_search_profile.py
 python -I tools/hq-dashboard/test_daily_search.py

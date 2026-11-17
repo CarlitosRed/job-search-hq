@@ -67,17 +67,27 @@ CONTACT = re.compile(r'@|linkedin|github\.com|\+?\d[\d ()-]{6,}\d|\[(?:email|pho
 
 # ---------------------------------------------------------------- Markdown to paragraphs
 
-def parse(md):
+def section_heading(line):
+    """Canonical level-two heading used by CV validation and transforms."""
+    match=re.match(r'^##\s+([^\r\n]*)',line)
+    return match[1].strip().rstrip(':').strip().casefold() if match else None
+
+
+def parse(md,keep_blank=False,with_spans=False):
     """Head lines (before the first section) and sections [{'name', 'items'}]. A '#'/'##' line after the name, or any
-    '##' line, opens a section; blank lines and --- rules are dropped (they hold no words)."""
+    '##' line, opens a section; blank lines and --- rules are dropped (they hold no words).
+    with_spans adds each section's source line index for lossless transforms using these same boundaries."""
     head, sections, seen_name = [], [], False
-    for raw in md.replace('\r\n', '\n').split('\n'):
+    for index,raw in enumerate(md.replace('\r\n', '\n').split('\n')):
         line = raw.rstrip()
         if not line.strip() or re.fullmatch(r'\s*[-*_]{3,}\s*', line):
+            if keep_blank and sections:
+                sections[-1]['items'].append('')
             continue
         m = re.match(r'^(#{1,2})\s+(.*)', line)
-        if m and (m.group(1) == '##' or seen_name or sections):
+        if m and (section_heading(line) is not None or seen_name or sections):
             sections.append({'name': m.group(2).strip(), 'items': []})
+            if with_spans:sections[-1]['start']=index
         elif sections:
             sections[-1]['items'].append(line)
         else:
