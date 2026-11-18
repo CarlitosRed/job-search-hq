@@ -68,6 +68,7 @@ class StrongTasks(unittest.TestCase):
         self.tasks = ai.Tasks(Path(self.temp.name), runner=runner, bank_loader=lambda: BANK,
                               link_reader=lambda link: None)
         self.settings = mock.patch.dict(ai.SETTINGS, {'owner_name': 'Alex Example', 'owner_contact': 'alex@example.com',
+            'cv_fixed_sections': [],
             'cv_skill_groups': {'Data': ['Python', 'SQL', 'Reporting'], 'Empty': ['Unused']},
             'cv_ai_role_words': ['AI', 'agent', 'agentic', 'LLM', 'automation', 'machine learning', 'prompt']})
         self.settings.start()
@@ -102,6 +103,123 @@ class StrongTasks(unittest.TestCase):
         self.assertEqual(cv.count('## Skills'), 1)
         self.assertLess(cv.index('## Skills'), cv.index('## Education'))
         self.assertLess(cv.index('**Data:**'), cv.index('**Other:**'))
+
+    def fixed_sections(self):
+        entries = {
+            'E-004': {'text': 'Diploma in fictional studies.', 'skills': ['Study planning']},
+            'E-005': {'text': 'Speaks fictional languages.', 'skills': ['English', 'Spanish']},
+        }
+        for patch in (mock.patch.dict(BANK['entries'], entries), mock.patch.dict(ai.SETTINGS, {
+                'cv_fixed_sections': [
+                    {'name': 'Education', 'entries': ['E-004'], 'from': 'text'},
+                    {'name': 'Languages', 'entries': ['E-005'], 'from': 'skills'}]})):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_fixed_sections_added_when_ai_omits_both_and_evidence_map_passes(self):
+        self.fixed_sections()
+        self.output['cv_markdown'] = CV.split('## Education')[0]
+        task, fit = self.draft()
+        self.assertEqual(task['status'], 'done', task['message'])
+        cv = fit['cv_markdown']
+        self.assertTrue(cv.endswith('## Education\nDiploma in fictional studies.\n'
+                                    '## Languages\nEnglish, Spanish\n'))
+        self.assertLess(cv.index('## Skills'), cv.index('## Education'))
+        self.assertEqual(fit['sources'][-2:], ['E-004', 'E-005'])
+        for text, evidence in [('Diploma in fictional studies.', ['E-004']),
+                               ('English, Spanish', ['E-005'])]:
+            self.assertTrue(any(c['text'] == text and c['evidence'] == evidence for c in fit['cv_claims']))
+        self.assertTrue(all(c['text'] in cv and all(s in fit['sources'] for s in c['evidence'])
+                            for c in fit['cv_claims']))
+
+    def test_fixed_sections_replace_ai_text_and_its_obsolete_claims(self):
+        self.fixed_sections()
+        for heading in ('## Education', '##\t eDuCaTiOn :  '):
+            with self.subTest(heading=heading):
+                self.output['cv_markdown'] = CV.split('## Education')[0] + heading + '\nChecked fictional records.\n'
+                # This exact claim appears only in the section being replaced.
+                self.output['cv_markdown'] = self.output['cv_markdown'].replace('- Checked fictional records.\n', '')
+                task, fit = self.draft()
+                self.assertEqual(task['status'], 'done', task['message'])
+                self.assertEqual(fit['cv_markdown'].count('## Education'), 1)
+                self.assertNotIn('Checked fictional records.', fit['cv_markdown'])
+                self.assertFalse(any(c['text'] == 'Checked fictional records.' for c in fit['cv_claims']))
+                self.assertIn('## Projects\n- Directed fictional agents.', fit['cv_markdown'])
+
+    def test_fixed_entry_skills_are_excluded_from_general_skills(self):
+        self.fixed_sections()
+        self.output['sources'] += ['E-004', 'E-005']
+        task, fit = self.draft()
+        self.assertEqual(task['status'], 'done', task['message'])
+        skills = next(s['items'] for s in ai.cv_layout.parse(fit['cv_markdown'])[1] if s['name'] == 'Skills')
+        self.assertNotIn('Study planning', '\n'.join(skills))
+        self.assertNotIn('English', '\n'.join(skills))
+        self.assertEqual(fit['cv_markdown'].count('English'), 1)
+
+    def test_fixed_sections_skip_unknown_entries_and_empty_sections(self):
+        self.fixed_sections()
+        with mock.patch.dict(ai.SETTINGS, {'cv_fixed_sections': [
+                {'name': 'Education', 'entries': ['E-999', 'E-004'], 'from': 'text'},
+                {'name': 'Languages', 'entries': ['E-999'], 'from': 'skills'},
+                {'name': 'Training', 'entries': [], 'from': 'text'}]}):
+            task, fit = self.draft()
+        self.assertEqual(task['status'], 'done', task['message'])
+        self.assertIn('Diploma in fictional studies.', fit['cv_markdown'])
+        self.assertNotIn('## Languages', fit['cv_markdown'])
+        self.assertNotIn('## Training', fit['cv_markdown'])
+        self.assertNotIn('E-999', fit['sources'])
+
+    def test_empty_fixed_setting_keeps_existing_education_and_claims(self):
+        task, fit = self.draft()
+        self.assertEqual(task['status'], 'done', task['message'])
+        self.assertIn('## Education\nFictional training.', fit['cv_markdown'])
+        self.assertEqual(fit['sources'], list(BANK['entries']))
+        expected_claims = CLAIMS + [
+            {**claim, 'kind': 'bullet'}
+            if claim['text'] == 'Built 3 reports with SQL.' and claim['evidence'] == ['E-001']
+            else claim for claim in SUMMARY_CLAIMS
+        ]
+        self.assertEqual(fit['cv_claims'], expected_claims)
+
+    def test_fixed_sections_follow_setting_order_and_listed_entry_order(self):
+        self.fixed_sections()
+        with mock.patch.dict(ai.SETTINGS, {'cv_fixed_sections': [
+                {'name': 'Languages', 'entries': ['E-005', 'E-004'], 'from': 'skills'},
+                {'name': 'Education', 'entries': ['E-005', 'E-004'], 'from': 'text'}]}):
+            task, fit = self.draft()
+        self.assertEqual(task['status'], 'done', task['message'])
+        self.assertTrue(fit['cv_markdown'].endswith(
+            '## Languages\nEnglish, Spanish, Study planning\n## Education\n'
+            'Speaks fictional languages.\nDiploma in fictional studies.\n'))
+
+    def test_fixed_sections_still_obey_hard_word_limit(self):
+        self.fixed_sections()
+        self.output.update(cv_markdown='## Experience\n- Built 3 reports with SQL.\n' + 'word ' * 580,
+                           sources=['E-001'], claims=CLAIMS[:1])
+        with mock.patch.dict(BANK['entries'], {'E-004': {'text': 'Fictional study ' * 20}}):
+            task, fit = self.draft()
+        self.assertEqual(task['status'], 'failed')
+        self.assertIn('too long', task['message'])
+        self.assertNotIn('cv_markdown', fit)
+
+    def test_fixed_skills_with_no_skills_removes_ai_section(self):
+        self.fixed_sections()
+        self.output['cv_markdown'] += '## Languages\nFictional AI languages.\n'
+        with mock.patch.dict(BANK['entries'], {'E-005': {'text': 'Fictional language record.'}}):
+            task, fit = self.draft()
+        self.assertEqual(task['status'], 'done', task['message'])
+        self.assertNotIn('## Languages', fit['cv_markdown'])
+        self.assertNotIn('Fictional AI languages.', fit['cv_markdown'])
+
+    def test_fixed_section_claims_are_checked_after_transform(self):
+        self.fixed_sections()
+        transform = ai.strong_cv
+        with mock.patch.object(ai, 'strong_cv', side_effect=lambda *args:
+                               transform(*args).replace('English, Spanish', 'English')):
+            task, fit = self.draft()
+        self.assertEqual(task['status'], 'failed')
+        self.assertIn('evidence map', task['message'])
+        self.assertNotIn('cv_markdown', fit)
 
     def test_no_skills_means_no_section_and_no_education_means_append(self):
         with mock.patch.dict(BANK['entries'], {'E-001': {'text': BANK['entries']['E-001']['text']}}):
@@ -571,6 +689,31 @@ class StrongTasks(unittest.TestCase):
 
 
 class PublicContract(unittest.TestCase):
+    def test_fixed_section_settings_shape(self):
+        valid = [{'name': 'Education', 'entries': ['E-004'], 'from': 'text'},
+                 {'name': 'Languages', 'entries': [], 'from': 'skills'}]
+        invalid = [None, {}, [None], [{}],
+                   [{'name': '', 'entries': [], 'from': 'text'}],
+                   [{'name': 'Education\n## Other', 'entries': [], 'from': 'text'}],
+                   [{'name': 'Education', 'entries': 'E-004', 'from': 'text'}],
+                   [{'name': 'Education', 'entries': [4], 'from': 'text'}],
+                   [{'name': 'Education', 'entries': ['unknown'], 'from': 'text'}],
+                   [{'name': 'Education', 'entries': [], 'from': 'roles'}],
+                   [dict(valid[0], extra=True)],
+                   [valid[0], dict(valid[0], name=' education: ')],
+                   [{'name': 'Skills', 'entries': [], 'from': 'text'}]]
+        with tempfile.TemporaryDirectory(prefix='hq-fixed-settings-') as temp:
+            root = Path(temp)
+            shutil.copyfile(APP / 'settings.example.json', root / 'settings.example.json')
+            for value in [[], valid] + invalid:
+                with self.subTest(value=value):
+                    (root / 'settings.json').write_text(json.dumps({'cv_fixed_sections': value}), encoding='utf-8')
+                    if value in ([], valid):
+                        self.assertEqual(ai.hq_settings.load(root)['cv_fixed_sections'], value)
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'cv_fixed_sections'):
+                            ai.hq_settings.load(root)
+
     def test_canonical_heading_check_uses_rendered_sections_and_roles(self):
         for newline in ('\n', '\r\n'):
             for heading in ('**Support | Sample Air | Jan 2021 to Dec 2022**',

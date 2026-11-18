@@ -279,8 +279,9 @@ def cv_skill_lines(record,bank,sources):
     """The exact Skills lines built by the site, also used by the final guard."""
     skills=[]
     seen=set()
+    fixed_entries={key for section in SETTINGS['cv_fixed_sections'] for key in section['entries']}
     for key,entry in bank['entries'].items():
-        if key not in sources:continue
+        if key not in sources or key in fixed_entries:continue
         for skill in entry.get('skills',[]):
             if skill.casefold() not in seen:
                 skills.append(skill)
@@ -314,12 +315,36 @@ def strong_cv(content,record,bank,sources,claims):
     for claim in claims:
         if claim.get('kind','bullet')=='bullet':
             scores[claim['text']]=max(scores.get(claim['text'],0),max((ranked[key]['score'] for key in claim['evidence']),default=0))
-    sections=[(name,cv_sort_role_bullets(text,scores)) for name,text in cv_source_sections(content)
-              if name!='skills']
+    fixed_names={cv_layout.section_heading('## '+section['name']) for section in SETTINGS['cv_fixed_sections']}
+    original=cv_source_sections(content)
+    sections=[(name,cv_sort_role_bullets(text,scores)) for name,text in original
+              if name!='skills' and name not in fixed_names]
+    # Claims belonging only to replaced fixed sections no longer describe the CV.
+    removed=''.join(text for name,text in original if name in fixed_names)
+    kept=''.join(text for name,text in original if name not in fixed_names)
+    claims[:]=[claim for claim in claims if claim['text'] not in removed or claim['text'] in kept]
+    fixed=[]
+    for section in SETTINGS['cv_fixed_sections']:
+        entries=[(key,bank['entries'][key]) for key in section['entries'] if key in bank['entries']]
+        lines=[]
+        if section['from']=='text':
+            lines=[(entry['text'],[key]) for key,entry in entries if entry['text']]
+        else:
+            skills=[skill for _,entry in entries for skill in entry.get('skills',[])]
+            evidence=list(dict.fromkeys(key for key,entry in entries if entry.get('skills')))
+            if skills:lines=[(', '.join(skills),evidence)]
+        if not lines:continue
+        name=section['name'].strip().rstrip(':').strip()
+        fixed.append((cv_layout.section_heading('## '+name),'## '+name+'\n'+'\n'.join(text for text,_ in lines)+'\n'))
+        for text,evidence in lines:
+            claims.append({'text':text,'kind':'bullet','evidence':evidence})
+            for key in evidence:
+                if key not in sources:sources.append(key)
     skill_lines=cv_skill_lines(record,bank,sources)
     if skill_lines:
         index=next((i for i,(name,_) in enumerate(sections) if name=='education'),len(sections))
         sections.insert(index,('skills','## Skills\n'+'\n'.join(skill_lines)+'\n'))
+    sections.extend(fixed)
     role_text=[record.get('role','')]+[m.get('requirement','') for m in requirement_list(record) if m.get('importance')=='must']
     if any(mentions(text,word) for text in role_text for word in SETTINGS['cv_ai_role_words'] if word):
         project=next((s for s in sections if s[0]=='projects'),None)

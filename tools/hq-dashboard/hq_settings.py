@@ -1,6 +1,7 @@
 """Owner configuration."""
 import json
 import os
+import re
 from pathlib import Path
 
 
@@ -35,6 +36,23 @@ def load(root=None, defaults_root=None):
             if key not in values:
                 raise ValueError(f'Unknown setting: {key}')
             values[key] = value
+    sections = values['cv_fixed_sections']
+    if not isinstance(sections, list):
+        raise ValueError('cv_fixed_sections must be a list.')
+    names = {'skills'}  # Skills is already built by the site.
+    for section in sections:
+        if (not isinstance(section, dict) or set(section) != {'name', 'entries', 'from'}
+                or not isinstance(section['name'], str)
+                or not re.fullmatch(r'\w[\w ()/&+.\-]*:?', section['name'].strip())
+                or section['from'] not in ('text', 'skills')
+                or not isinstance(section['entries'], list)
+                or any(not isinstance(key, str) or not re.fullmatch(r'E-\d{3}', key)
+                       for key in section['entries'])):
+            raise ValueError('cv_fixed_sections items need a plain name, an entries list of E-### IDs, and from text or skills.')
+        name = section['name'].strip().rstrip(':').strip().casefold()
+        if name in names:
+            raise ValueError('cv_fixed_sections names must be unique and cannot replace Skills.')
+        names.add(name)
     return values
 
 

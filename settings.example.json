@@ -4,6 +4,7 @@
     "owner_contact":  "",
     "document_prefix":  "",
     "cv_blocked_terms":  ["BOM", "UTF-16", "UTF-8"],
+    "cv_fixed_sections": [],
     "cv_skill_groups": {
         "AI and automation": ["AI agents", "Automation", "Prompt design"],
         "Data": ["SQL", "Python", "Reporting", "Spreadsheets"],
