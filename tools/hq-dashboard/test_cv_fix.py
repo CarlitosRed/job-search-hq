@@ -165,7 +165,7 @@ class SiteHead(unittest.TestCase):
 
     def run_cv(self, text, name='Alex Example', contact=CONTACT):
         self.cv = text
-        with mock.patch.dict(ai.SETTINGS, {'owner_name': name, 'owner_contact': contact}):
+        with mock.patch.dict(ai.SETTINGS, {'owner_name': name, 'owner_contact': contact, 'owner_links': []}):
             posting = self.tasks.submit({'kind': 'analyze', 'requestId': str(uuid.uuid4()), 'images': [],
                                          'posting': {'company': 'Example Company', 'role': 'Example Engineer', 'link': '',
                                                      'text': 'Fictional posting. ' * 20}})
