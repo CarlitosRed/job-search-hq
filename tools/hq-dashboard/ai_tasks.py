@@ -14,6 +14,7 @@ SETTINGS = hq_settings.load()
 import base64
 from contextlib import closing
 from datetime import datetime, timezone
+from functools import cache
 import hashlib
 import importlib.util
 import io
@@ -507,7 +508,28 @@ def read_link(link):
     spec=importlib.util.spec_from_file_location('hq_link_fetch',HERE/'link_fetch.py')
     module=importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.fetch_posting_text(link)
+    return module.fetch_posting_text(link, with_status=True)
+
+
+@cache
+def posting_classifier():
+    spec = importlib.util.spec_from_file_location('hq_recheck', HERE.parent / 'tracker' / 'recheck.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.classify
+
+
+def closed_posting_reason(posting):
+    if posting.get('closureReason'):
+        return posting['closureReason']
+    observation, reason = posting_classifier()(200, posting.get('text'))
+    if observation == 'closed_text':
+        return reason
+    analysis = (posting.get('fit') or {}).get('analysis') or {}
+    for blocker in analysis.get('hard_blockers') or []:
+        if blocker.get('kind') == 'closed' and blocker.get('confirmed') is True:
+            return str(blocker.get('clause') or blocker.get('conflict') or 'The posting is closed.')[:200]
+    return ''
 
 
 def run_codex(prompt, kind, folder, images):
@@ -635,22 +657,33 @@ class Tasks:
                 p=json.loads(body)['task']
                 db.execute("UPDATE tasks SET status='running',message='Codex is working.' WHERE id=?",(key,))
             try:
+                posting=p['posting'] if kind=='analyze' else self.posting(p['postingId'])
+                if kind=='cv':
+                    reason=closed_posting_reason(posting)
+                    if reason:
+                        raise ValueError(f'This posting looks closed or expired (it says: "{reason}"). No CV was made.')
                 bank=self.bank_loader()
                 if bank.get('rubric_version') != RUBRIC_VERSION:
                     raise ValueError('Rubric version mismatch: evidence bank; nothing analyzed')
                 if not bank['entries']:
                     raise ValueError('No eligible evidence is available.')
-                posting=p['posting'] if kind=='analyze' else self.posting(p['postingId'])
                 link_note=''
+                closure_reason=''
                 if kind=='analyze' and posting.get('link') and len(posting.get('text',''))<2000:
                     try:fetched=self.link_reader(posting['link'])
                     except Exception:fetched=None
+                    code,fetched=fetched if isinstance(fetched,tuple) else (None,fetched)
                     if fetched:
                         pasted=posting.get('text','')
                         posting=dict(posting,text=((pasted+chr(10)*2) if pasted else '')+fetched[:40000-len(pasted)-2])
+                        observation,reason=posting_classifier()(200 if code is None else code,fetched)
+                        if observation=='closed_text':
+                            closure_reason=reason
                         link_note='link'
                     elif len(posting.get('text',''))<200 and not p.get('images'):
-                        raise ValueError('HQ could not read that link (many sites block automatic readers). Paste the posting text or add a photo.')
+                        if code in (403,429):
+                            raise ValueError('This site blocks automatic readers. Paste the posting text or add a photo.')
+                        raise ValueError('HQ could not read that link. Paste the posting text or add a photo.')
                     elif len(posting.get('text',''))<200:
                         link_note='failed'
                 folder=self.folder/key
@@ -686,6 +719,8 @@ class Tasks:
                     fit.update(policy.rank_result(out,identity,record['company'] or 'Unknown employer',context=context,want=wants.get(identity)))
                     if link_note=='failed':fit['flags']=list(fit.get('flags') or [])+['HQ could not read the posting link, so this review used only the text or photos you gave.']
                     record.update(text=text[:40000],jobId=posting.get('jobId',''),source='photo' if p.get('images') else 'link' if link_note=='link' else 'text',fit=fit,reviewed=False,review=None,status='draft',createdAt=now())
+                    if closure_reason:
+                        record['closureReason']=closure_reason
                     posting_id=key
                 else:
                     record=posting

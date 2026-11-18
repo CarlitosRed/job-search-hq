@@ -55,6 +55,8 @@ page fit uses font metrics and needs visual review in Word or Pages.
 
 Follow [SETUP.md](SETUP.md) for Python 3.12 installation, a fictional workbook, the PC page build, password setup, and the Windows server on `127.0.0.1:8770`. It also covers HTTPS phone access, backups, startup tasks, and known gaps. Tracker writes keep up to seven daily pre-write backups of the active database or workbook; these do not cover evidence or state. The bundled `examples/applications-tracker.xlsx` contains three fictional jobs and one fictional contact; the setup guide also provides a fixture snippet.
 
+For optional posting-link rendering on the PC, run `pip install playwright` in the Python environment used by HQ. The reader tries installed Google Chrome first, then installed Microsoft Edge, then Playwright's bundled Chromium. Run `python -m playwright install chromium` in the same environment if you want the bundled fallback. Sites that show a bot check need pasted posting text or a photo.
+
 For UI work, use [the contributor quickstart](docs/CONTRIBUTOR-QUICKSTART.md). macOS/Linux can build the HTML and preview the original tracker without writes; full server operation and complete validation require Windows. Read [the architecture overview](docs/ARCHITECTURE.md) for component and data boundaries.
 
 ## Repository map

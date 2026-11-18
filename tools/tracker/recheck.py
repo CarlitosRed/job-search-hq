@@ -13,6 +13,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
 HERE = Path(__file__).resolve().parent
+EXPIRED_NOTICE = 'This job has expired.'
 
 
 def component(name, folder=HERE):
@@ -32,12 +33,17 @@ def classify(code, text):
         return 'gone', f'The posting link returned {code}.'
     if code != 200:
         return 'unclear', f'The posting link returned {code}.' if code else 'The posting page could not be read.'
+    # The reader puts a confirmed board expiry in its own leading paragraph before the ad.
+    if text and text.startswith(EXPIRED_NOTICE + '\n\n'):
+        return 'closed_text', EXPIRED_NOTICE
     if re.search(r'\b(sign in|log in|access denied|verify you are human|captcha)\b', text or '', re.I):
         return 'unclear', 'The page requires sign in or blocks access.'
     phrases = (r'no longer accepting (?:new )?applications',
                r'(?:this|the) (?:position|job|role) (?:has been|is|was) filled',
                r'(?:this|the) (?:job|position|posting|role) (?:is |was )?no longer available',
-               r'(?:this|the) (?:posting|job|position|role) (?:has been |has |is |was )closed')
+               r'(?:this|the) (?:posting|job|position|role) (?:has been |has |is |was )closed',
+               r'(?:this|the) (?:posting|job|requisition) (?:has|is) expired',
+               r'job expired')
     for sentence in re.split(r'(?<=[.!?])\s+|\n+', text or ''):
         match = re.search(r'\b(?:' + '|'.join(phrases) + r')\b', sentence, re.I)
         qualified = re.search(

@@ -228,7 +228,8 @@ class LinkChecks(Base):
         self.assertEqual(self.state('Pasted Co'), 'closed')
 
     def test_closing_text_needs_two_days(self):
-        text = ('closed_text', 'This position is no longer accepting applications.')
+        text = recheck.classify(200, 'This job has expired.')
+        self.assertEqual(text, ('closed_text', 'This job has expired.'))
         links = Links({'https://careers.pasted.example/jobs/77': text})
         self.run_check(DAY1, [self.full('101', '102')], links=links)
         self.assertEqual(self.state('Pasted Co'), 'suspected')
@@ -581,6 +582,16 @@ class LinkStatus(unittest.TestCase):
                  ((403, ''), 'unclear'), ((None, ''), 'unclear')]
         for (code, text), expected in cases:
             self.assertEqual(recheck.classify(code, text)[0], expected, (code, text))
+
+    def test_expired_notices_are_closed_and_qualified_deadlines_stay_open(self):
+        for notice in ('This job has expired.', 'This posting is expired.',
+                       'The requisition has expired.', 'Job expired.'):
+            with self.subTest(notice=notice):
+                self.assertEqual(recheck.classify(200, notice), ('closed_text', notice))
+        for notice in ('This job expires on 5 Dec.', 'Apply now before this job expires on 5 Dec.',
+                       'If this job has expired, check other openings.'):
+            with self.subTest(notice=notice):
+                self.assertEqual(recheck.classify(200, notice), ('open', ''))
 
     def test_429_is_retried_once(self):
         calls = []

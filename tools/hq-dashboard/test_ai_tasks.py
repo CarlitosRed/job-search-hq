@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 import uuid
 
 HERE=Path(__file__).resolve().parent
@@ -87,8 +88,8 @@ class CareerTasks(unittest.TestCase):
                                   'fit':{'want':'Dream','actor':'PRIVATE_WANT_CANARY'}},self.bank)
         self.assertNotIn('PRIVATE_WANT_CANARY',prompt)
 
-    def link_only(self,text=''):
-        p={'kind':'analyze','requestId':str(uuid.uuid4()),'posting':{'company':'Example Company','role':'Example Role','link':'https://jobs.example.com/1','text':text},'images':[]}
+    def link_only(self,text='',link='https://jobs.example.com/1'):
+        p={'kind':'analyze','requestId':str(uuid.uuid4()),'posting':{'company':'Example Company','role':'Example Role','link':link,'text':text},'images':[]}
         key=self.tasks.submit(p)
         self.tasks.process_one()
         return key
@@ -109,6 +110,70 @@ class CareerTasks(unittest.TestCase):
         self.assertEqual(task['status'],'failed')
         self.assertIn('could not read that link',task['message'])
         self.assertEqual(self.calls,[])
+
+    def test_blocked_link_alone_asks_for_text_or_a_photo(self):
+        self.link_text=(403,None)
+        self.link_only()
+        task=self.tasks.list_tasks()[0]
+        self.assertEqual(task['status'],'failed')
+        self.assertEqual(task['message'],'This site blocks automatic readers. Paste the posting text or add a photo.')
+        self.assertEqual(self.calls,[])
+
+    def assert_cv_refused(self, posting_id, reason):
+        before=self.tasks.posting(posting_id)
+        call_count=len(self.calls)
+        key=self.tasks.submit({'kind':'cv','requestId':str(uuid.uuid4()),'postingId':posting_id})
+        self.tasks.process_one()
+        task=next(task for task in self.tasks.list_tasks() if task['id']==key)
+        self.assertEqual(task['status'],'failed')
+        self.assertEqual(task['message'],f'This posting looks closed or expired (it says: "{reason}"). No CV was made.')
+        self.assertIsNone(task['result'])
+        self.assertEqual(len(self.calls),call_count)
+        self.assertEqual(self.tasks.posting(posting_id),before)
+        self.assertEqual(list((self.tasks.folder/key).iterdir()),[])
+
+    def test_cv_refuses_an_expired_notice_in_fetched_or_pasted_text(self):
+        reason='This job has expired.'
+        body=reason+'\n'+'Fictional responsibilities and requirements. '*20
+        self.link_text=body
+        self.assert_cv_refused(self.link_only(),reason)
+        self.link_text=None
+        self.assert_cv_refused(self.link_only(body),reason)
+
+    def test_cv_refuses_short_expiry_and_inactive_board_ad_from_the_real_reader(self):
+        spec = importlib.util.spec_from_file_location('hq_cv_reader_fixture', HERE / 'link_fetch.py')
+        reader = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(reader)
+        self.tasks.link_reader = lambda link: reader.fetch_posting_text(link, with_status=True)
+        inactive = {'active': False, 'name': 'Example Role', 'jobAd': {'sections': {
+            'jobDescription': {'text': '<p>Sign in to view fictional application instructions.</p>'}}}}
+        cases = (
+            ('https://jobs.example.com/1', 'text/html', '<p>This posting is expired.</p>',
+             'This posting is expired.'),
+            ('https://jobs.smartrecruiters.com/ExampleCorp/456-example-role', 'application/json',
+             json.dumps(inactive), 'This job has expired.'),
+        )
+        for link, kind, body, reason in cases:
+            with self.subTest(link=link), mock.patch.object(reader, '_get', return_value=(200, kind, body)), \
+                    mock.patch.object(reader, 'browser_reader') as browser:
+                # Pasted text precedes the fetched notice in the saved record.
+                posting_id = self.link_only('Sign in to the fictional portal.', link)
+                self.assertEqual(self.tasks.posting(posting_id)['closureReason'], reason)
+                self.assert_cv_refused(posting_id, reason)
+                browser.assert_not_called()
+
+    def test_cv_qualifier_guard_does_not_report_a_closure(self):
+        text = ('If this posting is expired, check other fictional openings.\n'
+                + 'Fictional responsibilities and requirements. ' * 10)
+        key = self.link_only(text)
+        self.assertEqual(self.tasks.list_tasks()[0]['status'], 'done')
+        self.assertEqual(ai.closed_posting_reason(self.tasks.posting(key)), '')
+
+    def test_cv_refuses_a_confirmed_closed_analysis_blocker(self):
+        reason='Recruiting for this role has ended.'
+        self.result['analysis']['hard_blockers']=[dict(kind='closed',confirmed=True,clause=reason,
+                                                       conflict='Example Corp has stopped recruiting for this role.')]
+        self.assert_cv_refused(self.analyze(),reason)
 
     def test_pasted_text_stays_and_link_text_is_added(self):
         self.link_text='Fictional link body. '*30

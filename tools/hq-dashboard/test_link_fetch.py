@@ -1,10 +1,12 @@
 # Fictional fixtures and settings-aware expectations.
-"""Offline tests for link_fetch (no network: DNS and fetching are replaced)."""
+"""Offline link reader tests with fictional responses and a loopback proxy."""
+import asyncio
 import importlib.util
 import json
 from pathlib import Path
 import socket
 import time
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -12,6 +14,12 @@ HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('hq_link_fetch_test', HERE / 'link_fetch.py')
 lf = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(lf)
+spec = importlib.util.spec_from_file_location('hq_browser_read_test', HERE / 'browser_read.py')
+browser = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(browser)
+spec = importlib.util.spec_from_file_location('hq_recheck_test', HERE.parent / 'tracker' / 'recheck.py')
+recheck = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(recheck)
 
 
 def dns(*addresses):
@@ -106,12 +114,16 @@ class Addresses(unittest.TestCase):
             opened.assert_not_called()
 
     def test_private_target_is_never_opened(self):
-        with mock.patch('socket.getaddrinfo', dns('127.0.0.1')), mock.patch('socket.create_connection') as opened:
+        with mock.patch('socket.getaddrinfo', dns('127.0.0.1')), mock.patch('socket.create_connection') as opened, \
+                mock.patch.object(lf, 'browser_reader', return_value=None):
             self.assertIsNone(lf.fetch_posting_text('https://localhost/job'))
             opened.assert_not_called()
 
 
 class Parsing(unittest.TestCase):
+    def setUp(self):
+        self.browser = self.enterContext(mock.patch.object(lf, 'browser_reader', return_value=None))
+
     def test_workday_page_maps_to_its_json_twin(self):
         url = 'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Example-Country/Analyst_R123'
         self.assertEqual(lf.workday_api(url), 'https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/External/job/Example-Country/Analyst_R123')
@@ -127,7 +139,7 @@ class Parsing(unittest.TestCase):
         body = 'Responsibilities and requirements. ' * 20
         page = '<html><script type="application/ld+json">%s</script><body>menu</body></html>' % json.dumps(
             {'@context': 'https://schema.org', '@type': 'JobPosting', 'title': 'Analyst', 'description': '<p>%s</p>' % body})
-        with mock.patch.object(lf, '_get', return_value=('https://x.example/j', 'text/html', page)):
+        with mock.patch.object(lf, '_get', return_value=(200, 'text/html', page)):
             text = lf.fetch_posting_text('https://x.example/j')
         self.assertTrue(text.startswith('Analyst'))
         self.assertIn('Responsibilities and requirements.', text)
@@ -137,9 +149,9 @@ class Parsing(unittest.TestCase):
         info = {'jobPostingInfo': {'title': 'Analyst', 'location': 'Example City', 'jobDescription': '<p>%s</p>' % ('Duties and skills. ' * 30)}}
         calls = []
 
-        def fake(url, accept, deadline=None):
+        def fake(url, accept, deadline=None, with_status=False):
             calls.append(url)
-            return url, 'application/json', json.dumps(info)
+            return 200, 'application/json', json.dumps(info)
         with mock.patch.object(lf, '_get', fake):
             text = lf.fetch_posting_text('https://acme.wd5.myworkdayjobs.com/en-US/External/job/EX/Analyst_R1')
         self.assertEqual(len(calls), 1)
@@ -149,12 +161,423 @@ class Parsing(unittest.TestCase):
 
     def test_empty_javascript_shell_gives_nothing(self):
         page = '<html><body><div id="root"></div><script>app()</script></body></html>'
-        with mock.patch.object(lf, '_get', return_value=('https://x.example/j', 'text/html', page)):
+        with mock.patch.object(lf, '_get', return_value=(200, 'text/html', page)):
             self.assertIsNone(lf.fetch_posting_text('https://x.example/j'))
 
     def test_non_links_are_ignored(self):
         for bad in (None, '', 'javascript:alert(1)', 'ftp://x.example/a', 'x' * 3000):
             self.assertIsNone(lf.fetch_posting_text(bad))
+
+    def test_public_board_json_is_read_by_both_entry_points(self):
+        description = 'Review fictional reports. ' * 20
+        cases = [
+            ('https://job-boards.greenhouse.io/example/jobs/123?source=example',
+             'https://boards-api.greenhouse.io/v1/boards/example/jobs/123',
+             {'title': 'Example Analyst', 'content': '&lt;p&gt;' + description + '&lt;/p&gt;'}, 'Review fictional reports.'),
+            ('https://jobs.smartrecruiters.com/ExampleCorp/456-example-analyst',
+             'https://api.smartrecruiters.com/v1/companies/ExampleCorp/postings/456',
+             {'name': 'Example Analyst', 'jobAd': {'sections': {
+                 'jobDescription': {'title': 'Duties', 'text': '<p>' + description + '</p>'},
+                 'qualifications': {'title': 'Qualifications', 'text': '<p>Spreadsheet skills</p>'}}}}, 'Spreadsheet skills'),
+            ('https://jobs.lever.co/example/fictional-id/apply',
+             'https://api.lever.co/v0/postings/example/fictional-id',
+             {'text': 'Example Analyst', 'descriptionPlain': description,
+              'lists': [{'text': 'Qualifications', 'content': '<li>Fictional skills</li>'}]}, 'Fictional skills'),
+        ]
+        for link, api, body, expected in cases:
+            with self.subTest(link=link), mock.patch.object(lf, '_get', return_value=(200, 'application/json', json.dumps(body))) as get:
+                text = lf.fetch_posting_text(link)
+                self.assertEqual(lf.fetch_status_text(link), (200, text))
+                self.assertTrue(text.startswith('Example Analyst'))
+                self.assertIn(expected, text)
+                self.assertNotIn('<p>', text)
+                self.assertEqual([call.args[0] for call in get.call_args_list], [api, api])
+        self.browser.assert_not_called()
+
+    def test_icims_uses_the_iframe_page(self):
+        link = 'https://example.icims.com/jobs/123/example-analyst/job?mode=job&iFrame=0&in_iframe=0#top'
+        body = '<main><p>' + 'Review fictional reports. ' * 20 + '</p></main>'
+        with mock.patch.object(lf, '_get', return_value=(200, 'text/html', body)) as get:
+            code, text = lf.fetch_status_text(link)
+        self.assertEqual(code, 200)
+        self.assertIn('Review fictional reports.', text)
+        self.assertEqual(get.call_args.args[0],
+                         'https://example.icims.com/jobs/123/example-analyst/job?mode=job&iFrame=0&in_iframe=1')
+        self.assertIsNone(lf.icims_page('https://example.icims.com.example.org/jobs/123/example-analyst/job'))
+        self.browser.assert_not_called()
+
+    def test_inactive_smartrecruiters_posting_keeps_the_expiry_notice_and_ad(self):
+        link = 'https://jobs.smartrecruiters.com/ExampleCorp/456-example-analyst'
+        ad = 'Review fictional reports. Please sign in to the example portal.'
+        posting = {'active': False, 'name': 'Example Analyst', 'jobAd': {'sections': {
+            'jobDescription': {'text': '<p>' + ad + '</p>'}}}}
+        with mock.patch.object(lf, '_get', return_value=(200, 'application/json', json.dumps(posting))) as get:
+            status, text = lf.fetch_status_text(link)
+            self.assertEqual(lf.fetch_posting_text(link, with_status=True), (status, text))
+            self.assertEqual(recheck.link_status(link, fetch=lf.fetch_status_text),
+                             ('closed_text', 'This job has expired.'))
+        self.assertEqual(status, 200)
+        self.assertEqual(text.splitlines()[0], 'This job has expired.')
+        self.assertEqual(recheck.classify(status, text), ('closed_text', 'This job has expired.'))
+        self.assertIn(ad.strip(), text)
+        self.assertEqual([call.args[0] for call in get.call_args_list], [lf.smartrecruiters_api(link)] * 3)
+        self.browser.assert_not_called()
+
+    def test_active_smartrecruiters_ad_with_qualified_expiry_is_open(self):
+        link = 'https://jobs.smartrecruiters.com/ExampleCorp/456-example-analyst'
+        ad = 'If this job has expired, check other openings. ' + 'Review fictional reports. ' * 20
+        posting = {'active': True, 'jobAd': {'sections': {'jobDescription': {'text': ad}}}}
+        with mock.patch.object(lf, '_get', return_value=(200, 'application/json', json.dumps(posting))):
+            self.assertEqual(recheck.link_status(link, fetch=lf.fetch_status_text), ('open', ''))
+            self.assertEqual(lf.fetch_posting_text(link), ad.strip())
+        self.browser.assert_not_called()
+
+    def test_inactive_smartrecruiters_posting_without_an_ad_still_reports_expired(self):
+        link = 'https://jobs.smartrecruiters.com/ExampleCorp/456-example-analyst'
+        with mock.patch.object(lf, '_get', return_value=(200, 'application/json', '{"active": false}')) as get:
+            self.assertEqual(lf.fetch_status_text(link), (200, 'This job has expired.'))
+        get.assert_called_once()
+        self.browser.assert_not_called()
+
+    def test_missing_board_json_can_fall_back_to_the_original_page(self):
+        link = 'https://jobs.lever.co/example/fictional-id'
+        text = ('Fictional reports. ' * 30).strip()
+        with mock.patch.object(lf, '_get', side_effect=[(404, '', ''), (200, 'text/plain', text)]) as get:
+            self.assertEqual(lf.fetch_status_text(link), (200, text))
+        self.assertEqual([call.args[0] for call in get.call_args_list],
+                         ['https://api.lever.co/v0/postings/example/fictional-id', link])
+        self.browser.assert_not_called()
+
+    def test_browser_runs_for_a_shell_and_blocked_direct_reads(self):
+        link = 'https://example.org/jobs/123'
+        browser_text = ('Review fictional reports. ' * 20).strip()
+        self.browser.return_value = (200, browser_text)
+        cases = [(200, 'text/html', '<div id="app"></div>'), (403, '', ''), (429, '', ''),
+                 (200, 'text/html', '<title>Access Denied</title><p>' + 'Blocked. ' * 50 + '</p>')]
+        for result in cases:
+            with self.subTest(result=result), mock.patch.object(lf, '_get', return_value=result):
+                self.browser.reset_mock()
+                self.assertEqual(lf.fetch_posting_text(link), browser_text)
+                self.assertEqual(lf.fetch_status_text(link), (200, browser_text))
+                self.assertEqual(self.browser.call_args_list, [mock.call(link, 30), mock.call(link, 30)])
+
+    def test_unavailable_or_challenged_browser_preserves_the_blocked_status(self):
+        link = 'https://example.org/jobs/123'
+        for result in (None, (200, 'Verify you are human. ' * 30)):
+            with self.subTest(result=result), mock.patch.object(lf, '_get', return_value=(403, '', '')):
+                self.browser.return_value = result
+                self.assertEqual(lf.fetch_posting_text(link, with_status=True), (403, None))
+                self.assertEqual(lf.fetch_status_text(link), (403, ''))
+
+    def test_detected_direct_bot_check_is_blocked_without_opening_browser(self):
+        link = 'https://jobs.lever.co/example/fictional-id'
+        challenges = ('<title>Just a moment...</title>', '<h1>Verify you are human</h1>',
+                      '<p>Checking your browser</p>',
+                      '<h1>Performing security verification</h1><p>This page verifies you are not a bot.</p>')
+        for status in (200, 403, 404, 410, 429, 503):
+            for body in challenges:
+                with self.subTest(status=status, body=body), mock.patch.object(
+                    lf, '_get', return_value=(status, 'text/html', body)
+                ) as get:
+                    self.assertEqual(lf.fetch_posting_text(link, with_status=True), (403, None))
+                    get.assert_called_once()
+        self.browser.assert_not_called()
+
+    def test_challenge_header_on_503_or_redirect_ends_the_read_before_body_or_browser(self):
+        link = 'http://jobs.example/jobs/123'
+        for status in (503, 302):
+            with self.subTest(status=status), mock.patch.object(lf, 'public_address', return_value='93.184.216.34'), \
+                    mock.patch.object(lf.socket, 'create_connection'), \
+                    mock.patch.object(lf.http.client, 'HTTPConnection') as http:
+                response = http.return_value.getresponse.return_value
+                response.status = status
+                response.getheader.side_effect = {'cf-mitigated': 'challenge', 'Location': '/other'}.get
+                self.assertEqual(lf.fetch_status_text(link), (403, ''))
+                http.assert_called_once()
+                response.read.assert_not_called()
+                self.browser.assert_not_called()
+
+    def test_challenge_body_on_503_ends_the_read_before_browser(self):
+        link = 'http://jobs.example/jobs/123'
+        with mock.patch.object(lf, 'public_address', return_value='93.184.216.34'), \
+                mock.patch.object(lf.socket, 'create_connection'), \
+                mock.patch.object(lf.http.client, 'HTTPConnection') as http:
+            response = http.return_value.getresponse.return_value
+            response.status = 503
+            response.getheader.side_effect = {'Content-Type': 'text/html'}.get
+            response.read.side_effect = [b'<title>Just a moment...</title>', b'']
+            self.assertEqual(lf.fetch_status_text(link), (403, ''))
+        self.browser.assert_not_called()
+
+    def test_browser_challenge_is_blocked_after_a_direct_shell(self):
+        link = 'https://example.org/jobs/123'
+        self.browser.return_value = (200, 'This page verifies you are not a bot. ' + 'Fictional filler. ' * 30)
+        with mock.patch.object(lf, '_get', return_value=(200, 'text/html', '<div id="app"></div>')):
+            self.assertEqual(lf.fetch_posting_text(link, with_status=True), (403, None))
+        self.browser.assert_called_once_with(link, 30)
+
+    def test_gone_direct_read_does_not_open_the_browser(self):
+        with mock.patch.object(lf, '_get', return_value=(410, '', '')):
+            self.assertEqual(lf.fetch_status_text('https://example.org/jobs/123'), (410, ''))
+        self.browser.assert_not_called()
+
+    def test_short_expiry_is_kept_in_both_readers_and_recheck_without_a_browser(self):
+        link = 'https://example.org/jobs/123'
+        notice = 'This posting is expired.'
+        self.browser.return_value = (200, 'Fictional open posting. ' * 20)
+        with mock.patch.object(lf, '_get', return_value=(200, 'text/html', '<p>' + notice + '</p>')):
+            self.assertEqual(lf.fetch_status_text(link), (200, notice))
+            self.assertEqual(lf.fetch_posting_text(link, with_status=True), (200, notice))
+            self.assertEqual(recheck.link_status(link, fetch=lf.fetch_status_text), ('closed_text', notice))
+        self.browser.assert_not_called()
+
+    def test_qualified_short_expiry_still_uses_the_browser(self):
+        link = 'https://example.org/jobs/123'
+        ad = ('Review fictional reports. ' * 20).strip()
+        self.browser.return_value = (200, ad)
+        notice = 'If this posting is expired, check other openings.'
+        with mock.patch.object(lf, '_get', return_value=(200, 'text/plain', notice)):
+            self.assertEqual(lf.fetch_status_text(link), (200, ad))
+        self.browser.assert_called_once_with(link, 30)
+
+    def test_browser_gone_status_after_direct_shell_reaches_recheck(self):
+        link = 'https://example.org/jobs/123'
+        for status in (404, 410):
+            with self.subTest(status=status), mock.patch.object(lf, '_get', return_value=(200, 'text/plain', 'Loading')):
+                self.browser.return_value = status, ''
+                self.assertEqual(recheck.classify(*lf.fetch_status_text(link)),
+                                 ('gone', f'The posting link returned {status}.'))
+                self.assertEqual(lf.fetch_posting_text(link, with_status=True), (status, None))
+
+    def test_browser_server_error_after_direct_shell_is_unclear(self):
+        link = 'https://example.org/jobs/123'
+        self.browser.return_value = (503, '')
+        with mock.patch.object(lf, '_get', return_value=(200, 'text/plain', 'Loading')):
+            self.assertEqual(lf.fetch_status_text(link), (503, ''))
+            self.assertEqual(recheck.link_status(link, fetch=lf.fetch_status_text),
+                             ('unclear', 'The posting link returned 503.'))
+
+    def test_recheck_prefers_the_rendered_notice_to_a_short_shell(self):
+        link = 'https://example.org/jobs/123'
+        notice = 'This job has expired.'
+        self.browser.return_value = (200, notice)
+        with mock.patch.object(lf, '_get', return_value=(200, 'text/plain', 'Loading the Example Corp job posting.')):
+            self.assertEqual(lf.fetch_status_text(link), (200, notice))
+            self.assertEqual(lf.fetch_posting_text(link), notice)
+
+
+class BrowserAddresses(unittest.TestCase):
+    def test_browser_proxy_checks_scheme_port_and_all_resolved_addresses(self):
+        def check(url):
+            return browser.request_target(url, lf.public_address, lf.public_url, None)
+
+        url = 'https://example.org/jobs/123'
+        with mock.patch('socket.getaddrinfo', dns('93.184.216.34', '10.0.0.1')):
+            self.assertIsNone(check(url))
+        with mock.patch('socket.getaddrinfo', side_effect=dns('93.184.216.34')) as resolver:
+            for blocked in ('ftp://example.org/job', 'wss://example.org/job', 'file:///private',
+                            'https://example.org:8080/jobs/123', 'https://user@example.org/jobs/123'):
+                self.assertIsNone(check(blocked))
+            resolver.assert_not_called()
+            self.assertEqual(check(url)[1:], (443, '93.184.216.34'))
+            resolver.assert_called_once_with('example.org', None, type=socket.SOCK_STREAM)
+
+    def test_missing_playwright_skips_browser_launch(self):
+        with mock.patch.dict('sys.modules', {'playwright.async_api': None}), mock.patch.object(browser, '_render') as render:
+            self.assertIsNone(browser.read('https://example.org/jobs/123', 1, lf.public_address,
+                                           lf.public_url, lf.MAX_BYTES, lf.MAX_TEXT, lf.MIN_USEFUL, lf._bot_check,
+                                           lf._closed))
+            render.assert_not_called()
+
+
+class BrowserProxy(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.connect_client = asyncio.open_connection
+        self.upstream = asyncio.StreamReader()
+        self.peer = SimpleNamespace(write=mock.Mock(), drain=mock.AsyncMock(), close=mock.Mock(),
+                                    transport=mock.Mock())
+        self.dial = self.enterContext(mock.patch.object(
+            browser.asyncio, 'open_connection', return_value=(self.upstream, self.peer)))
+        self.resolver = self.enterContext(mock.patch.object(
+            socket, 'getaddrinfo', side_effect=lambda host, port, **kwargs:
+            dns('93.184.216.34' if host == 'jobs.example' else '127.0.0.1')(host, port, **kwargs)))
+
+    def budget(self, seconds=5, max_bytes=4096):
+        def check(url):
+            return browser.request_target(url, lf.public_address, lf.public_url, deadline)
+
+        deadline = SimpleNamespace(end=time.monotonic() + seconds)
+        return browser._ProxyBudget(check, deadline.end, max_bytes)
+
+    async def client(self, port, request):
+        reader, writer = await self.connect_client('127.0.0.1', port)
+        self.addAsyncCleanup(self.close_client, writer)
+        writer.write(request)
+        await writer.drain()
+        return reader
+
+    async def close_client(self, writer):
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except ConnectionError:
+            pass
+
+    async def read_to_close(self, reader):
+        return await asyncio.wait_for(reader.read(), 2)
+
+    async def test_get_pins_the_address_and_denies_the_redirect_destination(self):
+        reply = b'HTTP/1.1 302 Found\r\nLocation: http://private.example/job\r\nContent-Length: 0\r\n\r\n'
+        self.upstream.feed_data(reply)
+        self.upstream.feed_eof()
+        async with self.budget().listen() as port:
+            first = await self.client(port, b'GET http://jobs.example/job?q=1 HTTP/1.1\r\nHost: ignored.example\r\n\r\n')
+            self.assertEqual(await self.read_to_close(first), reply)
+            second = await self.client(port, b'GET http://private.example/job HTTP/1.1\r\n\r\n')
+            self.assertEqual(await self.read_to_close(second), b'')
+        self.assertEqual([call.args[0] for call in self.resolver.call_args_list], ['jobs.example', 'private.example'])
+        self.dial.assert_awaited_once_with('93.184.216.34', 80)
+        self.peer.write.assert_called_once_with(b'GET /job?q=1 HTTP/1.1\r\nHost: jobs.example\r\nConnection: close\r\n\r\n')
+
+    async def test_connect_pins_the_address_and_relays_both_directions(self):
+        connect = b'CONNECT jobs.example:443 HTTP/1.1\r\n\r\n'
+        payload = b'fictional TLS client bytes'
+        reply = b'fictional TLS server bytes'
+
+        def respond():
+            self.upstream.feed_data(reply)
+            self.upstream.feed_eof()
+
+        self.peer.drain.side_effect = respond
+        budget = self.budget(max_bytes=len(connect) + len(payload) + len(reply))
+        async with budget.listen() as port:
+            client = await self.client(port, connect + payload)
+            self.assertEqual(await self.read_to_close(client), b'HTTP/1.1 200 Connection Established\r\n\r\n' + reply)
+        self.resolver.assert_called_once_with('jobs.example', None, type=socket.SOCK_STREAM)
+        self.dial.assert_awaited_once_with('93.184.216.34', 443)
+        self.peer.write.assert_called_once_with(payload)
+        self.assertEqual(budget.remaining_bytes, 0)
+
+    async def test_plain_http_websocket_upgrade_is_closed_by_the_proxy(self):
+        async with self.budget().listen() as port:
+            request = b'GET http://jobs.example/socket HTTP/1.1\r\nUpgrade: websocket\r\n\r\n'
+            client = await self.client(port, request)
+            self.assertEqual(await self.read_to_close(client), b'')
+        self.dial.assert_not_awaited()
+
+    async def test_stalled_peer_is_closed_at_deadline_and_extra_connections_are_refused(self):
+        request = b'GET http://jobs.example/job HTTP/1.1\r\n\r\n'
+        connected = asyncio.Event()
+        self.peer.drain.side_effect = connected.set
+        budget = self.budget(seconds=0.75)
+        with mock.patch.object(browser, 'MAX_CONNECTIONS', 1):
+            async with budget.listen() as port:
+                first = await self.client(port, request)
+                await asyncio.wait_for(connected.wait(), 2)
+                # Leave the refused socket idle so there is no unread request to reset it.
+                second = await self.client(port, b'')
+                self.assertEqual(await self.read_to_close(second), b'')
+                self.peer.transport.abort.assert_not_called()
+                self.assertEqual(await self.read_to_close(first), b'')
+        self.dial.assert_awaited_once()
+        self.peer.transport.abort.assert_called_once()
+        self.peer.close.assert_called_once()
+
+    async def test_get_connections_share_one_byte_budget(self):
+        request = b'GET http://jobs.example/job HTTP/1.1\r\n\r\n'
+        forwarded = b'GET /job HTTP/1.1\r\nHost: jobs.example\r\nConnection: close\r\n\r\n'
+        reply = b'HTTP/1.1 200 OK\r\n\r\nfictional'
+        self.upstream.feed_data(reply)
+        self.upstream.feed_eof()
+        second_upstream = asyncio.StreamReader()
+        second_upstream.feed_data(reply)
+        second_upstream.feed_eof()
+        self.dial.side_effect = [(self.upstream, self.peer), (second_upstream, self.peer)]
+        budget = self.budget(max_bytes=2 * len(forwarded) + len(reply) + 6)
+        async with budget.listen() as port:
+            first = await self.client(port, request)
+            self.assertEqual(await self.read_to_close(first), reply)
+            second = await self.client(port, request)
+            self.assertEqual(await self.read_to_close(second), reply[:6])
+            third = await self.client(port, b'')
+            self.assertEqual(await self.read_to_close(third), b'')
+        self.assertEqual(self.dial.await_count, 2)
+        self.assertEqual(budget.remaining_bytes, 0)
+
+
+class BrowserRendering(unittest.IsolatedAsyncioTestCase):
+    async def test_launch_uses_the_first_available_channel_with_the_same_safety_settings(self):
+        channels = ['chrome', 'msedge', None]
+        for failures in range(4):
+            with self.subTest(failures=failures):
+                opened = object()
+                launch = mock.AsyncMock(side_effect=[OSError('Fictional launch failure')] * failures + [opened])
+                result = await browser._launch(SimpleNamespace(launch=launch), OSError, 12345, lambda: 1)
+                self.assertIs(result, opened if failures < len(channels) else None)
+                self.assertEqual([call.kwargs.get('channel') for call in launch.await_args_list],
+                                 channels[:failures + 1])
+                for call in launch.await_args_list:
+                    self.assertTrue(call.kwargs['headless'])
+                    self.assertTrue(call.kwargs['chromium_sandbox'])
+                    self.assertEqual(call.kwargs['proxy'],
+                                     {'server': 'http://127.0.0.1:12345', 'bypass': '<-loopback>'})
+                    self.assertEqual(call.kwargs['args'], [
+                        '--disable-quic', '--disable-http2',
+                        '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
+                        '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'])
+
+    async def test_browser_returns_terminal_results_without_waiting_and_closes_websockets(self):
+        for status, headers, text, expected, samples in (
+                (200, {}, 'Performing security verification', (403, ''), 1),
+                (403, {}, '', (403, ''), 0),
+                (429, {}, 'Performing security verification', (403, ''), 1),
+                (503, {'cf-mitigated': 'challenge'}, '', (403, ''), 0),
+                (503, {}, 'Checking your browser', (403, ''), 1),
+                (200, {}, 'This posting is expired.', (200, 'This posting is expired.'), 1)):
+            with self.subTest(status=status):
+                result = await self.render_terminal_page(status, headers, 'Example page', text, samples)
+                self.assertEqual(result, expected)
+
+    async def test_browser_404_and_410_check_for_challenges_before_reporting_gone(self):
+        for status in (404, 410):
+            for title, text, expected_status, observation, samples in (
+                    ('Checking your browser', '', 403, 'unclear', 0),
+                    ('Example page', 'Checking your browser', 403, 'unclear', 1),
+                    ('Posting unavailable', 'This fictional posting was removed.', status, 'gone', 1)):
+                with self.subTest(status=status, title=title, text=text):
+                    result = await self.render_terminal_page(status, {}, title, text, samples)
+                    self.assertEqual(result, (expected_status, ''))
+                    self.assertEqual(recheck.classify(*result)[0], observation)
+
+    async def render_terminal_page(self, status, headers, title, text, samples):
+        url = 'https://example.org/jobs/123'
+        page = SimpleNamespace(goto=mock.AsyncMock(return_value=SimpleNamespace(status=status, headers=headers)),
+                               title=mock.AsyncMock(return_value=title),
+                               evaluate=mock.AsyncMock(return_value=text))
+        context = SimpleNamespace(route_web_socket=mock.AsyncMock(), route=mock.AsyncMock(),
+                                  new_page=mock.AsyncMock(return_value=page))
+        opened = SimpleNamespace(new_context=mock.AsyncMock(return_value=context), close=mock.AsyncMock())
+        playwright = mock.MagicMock()
+        playwright.return_value.__aenter__.return_value = SimpleNamespace(chromium=object())
+        proxy = mock.MagicMock()
+        proxy.sockets = [SimpleNamespace(getsockname=lambda: ('127.0.0.1', 12345))]
+        proxy.wait_closed = mock.AsyncMock()
+        with mock.patch.object(browser.asyncio, 'start_server', return_value=proxy), \
+                mock.patch.object(browser, '_launch', return_value=opened), \
+                mock.patch.object(browser.asyncio, 'sleep') as sleep:
+            result = await browser._render(playwright, OSError, url, lambda _: True, time.monotonic() + 2,
+                                           lf.MAX_BYTES, lf.MAX_TEXT, lf.MIN_USEFUL, lf._bot_check, lf._closed)
+        page.goto.assert_awaited_once()
+        self.assertEqual(page.evaluate.await_count, samples)
+        sleep.assert_not_called()
+        opened.close.assert_awaited_once()
+        pattern, close_ws = context.route_web_socket.await_args.args
+        self.assertEqual(pattern, '**/*')
+        websocket = SimpleNamespace(close=mock.AsyncMock(), connect_to_server=mock.Mock())
+        await close_ws(websocket)
+        websocket.close.assert_awaited_once()
+        websocket.connect_to_server.assert_not_called()
+        return result
 
 
 class DeadlineDns(unittest.TestCase):
@@ -166,7 +589,8 @@ class DeadlineDns(unittest.TestCase):
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 0))]
         connects = []
         with mock.patch.object(lf.socket, 'getaddrinfo', side_effect=slow), \
-                mock.patch.object(lf.socket, 'create_connection', side_effect=lambda *a, **k: connects.append(a)):
+                mock.patch.object(lf.socket, 'create_connection', side_effect=lambda *a, **k: connects.append(a)), \
+                mock.patch.object(lf, 'browser_reader', return_value=None):
             started = time.monotonic()
             result = lf.fetch_status_text('https://slow.example/jobs/1', timeout=0.3)
             elapsed = time.monotonic() - started
