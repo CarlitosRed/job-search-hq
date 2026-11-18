@@ -568,7 +568,7 @@ class ReviewFixes2(Base):
         self.assertEqual(result[0], 'unclear')
         self.assertEqual(len(calls), 1)
         self.assertIsNotNone(calls[0])
-        self.assertLessEqual(calls[0], 0.05)
+        self.assertLessEqual(calls[0], 0.05 + 1e-9)
 
 
 class LinkStatus(unittest.TestCase):
