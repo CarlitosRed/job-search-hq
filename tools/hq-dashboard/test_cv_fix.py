@@ -127,12 +127,17 @@ class CvPrompt(unittest.TestCase):
 class SiteHead(unittest.TestCase):
     """The saved CV carries the site's name and contact line, never the AI's."""
 
+    SUPPORT = 'Support | Sample Air | Jun 2021 to Jun 2023'
+    LEAD = 'Lead | Now Corp | Jun 2025 to Present'
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='hq-cvfix-task-')
         self.state = Path(self.temp.name)
         self.bank = {'rubric_version': 'v3.2', 'rules': 'Fictional only.',
-                     'entries': {'E-999': {'level': 'stated', 'text': 'Ran the fictional process.',
-                                           'roles': ['Analyst | Example Corp | Jan 2024 to May 2025']}}}
+                     'entries': {'E-999': {'level': 'stated',
+                                           'text': 'Ran the fictional process.\nFictional support.\nFictional.',
+                                           'roles': ['Analyst | Example Corp | Jan 2024 to May 2025',
+                                                     self.SUPPORT, self.LEAD]}}}
         self.cv = None
         self.prompts = []
         from lead_policy_fixtures import fictional_analysis
@@ -144,6 +149,9 @@ class SiteHead(unittest.TestCase):
                         'posting_text': '', 'rubric_version': 'v3.2', 'analysis': fictional_analysis(), 'summary': 'Fictional.',
                         'location_ok': 'unclear', 'matches': [], 'gaps': [], 'flags': []}
             claims = [{'text': 'Ran the fictional process.', 'evidence': ['E-999']}]
+            for text in ('Fictional support.', 'Fictional.'):
+                if '- ' + text in self.cv:
+                    claims.append({'text': text, 'evidence': ['E-999']})
             for text in ('Fictional analyst.', 'Business analyst for fictional workflows'):
                 if text in self.cv:
                     claims.append({'text': text, 'kind': 'summary', 'evidence': ['E-999']})
@@ -184,7 +192,7 @@ class SiteHead(unittest.TestCase):
     def test_headline_line_is_kept(self):
         fit = self.run_cv('Business analyst for fictional workflows\n' + self.BODY)
         lines = fit['cv_markdown'].split('\n')
-        self.assertEqual(lines[:3], ['# Alex Example', CONTACT, 'Business analyst for fictional workflows'])
+        self.assertEqual(lines[:3], ['# Alex Example', 'Business analyst for fictional workflows', CONTACT])
 
     def test_empty_contact_setting_means_no_contact_line(self):
         fit = self.run_cv('# Alex Example\n[email] | [phone] | [LinkedIn URL]\n' + self.BODY, contact='')
@@ -199,16 +207,16 @@ class SiteHead(unittest.TestCase):
         self.assertTrue(fit['cv_markdown'].endswith(body), 'only the head changes; blank lines and rules in the body stay')
 
     def test_newest_first_has_no_order_flag(self):
-        fit = self.run_cv(self.BODY + '### Support | Sample Air | Jun 2021 to Jun 2023\n- Fictional support.\n')
+        fit = self.run_cv(self.BODY + '### ' + self.SUPPORT + '\n- Fictional support.\n')
         self.assertNotIn('Jobs are not in newest-first order.', fit.get('cv_flags', []))
 
     def test_wrong_order_is_saved_with_a_flag(self):
-        fit = self.run_cv('## Experience\n### Support | Sample Air | Jun 2021 to Jun 2023\n- Fictional support.\n'
+        fit = self.run_cv('## Experience\n### ' + self.SUPPORT + '\n- Fictional support.\n'
                           '### Analyst | Example Corp | Jan 2024 to May 2025\n- Ran the fictional process.\n')
         self.assertIn('Jobs are not in newest-first order.', fit['cv_flags'])
 
     def test_present_counts_as_newest(self):
-        fit = self.run_cv('## Experience\n### Lead | Now Corp | Jun 2025 to Present\n- Fictional.\n'
+        fit = self.run_cv('## Experience\n### ' + self.LEAD + '\n- Fictional.\n'
                           '### Analyst | Example Corp | Jan 2024 to May 2025\n- Ran the fictional process.\n')
         self.assertNotIn('Jobs are not in newest-first order.', fit.get('cv_flags', []))
 

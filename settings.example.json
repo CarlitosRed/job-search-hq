@@ -2,9 +2,20 @@
     "_comment":  "Codex - M4-a Builder, 2026-11-10; Codex - M4-b Builder, 2026-11-10 (retired legacy copy option)",
     "owner_name":  "",
     "owner_contact":  "",
+    "owner_links": [],
+    "_cv_model_example": {
+        "owner_links": [{"label": "Portfolio", "text": "example.github.io", "url": "https://example.github.io"}],
+        "cv_fixed_sections": [{"name": "Education and Languages", "lines": [
+            {"entries": ["E-003"], "from": "text", "join": " | "},
+            {"entries": ["E-003"], "from": "skills", "join": " | "}
+        ]}]
+    },
     "document_prefix":  "",
     "cv_blocked_terms":  ["BOM", "UTF-16", "UTF-8"],
     "cv_fixed_sections": [],
+    "cv_skills_placement": "tools_tested",
+    "cv_tools_tested_min": 2,
+    "cv_tool_groups": ["Data", "Tools"],
     "cv_skill_groups": {
         "AI and automation": ["AI agents", "Automation", "Prompt design"],
         "Data": ["SQL", "Python", "Reporting", "Spreadsheets"],

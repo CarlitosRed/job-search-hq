@@ -73,8 +73,14 @@ def evidence_bank(root=ROOT):
             continue
         skill_lines=re.findall(r'^- skills: ?(.*)$',text,re.M)
         skills=[skill.strip() for line in skill_lines for skill in line.split(',')]
-        if any(not 1<=len(skill)<=40 or not re.fullmatch(r'[\w +#/-]+',skill) for skill in skills):
+        if any(not 1<=len(skill)<=40 or not re.fullmatch(r'[\w +#/()-]+',skill) for skill in skills):
             needs_fixing.append({'id':evidence_id,'note':'Fix the skills line: use comma-separated skill names, each 1 to 40 characters, without sentence punctuation.'})
+            continue
+        projects=re.findall(r'^- project: ?(.*)$',text,re.M)
+        if projects and (len(projects)!=1 or not 1<=len(projects[0])<=80
+                         or projects[0]!=projects[0].strip()
+                         or not re.fullmatch(r'[\w][\w ,/&+().:#\u2013\u2014\u2019\x27-]*',projects[0])):
+            needs_fixing.append({'id':evidence_id,'note':'Fix the project line: use one plain project title, 1 to 80 characters.'})
             continue
         match=re.search(r'^- CV-ready bullets?:\s*(.*?)(?=\n- [a-zA-Z]|\Z)',text,re.M|re.S)
         if not match:
@@ -94,6 +100,7 @@ def evidence_bank(root=ROOT):
                               'limits':limits[1] if limits else 'Do not infer anything beyond the CV-ready wording.'}
         if roles:entries[evidence_id]['roles']=roles
         if skill_lines:entries[evidence_id]['skills']=skills
+        if projects:entries[evidence_id]['project']=projects[0]
     return {'rubric_version':RUBRIC_VERSION,'rules':rules,'entries':entries,'needs_fixing':needs_fixing}
 
 
@@ -160,11 +167,13 @@ def cv_heading_problem(content):
 
 
 def cv_summary_regions(content):
-    """Summary-eligible text and other body text, classified by actual location."""
+    """Headline, remaining summary prose, and other body text by location."""
     head,sections=cv_layout.parse(content,keep_blank=True)
     bullet=r'^\s*[-*+•]\s+'
-    parts=[line.strip() for line in head if not re.match(r'^#\s',line)
-           and not cv_layout.CONTACT.search(line) and not re.match(bullet,line)]
+    head_prose=[line.strip() for line in head if not re.match(r'^#\s',line)
+                and not cv_layout.CONTACT.search(line) and not re.match(bullet,line)]
+    headline=head_prose[0] if head_prose else None
+    parts=head_prose[1:]
     elsewhere=[line for line in head if re.match(bullet,line)]
     for section in sections:
         if cv_layout.section_heading('## '+section['name'])!='summary':
@@ -175,11 +184,12 @@ def cv_summary_regions(content):
                 parts.extend(re.split(r'(?<=[.!?])\s+',line.strip()))
             elif line:
                 elsewhere.append(line)
-    return [part for part in parts if part], '\n'.join(elsewhere)
+    return headline, [part for part in parts if part], '\n'.join(elsewhere)
 
 
-def cv_summary_problem(content,claims):
-    parts,remainder=cv_summary_regions(content)
+def cv_summary_problem(content,claims,bank,record):
+    headline,prose,remainder=cv_summary_regions(content)
+    parts=([headline] if headline else [])+prose
     bullet_texts={c['text'] for c in claims if c.get('kind','bullet')=='bullet'}
     for claim in claims:
         if claim.get('kind')=='summary' and (claim['text'] not in parts or
@@ -204,15 +214,22 @@ def cv_summary_problem(content,claims):
         # Owner decision: exact bullet claims also cover prose; all claims are checked below.
         if part not in covered and not any(part in text for text in bullet_texts):
             return f'The CV headline or Summary sentence has no evidence claim: "{part}". Try again.'
+    headline_terms='\n'.join(record.get(field) or '' for field in ('role','text'))
+    for claim in claims:
+        # A claim shared with prose must also satisfy the prose rule.
+        posting_support=headline_terms if claim['text']==headline and claim['text'] not in prose else None
+        problem=cv_claim_problem(claim,bank,posting_support)
+        if problem:return problem
     return None
 
 
-def cv_claim_problem(claim,bank):
+def cv_claim_problem(claim,bank,posting_support=None):
     entries=[bank['entries'][key] for key in claim['evidence']]
     texts=[part for entry in entries for part in [entry['text']]+entry.get('roles',[])+entry.get('skills',[])]
     text=claim['text']
     if claim.get('kind','bullet')=='bullet':
-        if not any(text in part for entry in entries for part in [entry['text']]+entry.get('roles',[])):
+        if not (any(text in part for entry in entries for part in [entry['text']]+entry.get('roles',[]))
+                or any(text==entry.get('project') for entry in entries)):
             return 'A CV bullet must copy its cited evidence word for word. Try again.'
         return None
     if claim.get('kind')!='summary':return 'The CV evidence map has an unknown claim kind.'
@@ -226,9 +243,13 @@ def cv_claim_problem(claim,bank):
     for sentence in re.split(r'(?<=[.!?])\s+',text):
         words=re.findall(r"\b\w[\w+#/-]*",sentence)
         tokens += [word for word in words[1:] if word[0].isupper()]
-    tokens += [skill for entry in bank['entries'].values() for skill in entry.get('skills',[]) if mentions(text,skill)]
-    for token in dict.fromkeys(tokens):
-        if not mentions(support,token):
+    capital_support=support
+    if posting_support is not None:
+        projects=[entry['project'] for entry in entries if entry.get('project')]
+        capital_support='\n'.join([support,posting_support]+projects)
+    skills=[skill for entry in bank['entries'].values() for skill in entry.get('skills',[]) if mentions(text,skill)]
+    for token in dict.fromkeys(tokens+skills):
+        if not mentions(support if token in skills else capital_support,token):
             return f'The CV headline or summary uses "{token}" without support in its cited evidence. Try again.'
     return None
 
@@ -242,6 +263,59 @@ def cv_source_sections(content):
     return [(None,''.join(lines[:starts[0]]))]+[
         (cv_layout.section_heading('## '+section['name']),''.join(lines[start:end]))
         for section,start,end in zip(sections,starts,starts[1:])]
+
+
+def cv_experience_problem(sections,entries,claims):
+    roles={role for entry in entries.values() for role in entry.get('roles',[])}
+    covered={cv_layout.plain(line).strip() for claim in claims for line in claim['text'].splitlines()}
+    for section in sections:
+        if cv_layout.section_heading('## '+section['name'])!='experience':continue
+        under_role=False
+        for line in section['items']:
+            heading=re.match(r'^###\s+(.*)',line)
+            if heading:
+                if heading[1] not in roles:
+                    return 'The CV role heading must match a cited evidence role line word for word. Try again.'
+                under_role=True
+            elif under_role and cv_layout.plain(re.sub(r'^\s*[-*+\u2022]\s+','',line)).strip() not in covered:
+                return f'The CV Experience line has no word-for-word evidence claim: "{line.strip()}". Try again.'
+    return None
+
+
+def cv_project_problem(sections,entries,claims):
+    title_problem='The CV project title must match a cited evidence project title word for word. Try again.'
+    bullet_problem='Each CV project needs bullets with word-for-word claims citing the same entry as its project title. Try again.'
+    for section in sections:
+        if cv_layout.section_heading('## '+section['name']) not in ('projects','selected projects'):continue
+        groups=[]
+        for line in section['items']:
+            heading=re.match(r'^###\s+(.*)',line)
+            if heading:
+                groups.append((heading[1],[]))
+            elif not groups:
+                return title_problem
+            else:
+                groups[-1][1].append(line)
+        for title,lines in groups:
+            candidates={key for key,entry in entries.items() if entry.get('project')==title}
+            if not candidates:return title_problem
+            bullets=[]
+            for line in lines:
+                bullet=re.match(r'^\s*[-*+\u2022]\s+(.*)',line)
+                if bullet:
+                    bullets.append([bullet[1]])
+                elif bullets:
+                    bullets[-1].append(line)
+                else:
+                    return bullet_problem
+            if not bullets:return bullet_problem
+            for bullet in bullets:
+                text=cv_layout.plain('\n'.join(bullet))
+                candidates.intersection_update(
+                    key for claim in claims if cv_layout.plain(claim['text'].replace('\r\n','\n'))==text
+                    for key in claim['evidence'] if claim['text'] in entries[key]['text'])
+                if not candidates:return bullet_problem
+    return None
 
 
 def cv_sort_role_bullets(content,scores):
@@ -277,9 +351,16 @@ def cv_sort_role_bullets(content,scores):
 
 def cv_skill_lines(record,bank,sources):
     """The exact Skills lines built by the site, also used by the final guard."""
+    if SETTINGS['cv_skills_placement']=='tools_tested':
+        tools=[skill for group,items in SETTINGS['cv_skill_groups'].items()
+               if group.casefold() in {name.casefold() for name in SETTINGS['cv_tool_groups']} for skill in items]
+        tested=sum(1 for match in requirement_list(record) if match.get('importance')=='must'
+                   and any(mentions(match.get('requirement',''),skill) for skill in tools if skill))
+        if tested<SETTINGS['cv_tools_tested_min']:return []
     skills=[]
     seen=set()
-    fixed_entries={key for section in SETTINGS['cv_fixed_sections'] for key in section['entries']}
+    fixed_entries={key for section in SETTINGS['cv_fixed_sections']
+                   for line in section.get('lines',[section]) for key in line['entries']}
     for key,entry in bank['entries'].items():
         if key not in sources or key in fixed_entries:continue
         for skill in entry.get('skills',[]):
@@ -301,9 +382,10 @@ def cv_skill_lines(record,bank,sources):
 
 def cv_skills_problem(content,record,bank,sources):
     skills=[s for s in cv_layout.parse(content)[1]
-            if cv_layout.section_heading('## '+s['name'])=='skills']
+            if cv_layout.section_heading('## '+s['name']) in ('skills','technical skills')]
     expected=cv_skill_lines(record,bank,sources)
-    if len(skills)!=(1 if expected else 0) or (skills and skills[0]['items']!=expected):
+    name='Technical Skills' if SETTINGS['cv_skills_placement']=='tools_tested' else 'Skills'
+    if len(skills)!=(1 if expected else 0) or (skills and (skills[0]['items']!=expected or skills[0]['name']!=name)):
         return 'The CV Skills section does not match the skills built from cited evidence. Try again.'
     return None
 
@@ -318,21 +400,27 @@ def strong_cv(content,record,bank,sources,claims):
     fixed_names={cv_layout.section_heading('## '+section['name']) for section in SETTINGS['cv_fixed_sections']}
     original=cv_source_sections(content)
     sections=[(name,cv_sort_role_bullets(text,scores)) for name,text in original
-              if name!='skills' and name not in fixed_names]
+              if name not in ('skills','technical skills') and name not in fixed_names]
+    sections=[('selected projects',re.sub(r'^##[^\n]*', '## Selected Projects',text,count=1))
+              if name in ('projects','selected projects') else (name,text) for name,text in sections]
     # Claims belonging only to replaced fixed sections no longer describe the CV.
     removed=''.join(text for name,text in original if name in fixed_names)
     kept=''.join(text for name,text in original if name not in fixed_names)
     claims[:]=[claim for claim in claims if claim['text'] not in removed or claim['text'] in kept]
     fixed=[]
     for section in SETTINGS['cv_fixed_sections']:
-        entries=[(key,bank['entries'][key]) for key in section['entries'] if key in bank['entries']]
         lines=[]
-        if section['from']=='text':
-            lines=[(entry['text'],[key]) for key,entry in entries if entry['text']]
-        else:
-            skills=[skill for _,entry in entries for skill in entry.get('skills',[])]
-            evidence=list(dict.fromkeys(key for key,entry in entries if entry.get('skills')))
-            if skills:lines=[(', '.join(skills),evidence)]
+        for spec in section.get('lines',[section]):
+            entries=[(key,bank['entries'][key]) for key in spec['entries'] if key in bank['entries']]
+            parts=[(part,key) for key,entry in entries for part in
+                   ([entry['text']] if spec['from']=='text' else entry.get('skills',[])) if part]
+            if 'lines' in section:
+                parts=[(' '.join(part.splitlines()),key) for part,key in parts]
+            if 'lines' in section or spec['from']=='skills':
+                if parts:lines.append((spec.get('join',', ').join(part for part,_ in parts),
+                                       list(dict.fromkeys(key for _,key in parts))))
+            else:
+                lines.extend((part,[key]) for part,key in parts)
         if not lines:continue
         name=section['name'].strip().rstrip(':').strip()
         fixed.append((cv_layout.section_heading('## '+name),'## '+name+'\n'+'\n'.join(text for text,_ in lines)+'\n'))
@@ -342,16 +430,12 @@ def strong_cv(content,record,bank,sources,claims):
                 if key not in sources:sources.append(key)
     skill_lines=cv_skill_lines(record,bank,sources)
     if skill_lines:
-        index=next((i for i,(name,_) in enumerate(sections) if name=='education'),len(sections))
-        sections.insert(index,('skills','## Skills\n'+'\n'.join(skill_lines)+'\n'))
+        early=SETTINGS['cv_skills_placement']=='tools_tested'
+        name='technical skills' if early else 'skills'
+        sections.append((name,'## '+('Technical Skills' if early else 'Skills')+'\n'+'\n'.join(skill_lines)+'\n'))
+    order={None:0,'summary':1,'technical skills':2,'experience':3,'selected projects':4,'skills':5}
+    sections.sort(key=lambda section:order.get(section[0],6))
     sections.extend(fixed)
-    role_text=[record.get('role','')]+[m.get('requirement','') for m in requirement_list(record) if m.get('importance')=='must']
-    if any(mentions(text,word) for text in role_text for word in SETTINGS['cv_ai_role_words'] if word):
-        project=next((s for s in sections if s[0]=='projects'),None)
-        experience=next((s for s in sections if s[0]=='experience'),None)
-        if project is not None and experience is not None and sections.index(project)>sections.index(experience):
-            sections.remove(project)
-            sections.insert(sections.index(experience),project)
     return ''.join(section+('\n' if index<len(sections)-1 and section and not section.endswith('\n') else '')
                    for index,(_,section) in enumerate(sections))
 
@@ -368,6 +452,7 @@ def schema(kind):
         fields={('cv_markdown' if kind=='cv' else 'cover_letter_markdown'):{'type':'string'},'sources':strings,'flags':strings,
                 'claims':{'type':'array','items':{'type':'object','properties':{'text':{'type':'string'},'evidence':strings},'required':['text','evidence'],'additionalProperties':False}}}
     if kind=='cv':
+        fields['rationale']={'type':'string','description':'80-350 words of plain English explaining the posting priorities, section choices and evidence gaps; separate from the CV.'}
         item=fields['claims']['items']
         item['properties']['kind']={'type':'string','enum':['bullet','summary']}
         item['required'].append('kind')
@@ -383,11 +468,16 @@ def prompt_for(kind, posting, bank, sentiment='', without=False):
                  'In each match, evidence is only eligible E-### IDs from the bank separated by commas, or an empty string when nothing supports it: never other words such as None or Unknown.') if kind=='analyze' else (
                  'Write one ATS-friendly one-page English CV: at most 520 words, at most 3 bullets for each of the two most recent roles and 2 for older roles. A recruiter spends under a minute on it. '
                  "Pick the highest-scored lines per role first; each entry includes its score and top three supported requirements. "
-                 "Role headings and bullets are claims with kind bullet: copy their text word for word from a CV-ready line or role line of the cited entries, so the same text appears exactly in the CV. "
-                 'Write a one-line plain text headline right after where the name goes, and a ## Summary of 2-3 sentences targeted to this posting. '
-                 'Only the headline and Summary sentences use kind summary; map each as a claim with evidence IDs. Every number, capitalized word except the first word of each sentence, and bank skill name must be supported by the cited entries. '
+                 "Role headings and bullets are claims with kind bullet: copy their text word for word from a CV-ready line or role line of the cited entries, so the same text appears exactly in the CV. Map every other line under a role to a word-for-word claim too. "
+                 'Rank the posting responsibilities, qualifications and screening questions first; lead each section with the most relevant evidence. '
+                 'Write a one-line plain text headline in Area | Focus form right after where the name goes, and a ## Summary of 2-3 sentences naming employers and the strongest evidence for the top responsibility. '
+                 'Only the headline and Summary sentences use kind summary; map each as a claim with evidence IDs. Numbers and bank skill names must appear in the cited entries. '
+                 'Capitalized words after the first word of each sentence must appear in the cited entries. In the headline, these words may also appear in the posting title or posting text when they name the target area. '
                  'Do not write a Skills section; the site builds it from the cited entries. '
                  "Each job heading is ### Title | Company | Dates copied from the entry's roles. List jobs newest first. Never write Unknown for a title or dates that the roles give. "
+                 'Experience always comes before Selected Projects. The oldest role may be title and dates only when space is short. '
+                 'Include projects only when the posting values them, under ## Selected Projects, each with ### Title copied word for word from a cited entry project field and one evidence bullet citing that same entry. Credit directing, specifying or verifying; agents wrote the code. '
+                 'Return a separate rationale of 80-350 words in plain English: how you read the posting, why each section leads, and what the evidence did not establish. Put scope gaps in rationale, never in the CV. '
                  'Section headings are ## lines such as ## Summary, ## Experience, ## Skills. **bold** is allowed only inside a line; no italics or backticks. '
                  'Do not write a name, contact details or placeholders, because the site adds them.' if kind=='cv' else
                  f'Write one English cover letter, 180 to 250 words, as plain business-letter paragraphs: greeting, body, a closing such as "Kind regards," and the name {SETTINGS["owner_name"] or "from the evidence bank"} on its own last line. '
@@ -624,14 +714,20 @@ class Tasks:
                         raise ValueError('The evidence map does not match the document text.')
                     flags=out.get('flags',[])
                     if kind=='cv':
+                        rationale=out.get('rationale')
+                        if rationale is not None and (not isinstance(rationale,str) or not 80<=word_count(rationale)<=350):
+                            raise ValueError('The CV rationale must be 80 to 350 words of plain English. Try again.')
                         # Exact cited text is an ordinary claim, even when mislabeled summary.
                         claims=[dict(claim,kind='bullet') if claim.get('kind')=='summary' and
                                 cv_claim_problem(dict(claim,kind='bullet'),bank) is None else claim
                                 for claim in claims]
-                        problem=cv_summary_problem(content,claims)
+                        problem=cv_summary_problem(content,claims,bank,record)
                         if problem:raise ValueError(problem)
-                        for claim in claims:
-                            problem=cv_claim_problem(claim,bank)
+                        draft_sections=cv_layout.parse(content)[1]
+                        cited_entries={key:bank['entries'][key] for key in sources}
+                        ordinary_claims=[claim for claim in claims if claim.get('kind','bullet')=='bullet']
+                        for validate in (cv_experience_problem,cv_project_problem):
+                            problem=validate(draft_sections,cited_entries,ordinary_claims)
                             if problem:raise ValueError(problem)
                         content=strong_cv(content,record,bank,sources,claims)
                         if word_count(content)>600:
@@ -639,9 +735,12 @@ class Tasks:
                         sections=cv_source_sections(content)
                         head=[line for line in sections[0][1].split('\n') if line.strip() and not re.match(r'^#\s',line) and not cv_layout.CONTACT.search(line)]
                         site_head=([f'# {SETTINGS["owner_name"]}'] if SETTINGS['owner_name'] else [])
+                        site_head.extend(head)
                         if SETTINGS.get('owner_contact',''):site_head.append(SETTINGS['owner_contact'])
+                        if SETTINGS['owner_links']:
+                            site_head.append(cv_layout.links_line(SETTINGS['owner_links']))
                         body=''.join(text for _,text in sections[1:])
-                        content='\n'.join(site_head+head+([body] if body else []))
+                        content='\n'.join(site_head+([body] if body else []))
                         problem=cv_skills_problem(content,record,bank,sources)
                         if problem:raise ValueError(problem)
                         previous=None
@@ -663,6 +762,9 @@ class Tasks:
                         if any(c['text'] not in content for c in claims):
                             raise ValueError('The evidence map does not match the final document text after CV formatting. Try again.')
                     record['fit'].update({field:content,'sources':sources,('cv_flags' if kind=='cv' else 'letter_flags'):flags,kind+'_claims':claims})
+                    if kind=='cv':
+                        record['fit'].pop('cv_rationale',None)
+                        if out.get('rationale') is not None:record['fit']['cv_rationale']=out['rationale']
                     if kind=='letter':record['fit'].update(sentiment=p.get('sentiment',''),withoutSentiment=p.get('withoutSentiment',False))
                     record.update(reviewed=False,review=None)
                     posting_id=p['postingId']

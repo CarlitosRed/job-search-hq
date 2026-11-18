@@ -26,6 +26,7 @@ from pathlib import Path
 
 import docx
 from docx.enum.style import WD_STYLE_TYPE
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor, Twips
@@ -48,6 +49,7 @@ STYLES = {
     'CV Name': (20, True, ACCENT, 0, 2, True, False),
     'CV Headline': (11, False, MUTED, 0, 2, True, False),
     'CV Contact': (9.5, False, MUTED, 0, 4, True, False),
+    'CV Links': (9.5, False, MUTED, 0, 4, True, False),
     'CV Section': (10.5, True, ACCENT, 10, 3, True, True),
     'CV Role': (10.5, True, None, 5, 1.5, True, False),
     'CV Bullet': (10, False, None, 0, 1, False, False),
@@ -63,6 +65,13 @@ MONTH = r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?'
 POINT = rf'(?:{MONTH}\s+\d{{4}}|\d{{4}})'
 DATES = re.compile(rf'{POINT}(?:\s*(?:to|-|–|—)\s*(?:{POINT}|Present|present|Current|current|now))?')
 CONTACT = re.compile(r'@|linkedin|github\.com|\+?\d[\d ()-]{6,}\d|\[(?:email|phone)\]', re.I)
+PROFILE_LINK = re.compile(r'\[([^\]\n]+)\]\((https?://[^\s<>\[\]()]+)\)')
+
+
+def links_line(links):
+    """Site-owned Markdown keeps link targets in saved drafts, independent of later settings."""
+    return ' · '.join('['+link['label']+(': '+link['text'] if link['text'] else '')+']('+link['url']+')'
+                      for link in links)
 
 
 # ---------------------------------------------------------------- Markdown to paragraphs
@@ -142,7 +151,9 @@ def blocks(head, sections):
     has_name = any(re.match(r'^#\s', l) for l in head)
     headline_done = False
     for line in head:
-        if not has_name:
+        if PROFILE_LINK.search(line):
+            out.append(('CV Links', [(PROFILE_LINK.sub(lambda m:m[1],line), False)]))
+        elif not has_name:
             out.append(('CV Body', inline(line)))
         elif re.match(r'^#\s', line):
             out.append(('CV Name', [(plain(re.sub(r'^#\s+', '', line)), False)]))
@@ -160,6 +171,8 @@ def blocks(head, sections):
         for line in sec['items']:
             b = re.match(r'^\s*[-*•+]\s+(.*)', line)
             r = None if b else role(line)
+            if re.match(r'^###\s+',line) and section_heading('## '+sec['name']) in ('projects','selected projects'):
+                r = (re.sub(r'^###\s+','',line).strip(), '', '')
             if b:
                 out.append(('CV Bullet', inline(b.group(1))))
             elif r:
@@ -311,12 +324,29 @@ def new_document():
 def build(head, sections, path):
     """Write the CV as a .docx at path (a path or a stream)."""
     d = new_document()
+    link_lines=iter(line for line in head if PROFILE_LINK.search(line))
     for style, payload in blocks(head, sections):
         brk = style.endswith(BREAK)
         style = style.removesuffix(BREAK)
         p = d.add_paragraph(style=style)
         if brk:  # a whole section starts page 2, so page 2 is never a near-empty tail
             p.paragraph_format.page_break_before = True
+        if style == 'CV Links':
+            line=next(link_lines)
+            end=0
+            for match in PROFILE_LINK.finditer(line):
+                p.add_run(line[end:match.start()])
+                hyperlink=OxmlElement('w:hyperlink')
+                hyperlink.set(qn('r:id'),d.part.relate_to(match[2],RT.HYPERLINK,is_external=True))
+                run=OxmlElement('w:r')
+                text=OxmlElement('w:t')
+                text.text=match[1]
+                run.append(text)
+                hyperlink.append(run)
+                p._p.append(hyperlink)
+                end=match.end()
+            p.add_run(line[end:])
+            continue
         if style == 'CV Role':
             title, company, date = payload
             p.add_run(title)

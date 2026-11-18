@@ -15,10 +15,11 @@ ai = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ai)
 
 ROLE = 'Analyst | Example Corp | Jan 2024 to May 2025'
+PROJECT = 'Fictional Agent Review'
 BANK = {'rubric_version': ai.RUBRIC_VERSION, 'rules': 'Fictional only.', 'entries': {
     'E-001': {'text': 'Built 3 reports with SQL.', 'roles': [ROLE], 'skills': ['Reporting', 'SQL', 'Python']},
     'E-002': {'text': 'Checked fictional records.', 'roles': [ROLE], 'skills': ['sql', 'Record checks']},
-    'E-003': {'text': 'Directed fictional agents.', 'skills': ['Agent design']},
+    'E-003': {'text': 'Directed fictional agents.', 'skills': ['Agent design'], 'project': PROJECT},
 }}
 MATCHES = [
     {'requirement': 'SQL reporting', 'importance': 'must', 'level': 'strong', 'evidence': 'E-001'},
@@ -28,9 +29,10 @@ MATCHES = [
     {'requirement': 'Reports', 'importance': 'nice', 'level': 'strong', 'evidence': 'E-001'},
     {'requirement': 'Data', 'importance': 'nice', 'level': 'partial', 'evidence': 'E-001'},
 ]
-CV = ('Fictional analyst\n## Summary\nBuilt 3 reports with SQL.\n## Experience\n### ' + ROLE +
+LEGACY_CV = ('Fictional analyst\n## Summary\nBuilt 3 reports with SQL.\n## Experience\n### ' + ROLE +
       '\n- Checked fictional records.\n- Built 3 reports with SQL.\n## Projects\n- Directed fictional agents.\n'
       '## Skills\n- Invented skill\n## Education\nFictional training.\n')
+CV = LEGACY_CV.replace('## Projects\n', '## Projects\n### ' + PROJECT + '\n')
 CLAIMS = [{'text': e['text'], 'evidence': [key]} for key, e in BANK['entries'].items()]
 SUMMARY_CLAIMS = [{'text': text, 'kind': 'summary', 'evidence': ['E-001']}
                   for text in ('Fictional analyst', 'Built 3 reports with SQL.')]
@@ -38,6 +40,22 @@ HEADING_PROBLEM = 'The CV used a heading HQ does not accept (use ## for sections
 
 
 class SkillsBank(unittest.TestCase):
+    def test_model_project_metadata_and_parenthesized_skills(self):
+        with tempfile.TemporaryDirectory(prefix='hq-model-bank-') as temp:
+            root = Path(temp)
+            for name in ('settings.example.json', 'rules.example.md'):
+                shutil.copyfile(APP / name, root / name)
+            (root / 'evidence').mkdir()
+            for index, title in enumerate(['Fictional Agent Review', '', 'A' * 81], 1):
+                (root / 'evidence' / f'E-{index:03}-fictional.md').write_text(
+                    '# Fictional\n- level: stated\n- public-safe: yes\n'
+                    '- CV-ready bullet: Directed fictional agents.\n'
+                    '- skills: Spanish (native), English (B2)\n- project: ' + title + '\n', encoding='utf-8')
+            bank = ai.evidence_bank(root)
+            self.assertEqual(bank['entries']['E-001']['project'], 'Fictional Agent Review')
+            self.assertEqual(bank['entries']['E-001']['skills'], ['Spanish (native)', 'English (B2)'])
+            self.assertEqual([e['id'] for e in bank['needs_fixing']], ['E-002', 'E-003'])
+
     def test_skills_validation_and_old_entry(self):
         with tempfile.TemporaryDirectory(prefix='hq-strong-bank-') as temp:
             root = Path(temp)
@@ -68,6 +86,7 @@ class StrongTasks(unittest.TestCase):
         self.tasks = ai.Tasks(Path(self.temp.name), runner=runner, bank_loader=lambda: BANK,
                               link_reader=lambda link: None)
         self.settings = mock.patch.dict(ai.SETTINGS, {'owner_name': 'Alex Example', 'owner_contact': 'alex@example.com',
+            'owner_links': [], 'cv_skills_placement': 'end',
             'cv_fixed_sections': [],
             'cv_skill_groups': {'Data': ['Python', 'SQL', 'Reporting'], 'Empty': ['Unused']},
             'cv_ai_role_words': ['AI', 'agent', 'agentic', 'LLM', 'automation', 'machine learning', 'prompt']})
@@ -90,7 +109,200 @@ class StrongTasks(unittest.TestCase):
         task = next(t for t in self.tasks.list_tasks() if t['id'] == key)
         return task, self.tasks.posting(posting_id)['fit']
 
+    def test_model_links_are_site_owned_and_word_hyperlinks(self):
+        import io
+        import docx
+        links = [{'label': 'Portfolio', 'text': 'example.github.io', 'url': 'https://example.github.io'},
+                 {'label': 'LinkedIn', 'text': '', 'url': 'https://example.com/profile'}]
+        with mock.patch.dict(ai.SETTINGS, {'owner_links': links}):
+            task, fit = self.draft()
+        self.assertEqual(task['status'], 'done', task['message'])
+        lines = fit['cv_markdown'].splitlines()
+        self.assertEqual(lines[:4], ['# Alex Example', 'Fictional analyst', 'alex@example.com',
+            '[Portfolio: example.github.io](https://example.github.io) · [LinkedIn](https://example.com/profile)'])
+        for prompt in self.prompts:
+            self.assertNotIn('example.github.io', prompt)
+            self.assertNotIn('https://example.com/profile', prompt)
+        stream = io.BytesIO()
+        ai.cv_layout.md_to_docx(fit['cv_markdown'], stream)
+        document = docx.Document(stream)
+        paragraph = next(p for p in document.paragraphs if p.style.name == 'CV Links')
+        self.assertEqual(len(paragraph._p.findall(ai.cv_layout.qn('w:hyperlink'))), 2)
+        self.assertEqual({r.target_ref for r in document.part.rels.values() if r.reltype.endswith('/hyperlink')},
+                         {link['url'] for link in links})
+
+    def test_model_tools_rule_counts_must_requirements_and_orders_sections(self):
+        sections = dict(ai.cv_source_sections(CV))
+        self.output['cv_markdown'] = ''.join(sections[name] for name in
+            (None, 'education', 'projects', 'experience', 'summary', 'skills'))
+        matches = [{'importance': 'must', 'requirement': 'SQL and Python'},
+                   {'importance': 'must', 'requirement': 'Python imports'}]
+        with mock.patch.dict(ai.SETTINGS, {'cv_skills_placement': 'tools_tested'}):
+            for requirements, shown in [(matches[:1], False), (matches, True),
+                    ([matches[0], dict(matches[1], importance='nice')], False), ([], False)]:
+                task, fit = self.draft(matches=requirements)
+                self.assertEqual(task['status'], 'done', task['message'])
+                names = [s['name'] for s in ai.cv_layout.parse(fit['cv_markdown'])[1]]
+                self.assertEqual(names, ['Summary'] + (['Technical Skills'] if shown else []) +
+                                 ['Experience', 'Selected Projects', 'Education'])
+                self.assertNotIn('## Skills', fit['cv_markdown'])
+
+    def test_model_experience_requires_exact_role_evidence_and_claimed_prose(self):
+        self.output.update(sources=['E-001'], claims=[CLAIMS[0]])
+        experience = '## Experience\n### ' + ROLE + '\n- Built 3 reports with SQL.\n'
+        older = 'Support | Sample Air | Jan 2020 to Apr 2021'
+        for heading, prose, status in (
+                (older, 'Managed payroll for 80 employees.\n', 'failed'),
+                (older, '', 'failed'),
+                (ROLE.replace('Analyst', 'analyst'), '', 'failed'),
+                (ROLE, 'Managed payroll for 80 employees.\n', 'failed'),
+                (ROLE, '', 'done')):
+            with self.subTest(heading=heading, prose=prose):
+                self.output['cv_markdown'] = experience + '### ' + heading + '\n' + prose
+                task, fit = self.draft()
+                self.assertEqual(task['status'], status, task['message'])
+                if status == 'done':
+                    self.assertIn('### ' + heading + '\n## Skills', fit['cv_markdown'])
+                else:
+                    self.assertNotIn('cv_markdown', fit)
+
+    def test_model_projects_reject_untitled_bullet(self):
+        self.output['cv_markdown'] = LEGACY_CV
+        task, fit = self.draft()
+        self.assertEqual(task['status'], 'failed', task['message'])
+        self.assertNotIn('cv_markdown', fit)
+
+    def test_model_projects_reject_swapped_titles(self):
+        first = PROJECT
+        second = 'Fictional Record Audit'
+        first_bullet = '- Directed fictional agents.\n'
+        second_bullet = '- Checked fictional records.\n'
+        self.output.update(sources=['E-003', 'E-002'], claims=[CLAIMS[2], CLAIMS[1]])
+        with mock.patch.dict(BANK['entries']['E-003'], {'project': first}), \
+                mock.patch.dict(BANK['entries']['E-002'], {'project': second}):
+            for projects, status in (
+                    ('### ' + second + '\n' + first_bullet + '### ' + first + '\n' + second_bullet, 'failed'),
+                    ('### ' + first + '\n' + first_bullet + '### ' + second + '\n' + second_bullet, 'done')):
+                with self.subTest(projects=projects):
+                    self.output['cv_markdown'] = '## Selected Projects\n' + projects
+                    task, fit = self.draft()
+                    self.assertEqual(task['status'], status, task['message'])
+                    if status == 'failed':
+                        self.assertNotIn('cv_markdown', fit)
+
+    def test_model_links_export_as_word_hyperlinks_without_owner_name(self):
+        import io
+        import docx
+        links = [{'label': 'Portfolio', 'text': '', 'url': 'https://example.org'}]
+        with mock.patch.dict(ai.SETTINGS, {'owner_name': '', 'owner_contact': '', 'owner_links': links}):
+            task, fit = self.draft()
+        self.assertEqual(task['status'], 'done', task['message'])
+        stream = io.BytesIO()
+        ai.cv_layout.md_to_docx(fit['cv_markdown'], stream)
+        document = docx.Document(stream)
+        paragraphs = [p for p in document.paragraphs if p.style.name == 'CV Links']
+        self.assertEqual(len(paragraphs), 1)
+        self.assertEqual(len(paragraphs[0]._p.findall(ai.cv_layout.qn('w:hyperlink'))), 1)
+        self.assertEqual({r.target_ref for r in document.part.rels.values() if r.reltype.endswith('/hyperlink')},
+                         {'https://example.org'})
+
+    def test_model_project_title_matches_cited_entry(self):
+        with mock.patch.dict(BANK['entries']['E-003'], {'project': 'Fictional Agent Review'}):
+            for title, cited, status in [('Fictional Agent Review', True, 'done'),
+                                         ('Invented project', True, 'failed'),
+                                         ('Fictional Agent Review', False, 'failed')]:
+                self.output['cv_markdown'] = LEGACY_CV.replace('## Projects\n', '## Selected Projects\n### ' + title + '\n')
+                self.output['sources'] = list(BANK['entries']) if cited else ['E-001', 'E-002']
+                self.output['claims'] = CLAIMS + SUMMARY_CLAIMS if cited else CLAIMS[:2] + SUMMARY_CLAIMS
+                task, fit = self.draft()
+                self.assertEqual(task['status'], status, task['message'])
+                if status == 'failed':
+                    self.assertIn('project title', task['message'])
+                else:
+                    plan = ai.cv_layout.blocks(*ai.cv_layout.parse(fit['cv_markdown']))
+                    self.assertIn(('CV Role', (title, '', '')), plan)
+
+    def test_model_oldest_role_can_have_no_bullets(self):
+        older = 'Support | Sample Air | Jan 2020 to Apr 2021'
+        with mock.patch.dict(BANK['entries']['E-002'], {'roles': [older]}):
+            self.output['cv_markdown'] = CV.replace('## Projects', '### ' + older + '\n## Projects')
+            self.output['claims'] = CLAIMS + SUMMARY_CLAIMS + [{'text': older, 'evidence': ['E-002']}]
+            task, fit = self.draft()
+        self.assertEqual(task['status'], 'done', task['message'])
+        self.assertIn('### ' + older + '\n## Selected Projects', fit['cv_markdown'])
+        self.assertNotIn('Jobs are not in newest-first order.', fit['cv_flags'])
+
+    def test_model_fixed_lines_join_text_and_language_skills(self):
+        self.fixed_sections()
+        with mock.patch.dict(BANK['entries']['E-005'], {'skills': ['Spanish (native)', 'English (B2)']}), \
+                mock.patch.dict(ai.SETTINGS, {'cv_fixed_sections': [{'name': 'Education and Languages', 'lines': [
+                    {'entries': ['E-004', 'E-005'], 'from': 'text', 'join': ' | '},
+                    {'entries': ['E-005'], 'from': 'skills', 'join': ' | '}]}]}):
+            task, fit = self.draft()
+        self.assertEqual(task['status'], 'done', task['message'])
+        self.assertTrue(fit['cv_markdown'].endswith('## Education and Languages\n'
+            'Diploma in fictional studies. | Speaks fictional languages.\nSpanish (native) | English (B2)\n'))
+
+    def test_model_rationale_saved_separately_and_bounded(self):
+        self.assertIn('rationale', ai.schema('cv')['required'])
+        rationale = 'The posting prioritizes fictional record checks and SQL reporting. ' * 10
+        self.output['rationale'] = rationale
+        task, fit = self.draft()
+        self.assertEqual(task['status'], 'done', task['message'])
+        self.assertEqual(fit['cv_rationale'], rationale)
+        self.assertNotIn(rationale, fit['cv_markdown'])
+        for value in ('Too short.', 'word ' * 351):
+            self.output['rationale'] = value
+            task, _ = self.draft()
+            self.assertEqual(task['status'], 'failed')
+            self.assertIn('rationale', task['message'])
+
+    def test_model_notes_export_and_legacy_export(self):
+        files_spec = importlib.util.spec_from_file_location('model_pc_files', HERE / 'pc_files.py')
+        files = importlib.util.module_from_spec(files_spec)
+        files_spec.loader.exec_module(files)
+        rationale = 'Fictional scope is limited to the checked evidence. ' * 10
+        with tempfile.TemporaryDirectory(prefix='hq-model-export-') as temp:
+            root = Path(temp)
+            record = {'company': 'Example', 'role': 'Analyst', 'fit': {'cv_markdown': LEGACY_CV, 'cv_rationale': rationale}}
+            posting_id = str(uuid.uuid4())
+            path = files.export_draft(root / 'state', posting_id, 'cv', record, work=root / 'work')
+            notes = path.with_name(path.stem + '_notes.md')
+            self.assertIn(rationale, notes.read_text(encoding='utf-8'))
+            self.assertIn('Date made:', notes.read_text(encoding='utf-8'))
+            item = next(r for r in files.reports(root / 'work') if r['name'] == notes.name)
+            self.assertEqual(item['cv_id'], files._key(path.name))
+            self.assertEqual(files.report_file(item['id'], root / 'work')[0], notes)
+            self.assertEqual(files.export_draft(root / 'state', posting_id, 'cv', record, work=root / 'work'), path)
+            self.assertEqual(len(list((root / 'work').glob('*_notes.md'))), 1)
+            report = root / 'work' / 'report-fictional_notes.md'
+            report.write_text('Fictional report.', encoding='utf-8')
+            item = next(r for r in files.reports(root / 'work') if r['name'] == report.name)
+            self.assertNotIn('cv_id', item)
+            self.assertEqual(files.report_file(item['id'], root / 'work')[0], report)
+
+            target = root / 'copies'
+            dest = target / files.SETTINGS['copy_subfolder']
+            dest.mkdir(parents=True)
+            older = dest / path.name
+            older.write_bytes(b'Older fictional CV')
+            copied = dest / (path.stem + '_2.docx')
+            copied_notes = copied.with_name(copied.stem + '_notes.md')
+            for _ in range(2):
+                files.export_draft(root / 'state', posting_id, 'cv', record, copy_dir=target, work=root / 'work')
+                self.assertEqual(older.read_bytes(), b'Older fictional CV')
+                self.assertEqual(copied.read_bytes(), path.read_bytes())
+                self.assertEqual(copied_notes.read_bytes(), notes.read_bytes())
+                self.assertEqual(set(dest.iterdir()), {older, copied, copied_notes})
+
+            record['fit'].pop('cv_rationale')
+            record['company'] = 'Legacy'
+            old = files.export_draft(root / 'state', str(uuid.uuid4()), 'cv', record, work=root / 'work')
+            self.assertTrue(old.is_file())
+            self.assertFalse(old.with_name(old.stem + '_notes.md').exists())
+
     def test_skills_are_built_from_cited_entries(self):
+        self.output['cv_markdown'] = CV.split('## Projects')[0] + '## Education\nFictional training.\n'
         self.output['sources'] = ['E-002', 'E-001']
         self.output['claims'] = CLAIMS[:2] + SUMMARY_CLAIMS
         task, fit = self.draft()
@@ -144,7 +356,7 @@ class StrongTasks(unittest.TestCase):
                 self.assertEqual(fit['cv_markdown'].count('## Education'), 1)
                 self.assertNotIn('Checked fictional records.', fit['cv_markdown'])
                 self.assertFalse(any(c['text'] == 'Checked fictional records.' for c in fit['cv_claims']))
-                self.assertIn('## Projects\n- Directed fictional agents.', fit['cv_markdown'])
+                self.assertIn('## Selected Projects\n### ' + PROJECT + '\n- Directed fictional agents.', fit['cv_markdown'])
 
     def test_fixed_entry_skills_are_excluded_from_general_skills(self):
         self.fixed_sections()
@@ -223,11 +435,12 @@ class StrongTasks(unittest.TestCase):
 
     def test_no_skills_means_no_section_and_no_education_means_append(self):
         with mock.patch.dict(BANK['entries'], {'E-001': {'text': BANK['entries']['E-001']['text']}}):
-            self.output.update(sources=['E-001'], claims=CLAIMS[:1] + SUMMARY_CLAIMS)
+            self.output.update(cv_markdown='## Experience\n- Built 3 reports with SQL.\n',
+                               sources=['E-001'], claims=CLAIMS[:1])
             task, fit = self.draft()
             self.assertEqual(task['status'], 'done', task['message'])
             self.assertNotIn('## Skills', fit['cv_markdown'])
-        self.output['cv_markdown'] = CV.split('## Education')[0]
+        self.output['cv_markdown'] = '## Experience\n### ' + ROLE + '\n- Built 3 reports with SQL.\n'
         task, fit = self.draft()
         self.assertEqual(task['status'], 'done', task['message'])
         self.assertTrue(fit['cv_markdown'].rstrip().endswith('- **Data:** Reporting, SQL, Python'))
@@ -347,7 +560,38 @@ class StrongTasks(unittest.TestCase):
         self.output['claims'].append({'text': 'Analyst with SQL', 'kind': 'summary', 'evidence': ['E-001']})
         task, fit = self.draft()
         self.assertEqual(task['status'], 'done', task['message'])
-        self.assertTrue(fit['cv_markdown'].startswith('# Alex Example\nalex@example.com\nAnalyst with SQL'))
+        self.assertTrue(fit['cv_markdown'].startswith('# Alex Example\nAnalyst with SQL\nalex@example.com'))
+
+    def test_headline_can_use_posting_words_and_cited_project_words(self):
+        headline = 'Data Integration | Excel and Validation'
+        self.output.update(cv_markdown=headline, sources=['E-003'],
+                           claims=[{'text': headline, 'kind': 'summary', 'evidence': ['E-003']}])
+        with mock.patch.dict(BANK['entries'], {'E-003': dict(BANK['entries']['E-003'], project='Import Validation')}):
+            task, fit = self.draft(title='Data Excel analyst', text='Work on integration and imports.')
+        self.assertEqual(task['status'], 'done', task['message'])
+        self.assertIn(headline, fit['cv_markdown'].splitlines())
+
+    def test_posting_words_do_not_support_headline_numbers_or_bank_skills(self):
+        for headline, token in [('10 Years | Data', '10'), ('Data | Agent Design', 'Agent design')]:
+            with self.subTest(headline=headline):
+                self.output.update(cv_markdown=headline, sources=['E-001'],
+                                   claims=[{'text': headline, 'kind': 'summary', 'evidence': ['E-001']}])
+                task, _ = self.draft(title='Data analyst', text='10 years of data work and agent design.')
+                self.assertEqual(task['status'], 'failed')
+                self.assertIn(f'"{token}"'.lower(), task['message'].lower())
+                self.assertIn('cited evidence', task['message'])
+
+    def test_posting_words_do_not_support_summary_capitals(self):
+        headline = 'Data Integration | Excel and Validation'
+        for sentence in ('Handled Integration checks.', headline):
+            with self.subTest(sentence=sentence):
+                self.output.update(cv_markdown=f'{headline}\n## Summary\n{sentence}', sources=['E-001'],
+                                   claims=[{'text': text, 'kind': 'summary', 'evidence': ['E-001']}
+                                           for text in dict.fromkeys((headline, sentence))])
+                task, _ = self.draft(title='Data analyst', text='Work on integration, excel and validation.')
+                self.assertEqual(task['status'], 'failed')
+                self.assertIn('"Integration"', task['message'])
+                self.assertIn('cited evidence', task['message'])
 
     def test_unsupported_summary_number_capital_and_skill_fail(self):
         for text, token in [('Built 30 reports.', '30'), ('Worked at Sample Air.', 'Sample'),
@@ -385,14 +629,15 @@ class StrongTasks(unittest.TestCase):
         self.assertIn('### Analyst | Example Corp | Jan 2024 to May 2025', fit['cv_markdown'])
 
     def test_summary_kind_on_exact_evidence_is_ordinary_wherever_it_sits(self):
-        for heading in ('', '## Summary\n', '## Experience\n', '## Projects\n'):
+        for heading in ('', '## Summary\n', '## Experience\n', '## Projects\n### ' + PROJECT + '\n'):
             with self.subTest(heading=heading):
-                self.output.update(cv_markdown=heading + '- Checked fictional records.',
-                                   sources=['E-002'], claims=[{'text': 'Checked fictional records.',
-                                   'kind': 'summary', 'evidence': ['E-002']}])
+                key = 'E-003' if heading.startswith('## Projects') else 'E-002'
+                text = BANK['entries'][key]['text']
+                self.output.update(cv_markdown=heading + '- ' + text,
+                                   sources=[key], claims=[{'text': text, 'kind': 'summary', 'evidence': [key]}])
                 task, fit = self.draft()
                 self.assertEqual(task['status'], 'done', task['message'])
-                self.assertIn('- Checked fictional records.', fit['cv_markdown'])
+                self.assertIn('- ' + text, fit['cv_markdown'])
 
     def test_summary_kind_cannot_bypass_bullet_evidence(self):
         for section in ('Experience', 'Projects', 'Summary', None):
@@ -438,17 +683,17 @@ class StrongTasks(unittest.TestCase):
         self.assertIn('two most recent roles', self.prompts[-1])
         self.assertIn('2-3 sentences', self.prompts[-1])
 
-    def test_ai_role_title_or_must_moves_projects(self):
+    def test_ai_role_title_or_must_keeps_experience_before_projects(self):
         for title, matches in [('AI analyst', []), ('Fictional analyst', MATCHES)]:
             task, fit = self.draft(matches=matches, title=title)
             self.assertEqual(task['status'], 'done', task['message'])
-            self.assertLess(fit['cv_markdown'].index('## Projects'), fit['cv_markdown'].index('## Experience'))
+            self.assertLess(fit['cv_markdown'].index('## Experience'), fit['cv_markdown'].index('## Selected Projects'))
 
     def test_non_ai_nice_and_substrings_leave_order(self):
         matches = [{'importance': 'nice', 'requirement': 'AI'}]
         task, fit = self.draft(matches=matches, title='Retail analyst', text='AI automation')
         self.assertEqual(task['status'], 'done', task['message'])
-        self.assertLess(fit['cv_markdown'].index('## Experience'), fit['cv_markdown'].index('## Projects'))
+        self.assertLess(fit['cv_markdown'].index('## Experience'), fit['cv_markdown'].index('## Selected Projects'))
 
     def test_old_record_has_zero_scores_and_keeps_bullet_order(self):
         self.assertTrue(all(e['score'] == 0 for e in ai.cv_evidence({}, BANK).values()))
@@ -459,10 +704,14 @@ class StrongTasks(unittest.TestCase):
     def test_sort_is_stable_and_stays_inside_each_role(self):
         first = 'Checked fictional records.'
         second = 'Built 3 reports with SQL.'
+        older = 'Support | Sample Air | Jan 2021 to Dec 2022'
         text = ('## Experience\n### ' + ROLE + '\n- ' + first + '\n- ' + second +
-                '\n### Support | Sample Air | Jan 2021 to Dec 2022\n- ' + first + '\n- ' + second)
+                '\n### ' + older + '\n- ' + first + '\n- ' + second)
         self.output['cv_markdown'] = text
         self.output['claims'] = CLAIMS[:2]
+        roles = mock.patch.dict(BANK['entries']['E-002'], {'roles': [ROLE, older]})
+        roles.start()
+        self.addCleanup(roles.stop)
         task, fit = self.draft(matches=[])
         self.assertEqual(task['status'], 'done', task['message'])
         self.assertEqual(fit['cv_markdown'].count('- ' + first), 2)
@@ -531,15 +780,15 @@ class StrongTasks(unittest.TestCase):
 
     def test_canonical_projects_without_name_or_summary_keeps_section_after_move(self):
         self.output.update(cv_markdown='## Experience\n- Checked fictional records.\n'
-                           '## Projects\n- Directed fictional agents.',
+                           '## Projects\n### ' + PROJECT + '\n- Directed fictional agents.',
                            sources=['E-002', 'E-003'], claims=CLAIMS[1:])
         task, fit = self.draft(title='AI analyst')
         self.assertEqual(task['status'], 'done', task['message'])
         head, sections = ai.cv_layout.parse(fit['cv_markdown'])
         self.assertEqual(head, ['# Alex Example', 'alex@example.com'])
-        self.assertEqual([s['name'] for s in sections], ['Projects', 'Experience', 'Skills'])
-        self.assertEqual(sections[0]['items'], ['- Directed fictional agents.'])
-        self.assertEqual(sections[1]['items'], ['- Checked fictional records.'])
+        self.assertEqual([s['name'] for s in sections], ['Experience', 'Selected Projects', 'Skills'])
+        self.assertEqual(sections[1]['items'], ['### ' + PROJECT, '- Directed fictional agents.'])
+        self.assertEqual(sections[0]['items'], ['- Checked fictional records.'])
 
     def test_sort_moves_complete_multiline_bullet_blocks(self):
         multiline = 'Checked records.\n  Reduced errors.'
@@ -596,7 +845,7 @@ class StrongTasks(unittest.TestCase):
                 self.assertEqual(cv.count('## Skills'), 1)
                 names = [ai.cv_layout.section_heading('## ' + s['name'])
                          for s in ai.cv_layout.parse(cv)[1]]
-                self.assertEqual(names, ['summary', 'projects', 'experience', 'skills', 'education'])
+                self.assertEqual(names, ['summary', 'experience', 'selected projects', 'skills', 'education'])
 
     def test_extra_space_skills_with_no_bank_skills_is_removed(self):
         with mock.patch.dict(BANK['entries'], {'E-002': {'text': 'Checked fictional records.'}}):
@@ -689,6 +938,30 @@ class StrongTasks(unittest.TestCase):
 
 
 class PublicContract(unittest.TestCase):
+    def test_model_settings_validation_and_private_header(self):
+        valid = {'owner_links': [{'label': 'LinkedIn', 'text': '', 'url': 'https://example.com/alex'}],
+                 'cv_skills_placement': 'tools_tested', 'cv_tools_tested_min': 2, 'cv_tool_groups': ['Data'],
+                 'cv_fixed_sections': [{'name': 'Education and Languages', 'lines': [
+                     {'entries': ['E-003'], 'from': 'skills', 'join': ' | '}]}]}
+        invalid = [('owner_links', [{'label': 'Portfolio', 'text': '', 'url': 'javascript:alert(1)'}]),
+                   ('owner_links', [{'label': 'Bad\nlabel', 'text': '', 'url': 'https://example.com'}]),
+                   ('cv_skills_placement', 'start'), ('cv_tools_tested_min', True),
+                   ('cv_tools_tested_min', 0), ('cv_tool_groups', 'Data'),
+                   ('cv_fixed_sections', [{'name': 'Education', 'lines': [
+                       {'entries': ['E-003'], 'from': 'skills', 'join': '\n## Skills'}]}])]
+        with tempfile.TemporaryDirectory(prefix='hq-model-settings-') as temp:
+            root = Path(temp)
+            shutil.copyfile(APP / 'settings.example.json', root / 'settings.example.json')
+            (root / 'settings.json').write_text(json.dumps(valid), encoding='utf-8')
+            loaded = ai.hq_settings.load(root)
+            self.assertTrue(all(loaded[key] == value for key, value in valid.items()))
+            self.assertNotIn('owner_links', ai.hq_settings.browser(root))
+            for key, value in invalid:
+                with self.subTest(key=key, value=value):
+                    (root / 'settings.json').write_text(json.dumps(dict(valid, **{key: value})), encoding='utf-8')
+                    with self.assertRaisesRegex(ValueError, key):
+                        ai.hq_settings.load(root)
+
     def test_fixed_section_settings_shape(self):
         valid = [{'name': 'Education', 'entries': ['E-004'], 'from': 'text'},
                  {'name': 'Languages', 'entries': [], 'from': 'skills'}]

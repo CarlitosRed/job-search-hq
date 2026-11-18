@@ -126,12 +126,19 @@ def existing_file(key,work=ROOT/'work',kinds=('cv',),store_path=None):
 
 
 def reports(work=ROOT/'work'):
+    work=Path(work)
     out=[]
-    for path in sorted(work.glob('report-*.md'),reverse=True):
-        if not path.name.startswith('report-') or not _allowed(path,work,REPORT_LIMIT):continue
+    report_paths=set(work.glob('report-*.md'))
+    paths=report_paths | set(work.glob(PREFIX['cv']+'*_notes.md'))
+    for path in sorted(paths,reverse=True):
+        if not _allowed(path,work,REPORT_LIMIT):continue
+        cv_name=(path.name.removesuffix('_notes.md')+'.docx'
+                 if path not in report_paths and path.name.endswith('_notes.md') else None)
+        if cv_name and not _allowed(work/cv_name,work,DOC_LIMIT):continue
         title=re.sub(r'(\d{4}) (\d{2}) (\d{2})',r'\1-\2-\3',path.stem.removeprefix('report-').replace('-',' ').replace('_',' ')).strip()
         out.append({'id':_key(path.name),'kind':'report','name':path.name,'title':title[:1].upper()+title[1:],
-                    'updated':str(path.stat().st_mtime_ns),'bytes':path.stat().st_size})
+                    'updated':str(path.stat().st_mtime_ns),'bytes':path.stat().st_size,
+                    **({'cv_id':_key(cv_name)} if cv_name else {})})
     return out
 
 
@@ -168,7 +175,8 @@ def _export_draft(state,posting_id,kind,record,copy_dir,work,store_path,blocked_
     problems=converter().readability_problems(content,SETTINGS['cv_blocked_terms'] if blocked_terms is None else blocked_terms)
     if problems:raise ValueError(' '.join(problems))
     convert=converter().md_to_docx if kind=='cv' else converter().letter_to_docx
-    fingerprint='draft:'+hashlib.sha256(content.encode()).hexdigest()
+    rationale=record.get('fit',{}).get('cv_rationale') if kind=='cv' else None
+    fingerprint='draft:'+hashlib.sha256((content+('\nRATIONALE\n'+rationale if rationale else '')).encode()).hexdigest()
     directory=Path(work) if work is not None else ROOT/'work'
     directory.mkdir(parents=True,exist_ok=True)
     def words(value):
@@ -183,6 +191,7 @@ def _export_draft(state,posting_id,kind,record,copy_dir,work,store_path,blocked_
         key=hashlib.sha256((str(directory.resolve())+'\n'+posting_id+'\n'+kind+'\n'+fingerprint).encode()).hexdigest()
         cache=Path(state)/'document-exports'/(key+'.json')
     path=None
+    notes_path=None
     try:
         # Serialize record lookup and file creation for concurrent exports of one draft.
         if storage:storage.db.execute('BEGIN IMMEDIATE')
@@ -215,6 +224,14 @@ def _export_draft(state,posting_id,kind,record,copy_dir,work,store_path,blocked_
             if cache:
                 cache.parent.mkdir(parents=True,exist_ok=True)
                 cache.write_text(json.dumps({'file_name':path.name,'sha256':hashlib.sha256(payload).hexdigest()}),encoding='utf-8')
+        if rationale:
+            notes_path=path.with_name(path.stem+'_notes.md')
+            # Reports already have Markdown listing, read and download routes; no tracker schema change.
+            if not _allowed(notes_path,directory,REPORT_LIMIT):
+                made=datetime.now(timezone.utc).isoformat()
+                job=' '.join(str(record.get(key) or '') for key in ('company','role')).strip()
+                payload=(f'# CV rationale\n\nJob: {job}\nDate made: {made}\n\n{rationale}\n').encode('utf-8')
+                with notes_path.open('xb') as stream:stream.write(payload)
         if storage:storage.db.commit()
     except Exception:
         if storage:storage.db.rollback()
@@ -227,23 +244,41 @@ def _export_draft(state,posting_id,kind,record,copy_dir,work,store_path,blocked_
     if target is not None and target.parent.is_dir():
         dest=target/SETTINGS['copy_subfolder']
         dest.mkdir(parents=True,exist_ok=True)
-        _write_unique(dest,path.name,path.read_bytes(),reuse=True)
+        _write_unique(dest,path.name,path.read_bytes(),reuse=True,
+                      notes=notes_path.read_bytes() if notes_path is not None else None)
     return path
 
 
-def _write_unique(directory,name,payload,reuse=False):
+def _write_unique(directory,name,payload,reuse=False,notes=None):
+    """Choose one available stem for the file and its optional CV notes."""
     stem=Path(name).stem
     index=1
     while True:
-        path=directory/(name if index==1 else f'{stem}_{index}.docx')
+        path=directory/(name if index==1 else f'{stem}_{index}{Path(name).suffix}')
+        notes_path=path.with_name(path.stem+'_notes.md') if notes is not None else None
+        needs_notes=notes_path is not None
+        if notes_path is not None and (notes_path.exists() or notes_path.is_symlink()):
+            if not _allowed(notes_path,directory,REPORT_LIMIT) or notes_path.read_bytes()!=notes:
+                index+=1
+                continue
+            needs_notes=False
         try:stream=path.open('xb')
         except FileExistsError:
-            if reuse and _allowed(path,directory,DOC_LIMIT) and path.read_bytes()==payload:return path
-            index+=1
-            continue
+            if not (reuse and _allowed(path,directory,DOC_LIMIT) and path.read_bytes()==payload):
+                index+=1
+                continue
+            stream=None
         try:
-            with stream:stream.write(payload)
+            if stream is not None:
+                with stream:stream.write(payload)
+            if needs_notes:
+                note_stream=notes_path.open('xb')
+                try:
+                    with note_stream:note_stream.write(notes)
+                except Exception:
+                    notes_path.unlink(missing_ok=True)
+                    raise
         except Exception:
-            path.unlink(missing_ok=True)
+            if stream is not None:path.unlink(missing_ok=True)
             raise
         return path

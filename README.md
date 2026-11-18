@@ -19,12 +19,20 @@ against **your own evidence** and draft a one-page CV or cover letter. Every dra
   and each listed claim string appears in the document. It does not check that every factual sentence is listed or that the
   cited evidence supports a claim. A human must review every line before using the draft.
 - **Easy to read**: CV Word files aim for one page, with clear section headings and dates on the right,
-  and trimming to one page deletes whole lines or Summary sentences only (page 2 only as a last resort), never rewording anything.
+  with Summary, optional Technical Skills, Experience, Selected Projects and fixed education/language sections in that order.
+  Profile links come from `owner_links` and are clickable in Word; they never enter the AI prompt.
+  The default `cv_skills_placement: "tools_tested"` shows Technical Skills after Summary only when at least
+  `cv_tools_tested_min` (default 2) must requirements mention skills from `cv_tool_groups` (default Data and Tools).
+  Use `"end"` for the previous Skills placement. Projects may supply a checked `- project: Title` evidence line.
+  Trimming to one page deletes whole lines or Summary sentences only (page 2 only as a last resort), never rewording anything.
 - **One page**: the AI is asked for at most 520 words and the app rejects anything over 600. `cv_onepage.py` trims an
   existing CV toward one page by deleting lines or Summary sentences only (nothing is reworded, and a check refuses anything that was not already there). A second page is possible as a last resort; inspect the exported layout.
 - **Cover letters need a sentiment** (or an explicit choice to go without), and the sentiment only changes tone.
 - **Documents**: one tab lists your CVs (`work/CV_*.docx`), cover letters (`work/CL_*.docx`) and reports (`work/report-*.md`)
-  with phone-friendly downloads; reports can be read on the page and downloaded as .md or .docx. Exported files are clean
+  plus separate CV rationale notes (`<CV file stem>_notes.md`, using the existing `report` kind).
+  Notes describe posting priorities, section choices and evidence gaps and have their own download beside the CV;
+  older CV records without rationale still export without notes. Notes never enter the CV.
+  Downloads work on phones; reports can be read on the page and downloaded as .md or .docx. Exported files are clean
   (no header, banner or note lines; letters are plain paragraphs), files that still contain notes are labelled, and a job's
   detail links its CV and letter and has **Write a cover letter**. See `examples/` for a fictional letter and report.
 - **No auto-apply, no sending.** It never submits applications or messages. You press the buttons.

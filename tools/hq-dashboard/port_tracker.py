@@ -191,7 +191,7 @@ def main():
                    '  <p class="lede">Your tailored CVs as Word files. On the iPhone a download lands in Files › Downloads. They\'re also in {{COPY_CVS}}, refreshed by the {{SCAN_TIME}} run.</p>\n'
                    '  <div id="cvs"><p class="mut">Loading…</p></div></div>',
                 ' <div class="panel" id="docs"><div class="panel-h"><h2>Your documents</h2></div>\n'
-                '  <p class="lede">Your CVs, cover letters and reports. Tap Download to save a file; on the iPhone it lands in Files › Downloads. Tap Read to open a report here.</p>\n'
+                '  <p class="lede">Your CVs, cover letters and reports. CV rationale notes appear beside their CV as a separate Markdown download. Tap Download to save a file; on the iPhone it lands in Files › Downloads. Tap Read to open a report here.</p>\n'
                 '  <h3 class="doc-sec">CVs</h3><div id="cvs"><p class="mut">Loading…</p></div>\n'
                 '  <h3 class="doc-sec">Cover letters</h3><div id="cls"><p class="mut">Loading…</p></div>\n'
                 '  <h3 class="doc-sec">Reports</h3><div id="reports"><p class="mut">Loading…</p></div>\n'
