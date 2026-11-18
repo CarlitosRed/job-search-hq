@@ -82,6 +82,14 @@ console.log(JSON.stringify(p.cases.map(c=>{try{
         with self.assertRaises(ValueError):self.rank(out)
         out=fictional_result();out['matches'][0]['importance']='required-ish'
         with self.assertRaises(ValueError):self.rank(out)
+        out=fictional_result();out['analysis']['work']='About 3'
+        with self.assertRaisesRegex(ValueError,'not an exact number'):self.rank(out)
+        self.assertIn('pattern',policy.extraction_schema()['properties']['work'])
+        for bad in ('Unknown','2.5/2','7/0'):
+            out=fictional_result();out['analysis']['work']=bad
+            with self.assertRaisesRegex(ValueError,'not an exact number'):self.rank(out)
+        for good in ('7/02','-0','2.5'):
+            self.assertRegex(good,policy.EXACT_PATTERN)
 
     def test_blank_want_and_english_soft_only(self):
         out=fictional_result('SSSSSS')

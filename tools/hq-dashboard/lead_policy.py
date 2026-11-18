@@ -58,6 +58,9 @@ No applications, outreach, unsolicited CVs or letters. Never hide teachable-gap 
 """
 
 
+EXACT_PATTERN = r'^[-+]?(?:[0-9]+(?:\.[0-9]+)?|[0-9]+/0*[1-9][0-9]*)$'
+
+
 def obj(properties):
     return {'type': 'object', 'properties': properties, 'required': list(properties), 'additionalProperties': False}
 
@@ -65,7 +68,8 @@ def obj(properties):
 def extraction_schema():
     text = {'type': 'string'}
     boolean = {'type': 'boolean'}
-    exact = {'type': ['string', 'null']}
+    # Exact numbers as text ("3", "2.5", "7/2"; a decimal or an integer fraction, never both); words such as "About 3" cannot reach the ranker.
+    exact = {'type': ['string', 'null'], 'pattern': EXACT_PATTERN}
     clause = obj(dict(clause=text, required_years=exact, years_domain=text,
                       relevant_years=exact, relevant_years_source=text,
                       equivalent_experience_accepted=boolean, legal_minimum=boolean,
@@ -114,6 +118,8 @@ def validate_shape(value, schema):
         actual = 'null' if value is None else 'boolean' if type(value) is bool else 'string' if isinstance(value, str) else 'invalid'
         if actual not in allowed or 'enum' in schema and value not in schema['enum']:
             raise ValueError('Invalid extraction type or value')
+        if isinstance(value, str) and 'pattern' in schema and not re.fullmatch(schema['pattern'], value):
+            raise ValueError(f'Extraction number is not an exact number: {value!r}')
 
 
 #
