@@ -260,6 +260,22 @@ class StrongTasks(unittest.TestCase):
             self.assertEqual(task['status'], 'failed')
             self.assertIn('word for word', task['message'])
 
+    def test_summary_kind_on_exact_role_heading_saves_draft(self):
+        self.output['claims'].append({'text': ROLE, 'kind': 'summary', 'evidence': ['E-001']})
+        task, fit = self.draft()
+        self.assertEqual(task['status'], 'done', task['message'])
+        self.assertIn('### Analyst | Example Corp | Jan 2024 to May 2025', fit['cv_markdown'])
+
+    def test_summary_kind_on_exact_evidence_is_ordinary_wherever_it_sits(self):
+        for heading in ('', '## Summary\n', '## Experience\n', '## Projects\n'):
+            with self.subTest(heading=heading):
+                self.output.update(cv_markdown=heading + '- Checked fictional records.',
+                                   sources=['E-002'], claims=[{'text': 'Checked fictional records.',
+                                   'kind': 'summary', 'evidence': ['E-002']}])
+                task, fit = self.draft()
+                self.assertEqual(task['status'], 'done', task['message'])
+                self.assertIn('- Checked fictional records.', fit['cv_markdown'])
+
     def test_summary_kind_cannot_bypass_bullet_evidence(self):
         for section in ('Experience', 'Projects', 'Summary', None):
             with self.subTest(section=section):
@@ -267,9 +283,10 @@ class StrongTasks(unittest.TestCase):
                 self.output.update(cv_markdown=heading + '- Led global operations.',
                                    sources=['E-002'], claims=[{'text': 'Led global operations.',
                                    'kind': 'summary', 'evidence': ['E-002']}])
-                task, _ = self.draft()
+                task, fit = self.draft()
                 self.assertEqual(task['status'], 'failed')
                 self.assertIn('headline or Summary', task['message'])
+                self.assertNotIn('cv_markdown', fit)
 
     def test_summary_kind_cannot_describe_non_summary_body(self):
         self.output.update(cv_markdown='## Experience\nLed global operations.', sources=['E-002'],

@@ -358,9 +358,9 @@ def prompt_for(kind, posting, bank, sentiment='', without=False):
                  'In each match, evidence is only eligible E-### IDs from the bank separated by commas, or an empty string when nothing supports it: never other words such as None or Unknown.') if kind=='analyze' else (
                  'Write one ATS-friendly one-page English CV: at most 520 words, at most 3 bullets for each of the two most recent roles and 2 for older roles. A recruiter spends under a minute on it. '
                  "Pick the highest-scored lines per role first; each entry includes its score and top three supported requirements. "
-                 "Copy each bullet claim's text word for word from a CV-ready line or role line of the cited entries, so the same text appears exactly in the CV; use kind bullet. "
+                 "Role headings and bullets are claims with kind bullet: copy their text word for word from a CV-ready line or role line of the cited entries, so the same text appears exactly in the CV. "
                  'Write a one-line plain text headline right after where the name goes, and a ## Summary of 2-3 sentences targeted to this posting. '
-                 'Map the headline and each summary sentence as a claim with kind summary and evidence IDs. Every number, capitalized word except the first word of each sentence, and bank skill name must be supported by the cited entries. '
+                 'Only the headline and Summary sentences use kind summary; map each as a claim with evidence IDs. Every number, capitalized word except the first word of each sentence, and bank skill name must be supported by the cited entries. '
                  'Do not write a Skills section; the site builds it from the cited entries. '
                  "Each job heading is ### Title | Company | Dates copied from the entry's roles. List jobs newest first. Never write Unknown for a title or dates that the roles give. "
                  'Section headings are ## lines such as ## Summary, ## Experience, ## Skills. **bold** is allowed only inside a line; no italics or backticks. '
@@ -599,6 +599,10 @@ class Tasks:
                         raise ValueError('The evidence map does not match the document text.')
                     flags=out.get('flags',[])
                     if kind=='cv':
+                        # Exact cited text is an ordinary claim, even when mislabeled summary.
+                        claims=[dict(claim,kind='bullet') if claim.get('kind')=='summary' and
+                                cv_claim_problem(dict(claim,kind='bullet'),bank) is None else claim
+                                for claim in claims]
                         problem=cv_summary_problem(content,claims)
                         if problem:raise ValueError(problem)
                         for claim in claims:
