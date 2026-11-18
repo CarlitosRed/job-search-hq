@@ -398,6 +398,8 @@ def strong_cv(content,record,bank,sources,claims):
         if claim.get('kind','bullet')=='bullet':
             scores[claim['text']]=max(scores.get(claim['text'],0),max((ranked[key]['score'] for key in claim['evidence']),default=0))
     fixed_names={cv_layout.section_heading('## '+section['name']) for section in SETTINGS['cv_fixed_sections']}
+    # A combined block ("Education and Languages") also replaces the AI's own section for each of its parts.
+    fixed_names|={part.strip() for name in list(fixed_names) for part in re.split(r',|&|\band\b',name) if part.strip()}
     original=cv_source_sections(content)
     sections=[(name,cv_sort_role_bullets(text,scores)) for name,text in original
               if name not in ('skills','technical skills') and name not in fixed_names]
@@ -405,7 +407,7 @@ def strong_cv(content,record,bank,sources,claims):
               if name in ('projects','selected projects') else (name,text) for name,text in sections]
     # Claims belonging only to replaced fixed sections no longer describe the CV.
     removed=''.join(text for name,text in original if name in fixed_names)
-    kept=''.join(text for name,text in original if name not in fixed_names)
+    kept=''.join(text for name,text in original if name not in fixed_names and name not in ('skills','technical skills'))
     claims[:]=[claim for claim in claims if claim['text'] not in removed or claim['text'] in kept]
     fixed=[]
     for section in SETTINGS['cv_fixed_sections']:

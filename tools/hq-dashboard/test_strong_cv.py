@@ -243,6 +243,31 @@ class StrongTasks(unittest.TestCase):
         self.assertTrue(fit['cv_markdown'].endswith('## Education and Languages\n'
             'Diploma in fictional studies. | Speaks fictional languages.\nSpanish (native) | English (B2)\n'))
 
+    def test_model_combined_fixed_block_replaces_ai_part_sections(self):
+        self.fixed_sections()
+        self.assertIn('## Education', CV)
+        self.output['cv_markdown'] = CV + '## Languages' + chr(10) + 'Speaks fictional languages.' + chr(10)
+        with mock.patch.dict(ai.SETTINGS, {'cv_fixed_sections': [{'name': 'Education and Languages', 'lines': [
+                {'entries': ['E-004', 'E-005'], 'from': 'text', 'join': ' | '}]}]}):
+            task, fit = self.draft()
+        self.assertEqual(task['status'], 'done', task['message'])
+        headings = [line for line in fit['cv_markdown'].split(chr(10)) if line.startswith('## ')]
+        self.assertNotIn('## Education', headings)
+        self.assertNotIn('## Languages', headings)
+        self.assertEqual(headings.count('## Education and Languages'), 1)
+
+    def test_claim_only_in_dropped_skills_and_replaced_education_is_removed(self):
+        self.fixed_sections()
+        shared = 'Checked fictional records.'
+        nl = chr(10)
+        self.output['cv_markdown'] = CV.replace('- ' + shared + nl, '').split('## Skills')[0] + nl.join(
+            ['## Skills', '- Invented skill', '- ' + shared, '## Education', shared, ''])
+        with mock.patch.dict(ai.SETTINGS, {'cv_fixed_sections': [{'name': 'Education and Languages', 'lines': [
+                {'entries': ['E-004'], 'from': 'text', 'join': ' | '}]}]}):
+            task, fit = self.draft()
+        self.assertEqual(task['status'], 'done', task['message'])
+        self.assertNotIn(shared, fit['cv_markdown'])
+
     def test_model_rationale_saved_separately_and_bounded(self):
         self.assertIn('rationale', ai.schema('cv')['required'])
         rationale = 'The posting prioritizes fictional record checks and SQL reporting. ' * 10
