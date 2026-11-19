@@ -13,7 +13,7 @@ The qualification judge uses **your own evidence** to assess saved postings. You
 
 - **Board, list, overview and contacts** over your tracker, with durable saves. Edits queue and conflicts are shown instead of overwritten. In Excel mode, edits wait while the workbook is open.
 - **Search**: the Search tab reads public Greenhouse, Lever, Ashby and Workday boards. A profile can supply the boards. `daily_search.py` uses a profile to rank results in a SQLite backlog and save a new JSON landing set. It does not schedule itself or import results into the tracker.
-- **Fit and stars.** List, Board and Top opportunities show Strong, Good, Stretch, Long shot or Fit pending. Open a job to see the suggestion, reasons and requirements with evidence titles. Best fit first sorts by band, then star, then newest date. With SQLite you can star or unstar a job.
+- **Scores and stars.** List, Board and Top opportunities show a 1.0 to 5.0 score and an action: Apply now, Worth applying, Only with a reason or Skip. Unscored jobs show Not scored yet. The drawer shows quoted reasons and main requirements with evidence titles. Highest score first puts starred jobs first, then sorts by score and date. With SQLite you can star or unstar a job.
 - **Review a posting.** Paste text or add photos, review requirements and gaps, then ask for a CV or letter.
 - **Evidence first**: the model is asked to use entries in `evidence/` that are marked `verified` or `stated`, `public-safe: yes`
   and have CV-ready wording, and to list each factual claim with its evidence IDs. The app checks that cited IDs are eligible

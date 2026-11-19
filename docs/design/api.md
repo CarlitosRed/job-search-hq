@@ -41,7 +41,7 @@
 
 **Now:** `/api/data` also returns `sheets` (`name`, `columns`), `statuses`, `today`, `file`, `mirrorWarning`. Preserve workbook column names. Add requires Company/Role; omitted status becomes Tracked.
 
-**Now:** Preserve returned metadata, including `_sheet`, `_row`, `_id`, `_check`, `_checkdate` and `_rounds`. A job has `starred` and a nullable `judgement` with `band`, `suggestion`, `why`, `notes` and `requirements`. Each requirement has `text`, `state` and `evidenceTitles`. `canStar` tells the page whether SQLite is available.
+**Now:** Preserve returned metadata, including `_sheet`, `_row`, `_id`, `_check`, `_checkdate` and `_rounds`. A job has `starred` and a nullable `judgement` with `score`, `action`, `reasons`, `notes` and `requirements`. Each reason has `text`, `quote` and `evidenceTitles`. Each requirement has `text`, `state` and `evidenceTitles`, with `years` and `note` when available. `canStar` tells the page whether SQLite is available.
 
 **Now:** The Contacts view reads `Person`, `Where now`, `How you know them`, `Status`, `Date sent`, `Reply`, `Notes`; Board cards also read a contact's `Company` and `Role`. The bundled `Contacts` sheet has only `Person`, `Company`, `Role`, `Channel`, `Status`, `Notes`, so its card looks sparse and choosing Sent fails because `Date sent` is missing. The fictional contact may appear in screenshots.
 

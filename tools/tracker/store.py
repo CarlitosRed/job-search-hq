@@ -257,15 +257,12 @@ class Store:
         if previous and previous['fields'] == fields:
             return
         row = dict(zip(head, values))
-        named = [row.get(h) for h in NAMED.values()]
+        # The original Verdict stays in the workbook fields. The judge alone writes jobs.fit.
+        fields_by_column = {key: header for key, header in NAMED.items() if table != 'jobs' or key != 'fit'}
+        named = [row.get(h) for h in fields_by_column.values()]
         named = [v.isoformat() if isinstance(v, (date, datetime)) else v for v in named]
         if previous:
-            updates = dict(zip(NAMED, named))
-            if table == 'jobs' and migrations.columns(self.db, 'judgements') and self.db.execute(
-                    """SELECT 1 FROM judgements WHERE job_id=? AND pass='qualification' AND current=1""",
-                    (previous['id'],)).fetchone():
-                # The workbook Verdict is legacy data. The current judgement owns jobs.fit.
-                del updates['fit']
+            updates = dict(zip(fields_by_column, named))
             assignments = ', '.join(f'{key}=?' for key in updates)
             self.db.execute(f'UPDATE {table} SET {assignments}, fields=? WHERE id=?',
                             (*updates.values(), fields, previous['id']))
@@ -277,7 +274,7 @@ class Store:
                                 (previous['id'], previous['status'], row.get('My status'),
                                  datetime.now(timezone.utc).isoformat(), who))
         else:
-            columns = ', '.join(NAMED)
+            columns = ', '.join(fields_by_column)
             dates = freshness.parse_posted(row.get('Posted')) if table in ('jobs', 'old_jobs') else ()
             date_columns = 'posted_on, date_source' if dates else 'date_source'
             date_values = dates if dates else ('',)
@@ -291,7 +288,7 @@ class Store:
                 id_columns, id_values = 'id, ', (next_id,)
             self.db.execute(f'''INSERT INTO {table}
                 ({id_columns}sheet, row, {columns}, {date_columns}, first_seen, old_status, fields)
-                VALUES ({','.join('?' for _ in range(len(id_values) + len(NAMED) + 5 + len(date_values)))})''',
+                VALUES ({','.join('?' for _ in range(len(id_values) + len(fields_by_column) + 5 + len(date_values)))})''',
                 (*id_values, title, number, *named, *date_values, date.today().isoformat() if history else None,
                  row.get('My status'), fields))
         if (history and table == 'jobs' and row.get('My status') == 'Interview'

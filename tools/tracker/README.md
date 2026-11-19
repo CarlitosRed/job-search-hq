@@ -7,8 +7,8 @@ or its neighboring SQLite store after migration.
 Keep personal lead and contact data out of version control.
 
 - From the repository root, run `tools\tracker\open-tracker.bat` or `python -I tools/tracker/server.py`. The default address is http://127.0.0.1:8765.
-  The plain tracker shows **Fit pending** even on judged jobs, and the star is disabled.
-  For saved Fit judgements and stars, use the [PC dashboard setup](../../SETUP.md),
+  The plain tracker shows **Not scored yet** even on judged jobs, and the star is disabled.
+  For saved scores and stars, use the [PC dashboard setup](../../SETUP.md),
   then launch it with `python -I tools/hq-dashboard/server.py`.
 - Override the workbook with `TRACKER_XLSX` and the port with `TRACKER_PORT`. For testing, select a disposable fictional workbook.
 - The page records progress. A person submits applications and sends messages.
@@ -162,35 +162,37 @@ named results without saving checks or changing the backlog, and saves
 `"on"` (the public default). To inspect a saved snapshot directly, run
 `python -I tools/tracker/recheck.py --snapshot <file> --dry-run`.
 
-<!-- # Card 04a: qualification judge. -->
 ## Qualification judge
 
-After the re-check, the judge reads each waiting job's saved posting text, one
-posting per AI call, and lists its requirements as Supported, Adjacent, Gap or
-Unknown against the evidence folder. The posting is passed as untrusted data.
-Only verified and stated entries are read, minus `excluded_evidence_ids`, and
-only their title, level, skill tags, what happened, CV-ready bullets, role and
-limit. Code drops citations that are not eligible entries, turns an uncited
-Supported or Adjacent and an unexplained Gap into Unknown, and then decides
-Fit: Strong, Good, Stretch or Long shot, with a short why and a suggestion.
-A Gap whose note only says the evidence is missing, and an uncited core, licence
-or language Gap, also become Unknown. File and folder paths are removed from
-evidence text before it is sent. Only jobs in Tracked, Review and Apply are
-judged. Results are saved as versioned rows in `judgements` (tracker migration
-5, backed up first). The protected page reads those rows for its Fit chips and
-drawer. The judge does not change stages, edit notes or create a CV or letter.
+After the re-check, the judge reads the full saved posting, one per AI call.
+It suggests a score from 1.0 to 5.0, reasons with posting quotes and evidence,
+and 6 to 10 main requirements. Code checks quotes and citations, counts whole
+months across selected dated roles without double-counting overlaps, and
+rounds the score to one decimal. The profile's optional work history takes
+precedence over dated role lines in eligible evidence. Each `work_history`
+item has `title`, `employer`, `start` and `end`. Dates accept `YYYY-MM-DD`
+or `Mon YYYY`, and `end` can be `present`.
 
-An unchanged posting, place result, profile revision and evidence set reuse the
-saved judgement without a call; when one of them changes the job is judged
-again after the waiting jobs. Each call, including the single retry, counts
+The action is **Apply now** at 4.5 or higher, **Worth applying** from 4.0 to
+4.4, **Only with a reason** from 3.5 to 3.9, and **Skip** below 3.5. A saved
+location outside your work rules forces **Skip**. Jobs with no scored judgement
+show **Not scored yet**.
+
+Migration 8 adds the score to `judgements`. The same transaction copies the
+action to `jobs.fit`. The drawer shows reasons with evidence titles and a folded
+list of main requirements marked Supported, Close, Missing or Unclear.
+Only jobs in Tracked, Review and Apply are judged.
+
+An unchanged posting, place result, profile, evidence set and judge version reuse
+the saved judgement. Changes queue the job to be scored again. Each call, including the single retry, counts
 toward the profile's `search.judge_budget` for the day in
 `work/ai-usage.sqlite3`; dry runs, previews and the command below count too, and
 a restart does not reset it. Jobs beyond the budget wait for the next day. One
 unusable answer skips that job only, and that job is not tried again for seven
 days. If the AI cannot be reached for two jobs in a row the judge stops: with
-nothing judged the phase is recorded as skipped with "AI unavailable; Fit stays
-pending."; after some progress it is partial and the run finishes with a
-warning. Jobs without saved posting text are reported as "No posting text yet".
+nothing judged the phase is skipped. After some progress it is partial and the
+run finishes with a warning. Jobs without saved posting text report "No posting
+text yet". With no usable evidence, the report says "Not enough about you yet".
 
 Set `daily_run.judge` to `"preview"` to judge on an in-memory copy, save no
 judgement and write `work/daily-runs/<run_id>-judge-preview.json`; `"on"` is the
@@ -204,7 +206,7 @@ python -I tools/tracker/judge.py --job 12
 python -I tools/tracker/judge.py --job 12 --apply
 ```
 
-The default is a dry run; it prints the band, the why and the requirements.
+The default dry run prints the score, action, reasons with quotes and evidence titles, and main requirements.
 The AI is reached through `tools/hq-dashboard/ai_seam.py`, `complete(prompt,
 schema)`, which checks every answer against its schema.
 

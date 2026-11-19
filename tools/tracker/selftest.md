@@ -48,3 +48,9 @@ board, Review must not offer Rejected and Applied must not offer Skipped.
 The server allows backward moves, including out of closed
 stages. Repeat on a phone viewport and check drawer steps, filters, status
 selection, Add lead, and horizontal scrolling within the board.
+
+On the PC page, check a fictional judged job for a score and action on its card
+and in its drawer. The reasons show posting quotes and evidence titles. Expand
+Main requirements and check the states and any years shown. A job with only a
+workbook Verdict shows Not scored yet. On Overview, check the Score actions
+chart against the jobs in the current view.

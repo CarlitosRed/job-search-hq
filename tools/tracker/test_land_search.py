@@ -128,11 +128,12 @@ class Landing(Base):
         self.assertEqual(len(landed), 2)
         first = landed[0]
         self.assertEqual(first['status'], 'Tracked')
-        self.assertEqual(first['fit'], 'Fit pending')
+        self.assertIsNone(first['fit'])
         self.assertEqual(first['first_seen'], day(5), 'first seen comes from the backlog, not today')
         self.assertIn('posting greenhouse/1', first['agent_notes'])
         self.assertNotIn('greenhouse', first['notes'] or '', 'technical identifiers stay out of human Notes')
-        self.assertIn('Fit: pending', first['notes'])
+        self.assertIn('Place: ', first['notes'])
+        self.assertNotIn('Fit: pending', first['notes'])
         links = self.rows('SELECT * FROM postings ORDER BY posting_id')
         self.assertEqual([(r['provider'], r['board'], r['posting_id'], r['job_id'], r['source']) for r in links],
                          [('greenhouse', 'Example Co', '1', first['id'], 'search'),

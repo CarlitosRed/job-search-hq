@@ -1402,7 +1402,7 @@ class TrackerLauncherDocs(unittest.TestCase):
         readme = (HERE.parent / 'tracker' / 'README.md').read_text(encoding='utf-8')
         launch = next(line for line in readme.splitlines() if 'open-tracker.bat' in line)
         instructions = readme.split(launch, 1)[1].strip().split('\n- ', 1)[0]
-        self.assertIn('Fit pending', instructions)
+        self.assertIn('Not scored yet', instructions)
         self.assertIn('star is disabled', instructions)
         self.assertIn('tools/hq-dashboard/server.py', instructions)
 
@@ -1482,31 +1482,47 @@ class IntegrationSQLite(Integration):
         self.assertEqual([(day['date'], day['total']) for day in data['history']], [('2026-01-02', 1)])
         self.assertEqual(snapshot(), before)
 
-    def test_fit_page_data_uses_current_qualification_and_evidence_titles(self):
+    def test_unscored_legacy_judgement_is_hidden_on_schema_seven(self):
+        path = self.app.tracker_db_path
+        with closing(sqlite3.connect(path)) as db, db:
+            if 'score' in {row[1] for row in db.execute('PRAGMA table_info(judgements)')}:
+                db.execute('ALTER TABLE judgements DROP COLUMN score')
+            db.execute("UPDATE meta SET value=7 WHERE key='schema_version'")
+            db.execute("INSERT INTO judgements(job_id, current, fit) SELECT id, 1, 'Good' FROM jobs")
+        before = path.read_bytes()
+        self.login()
+        self.assertIsNone(self.data()['jobs'][0]['judgement'])
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_score_page_data_uses_current_qualification_and_evidence_titles(self):
         evidence = self.state / 'evidence'
         evidence.mkdir()
         (evidence / 'E-701-example.md').write_text(
             '# E-701 — Example SQL reporting\n\n- level: verified\n', encoding='utf-8')
         with closing(sqlite3.connect(self.app.tracker_db_path)) as db, db:
             job_id = db.execute('SELECT id FROM jobs').fetchone()[0]
-            for pass_name, current, fit, error in (
-                ('qualification', 0, 'Long shot', None),
-                ('qualification', 1, 'Good', None),
-                ('want', 1, 'Stretch', None),
-                ('qualification', 0, None, 'Temporary failure'),
+            for pass_name, current, fit, score, error in (
+                ('qualification', 0, 'Skip', 3.1, None),
+                ('qualification', 1, 'Worth applying', 4.2, None),
+                ('want', 1, 'Apply now', 4.9, None),
+                ('qualification', 0, None, None, 'Temporary failure'),
             ):
-                db.execute('''INSERT INTO judgements(job_id, pass, current, fit, error, suggestion, why, requirements)
+                db.execute('''INSERT INTO judgements(job_id, pass, current, fit, score, error, why, requirements)
                               VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-                           (job_id, pass_name, current, fit, error, 'Apply', json.dumps(['Meets 1 of 2.', 'Close.']),
+                           (job_id, pass_name, current, fit, score, error,
+                            json.dumps([dict(text='Relevant reporting', quote='Write reports.', evidence=['E-701']),
+                                        dict(text='Related analysis', quote='Analyze results.', evidence=['E-701'])]),
                             json.dumps([dict(text='Write reports', state='supported', evidence=['E-701']),
                                         dict(text='Use E-702', state='unknown', evidence=['E-702'])])))
         self.enterContext(mock.patch.object(hq.hq_settings, 'data_root', return_value=self.state))
         self.login()
         data = self.data()
         judge = data['jobs'][0]['judgement']
-        self.assertEqual(judge['band'], 'Good')
-        self.assertEqual(judge['suggestion'], 'Apply')
-        self.assertEqual(judge['why'], ['Meets 1 of 2.', 'Close.'])
+        self.assertEqual((judge['score'], judge['action']), (4.2, 'Worth applying'))
+        self.assertEqual(judge['reasons'], [
+            dict(text='Relevant reporting', quote='Write reports.', evidenceTitles=['Example SQL reporting']),
+            dict(text='Related analysis', quote='Analyze results.', evidenceTitles=['Example SQL reporting']),
+        ])
         self.assertEqual(judge['notes'], ['The latest check failed. Showing the last judgement.'])
         self.assertEqual(judge['requirements'], [
             dict(text='Write reports', state='supported', evidenceTitles=['Example SQL reporting']),
@@ -1628,26 +1644,26 @@ class IntegrationSQLite(Integration):
                    .locator('time')).to_have_attribute('datetime', re.compile(r'^\d{4}-\d{2}-\d{2}$'))
             browser.close()
 
-    def test_starred_stretch_leads_list_and_overview_browser(self):
+    def test_starred_lower_score_leads_list_and_overview_browser(self):
         from playwright.sync_api import expect, sync_playwright
 
         self.login()
         code, _, body = self.request('POST', '/api/add', {
-            'sheet': 'Fictional jobs', 'Company': 'Example Strong', 'Role': 'Example Analyst',
+            'sheet': 'Fictional jobs', 'Company': 'Example Higher Score', 'Role': 'Example Analyst',
             'version': self.data()['version'], 'requestId': str(uuid.uuid4()),
         })
         self.assertEqual(code, 200, body)
         with closing(sqlite3.connect(self.app.tracker_db_path)) as db, db:
-            db.execute("""INSERT INTO judgements(job_id, current, fit)
-                          SELECT id, 1, CASE WHEN company='Example Strong' THEN 'Strong' ELSE 'Stretch' END
-                          FROM jobs""")
+            db.execute("""INSERT INTO judgements(job_id, current, fit, score)
+                          SELECT id, 1, CASE WHEN company='Example Higher Score' THEN 'Apply now' ELSE 'Skip' END,
+                          CASE WHEN company='Example Higher Score' THEN 4.8 ELSE 3.2 END FROM jobs""")
         self.serve_tls()
         with sync_playwright() as p:
             browser = p.webkit.launch()
             page = browser.new_page(viewport={'width': 1366, 'height': 900}, ignore_https_errors=True)
             self.browser_login(page)
             page.locator('.seg [data-v="list"]').click()
-            expect(page.locator('.lcard .fit-chip')).to_have_text(['Strong', 'Stretch'])
+            expect(page.locator('.lcard .fit-chip')).to_have_text(['4.8 · Apply now', '3.2 · Skip'])
             page.locator('.seg [data-v="board"]').click()
             page.locator('.bcard', has_text='Example Engineer').click()
             drawer = page.locator('#drawer')
@@ -1656,11 +1672,11 @@ class IntegrationSQLite(Integration):
             expect(star).to_have_attribute('aria-pressed', 'true')
             drawer.get_by_role('button', name='Close details').click()
 
-            # 04-fit-score.md: "A starred dream job can be Stretch and appear first."
+            # A star still takes priority over score.
             page.locator('.seg [data-v="list"]').click()
-            expect(page.locator('.lcard .fit-chip')).to_have_text(['Stretch', 'Strong'])
+            expect(page.locator('.lcard .fit-chip')).to_have_text(['3.2 · Skip', '4.8 · Apply now'])
             page.locator('.seg [data-v="overview"]').click()
-            expect(page.locator('.ov-job-list .fit-chip')).to_have_text(['Stretch', 'Strong'])
+            expect(page.locator('.ov-job-list .fit-chip')).to_have_text(['3.2 · Skip', '4.8 · Apply now'])
             browser.close()
 
     def test_legacy_verify_shows_source_warning_and_keeps_owner_notes_browser(self):
@@ -1713,7 +1729,7 @@ class IntegrationSQLite(Integration):
             expect(result.get_by_text('Evidence used:', exact=False)).to_contain_text('Example Company (legacy CV)')
             browser.close()
 
-    def test_fit_requirements_cards_sort_and_star_browser(self):
+    def test_score_requirements_cards_sort_and_star_browser(self):
         from playwright.sync_api import expect, sync_playwright
 
         evidence = self.state / 'evidence'
@@ -1729,19 +1745,23 @@ class IntegrationSQLite(Integration):
             })
             self.assertEqual(status, 200, body)
         with closing(sqlite3.connect(self.app.tracker_db_path)) as db, db:
-            for role, posted in (('Example Engineer', '2026-01-01'), ('Example Newer', '2026-01-03'),
+            for role, posted in (('Example Engineer', '2026-01-05'), ('Example Newer', '2026-01-03'),
                                  ('Example Older', '2026-01-02'), ('Example Pending', '2026-01-04')):
                 db.execute('UPDATE jobs SET posted_on=? WHERE role=?', (posted, role))
             requirements = [
-                dict(text='Write SQL reports', state='supported', evidence=['E-701']),
+                dict(text='Write SQL reports', state='supported', evidence=['E-701'], years_asked=5, years_have=6.5),
                 dict(text='Operate a reporting tool', state='adjacent', evidence=['E-701']),
                 dict(text='Configure a training sandbox', state='gap', evidence=[]),
                 dict(text='Verify the E-702 requirement', state='unknown', evidence=[]),
             ]
-            db.execute("""INSERT INTO judgements(job_id, current, fit, suggestion, why, requirements)
-                          SELECT id, 1, 'Stretch', ?, ?, ? FROM jobs WHERE role!='Example Pending'""",
-                       ('Stretch: learn the training tool', json.dumps(['Meets 1 of 4.', 'A tool can be learned.']),
-                        json.dumps(requirements)))
+            db.execute("""INSERT INTO judgements(job_id, current, fit, score, why, requirements)
+                          SELECT id, 1, 'Only with a reason',
+                          CASE WHEN role='Example Engineer' THEN 3.7 ELSE 3.8 END, ?, ?
+                          FROM jobs WHERE role!='Example Pending'""",
+                       (json.dumps([
+                            dict(text='Reporting experience', quote='Write SQL reports.', evidence=['E-701']),
+                            dict(text='Reporting tools', quote='Operate a reporting tool.', evidence=['E-701']),
+                        ]), json.dumps(requirements)))
         self.serve_tls()
         with sync_playwright() as p:
             browser = p.webkit.launch()
@@ -1756,28 +1776,30 @@ class IntegrationSQLite(Integration):
                 roles = page.locator('.lcard .ro')
                 unstarred = ['Example Newer', 'Example Older', 'Example Engineer', 'Example Pending']
                 expect(roles).to_have_text(unstarred)
-                expect(page.locator('.lcard .fit-chip')).to_have_text(['Stretch', 'Stretch', 'Stretch', 'Fit pending'])
+                expect(page.locator('.lcard .fit-chip')).to_have_text(['3.8 · Only with a reason', '3.8 · Only with a reason',
+                                                                      '3.7 · Only with a reason', 'Not scored yet'])
                 page.locator('.seg [data-v="board"]').click()
                 card = page.locator('.bcard', has_text='Example Engineer')
-                expect(card.locator('.fit-chip')).to_have_text('Stretch')
+                expect(card.locator('.fit-chip')).to_have_text('3.7 · Only with a reason')
                 card.click()
                 drawer = page.locator('#drawer')
                 expect(drawer).to_be_in_viewport()
                 fit = drawer.locator('.judge-fit')
-                expect(fit.locator('.fit-chip')).to_have_text('Stretch')
-                expect(fit.locator('.judge-suggestion')).to_contain_text('Stretch: learn the training tool')
-                expect(fit.locator('.judge-why li')).to_have_text(['Meets 1 of 4.', 'A tool can be learned.'])
+                expect(fit.locator('.fit-chip')).to_have_text('3.7 · Only with a reason')
+                expect(fit.locator('.judge-why q')).to_have_text(['Write SQL reports.', 'Operate a reporting tool.'])
+                expect(fit.locator('.judge-why small')).to_have_text(['Example SQL reporting', 'Example SQL reporting'])
                 details = fit.locator('details')
                 expect(details.locator('li').first).to_be_hidden()
                 details.locator('summary').click()
-                expect(details.locator('li .chip')).to_have_text(['Supported', 'Adjacent', 'Gap', 'Unknown'])
-                expect(details.locator('small')).to_have_text(['Example SQL reporting', 'Example SQL reporting'])
+                expect(details.locator('li .chip')).to_have_text(['Supported', 'Close', 'Missing', 'Unclear'])
+                expect(details.locator('.judge-evidence')).to_have_text(['Example SQL reporting', 'Example SQL reporting'])
+                expect(details.get_by_text('Years: 6.5 of 5 asked', exact=True)).to_be_visible()
                 expect(drawer).not_to_contain_text(re.compile(r'\bE-\d+\b'))
                 star = fit.get_by_role('button', name='Star this job')
                 expect(star).to_have_attribute('aria-pressed', 'false')
                 star.click()
                 expect(star).to_have_attribute('aria-pressed', 'true')
-                expect(details.locator('small').first).to_be_visible()
+                expect(details.locator('.judge-evidence').first).to_be_visible()
                 drawer.get_by_role('button', name='Close details').click()
                 page.locator('.seg [data-v="list"]').click()
                 expect(roles).to_have_text(['Example Engineer', 'Example Newer', 'Example Older', 'Example Pending'])
@@ -1805,10 +1827,10 @@ class IntegrationSQLite(Integration):
         ws.title = 'Fictional jobs'
         ws.append(('Company', 'Role', 'My status', 'Verdict', 'Score'))
         ws.append(('Example Company', 'Example Engineer', 'Review', 'Long shot', 1.0))
-        ws.append(('Example Good', 'Example Analyst', 'Applied', 'Good fit', 2.0))
-        ws.append(('Example Stretch', 'Example Analyst', 'Apply', 'Stretch', 4.9))
-        ws.append(('Example Long Shot', 'Example Analyst', 'Tracked', 'Long shot', 5.0))
-        ws.append(('Example Undated', 'Example Analyst', 'Offer', '', 5.0))
+        ws.append(('Sample Company', 'Example Analyst', 'Applied', 'Good fit', 2.0))
+        ws.append(('Training Company', 'Example Analyst', 'Apply', 'Stretch', 4.9))
+        ws.append(('Demo Company', 'Example Analyst', 'Tracked', 'Long shot', 5.0))
+        ws.append(('Example Undated', 'Example Analyst', 'Offer', 'Strong', 5.0))
         wb.save(self.book)
         wb.close()
         self.assertTrue(store.migrate(self.book, apply=True)['ok'])
@@ -1817,11 +1839,11 @@ class IntegrationSQLite(Integration):
             job_id = db.execute("SELECT id FROM jobs WHERE company='Example Company'").fetchone()[0]
             db.execute("UPDATE jobs SET first_seen=NULL")
             db.execute("UPDATE jobs SET first_seen='2026-01-01' WHERE id=?", (job_id,))
-            db.execute("UPDATE jobs SET first_seen='2026-01-20' WHERE company='Example Good'")
-            db.executemany('''INSERT INTO judgements(job_id, current, fit)
-                              SELECT id, 1, ? FROM jobs WHERE company=?''', [
-                ('Strong', 'Example Company'), ('Good', 'Example Good'),
-                ('Stretch', 'Example Stretch'), ('Long shot', 'Example Long Shot'),
+            db.execute("UPDATE jobs SET first_seen='2026-01-20' WHERE company='Sample Company'")
+            db.executemany('''INSERT INTO judgements(job_id, current, fit, score)
+                              SELECT id, 1, ?, ? FROM jobs WHERE company=?''', [
+                ('Apply now', 4.8, 'Example Company'), ('Worth applying', 4.2, 'Sample Company'),
+                ('Only with a reason', 3.8, 'Training Company'), ('Skip', 3.1, 'Demo Company'),
             ])
             db.execute("""INSERT INTO moves(job_id, from_status, to_status, at, who)
                           VALUES (?, 'Tracked', 'Review', '2026-01-19T12:00:00+00:00', 'site')""", (job_id,))
@@ -1904,19 +1926,30 @@ class IntegrationSQLite(Integration):
                 expect(chart).to_be_visible()
                 expect(activity_dot).to_have_attribute('aria-current', 'true')
                 expect(chart.locator('path[data-metric]')).to_have_count(9)
-                self.assertEqual(page.locator('.rc-x-lbl').evaluate_all("xs => xs.map(x => x.dateTime)"),
-                                 ['2026-01-19', '2026-01-20'])
+                activity_slide = carousel.locator('#chart-activity')
+
+                def expect_dates(start):
+                    dates = activity_slide.locator('.rc-x-axis .rc-x-lbl')
+                    expect(dates).to_have_count(2)
+                    expect(dates.nth(0)).to_have_attribute('datetime', start)
+                    expect(dates.nth(1)).to_have_attribute('datetime', '2026-01-20')
+
+                expect_dates('2026-01-19')
                 page.get_by_role('button', name='4W', exact=True).click()
-                self.assertEqual(page.locator('.rc-x-lbl').evaluate_all("xs => xs.map(x => x.dateTime)"),
-                                 ['2026-01-01', '2026-01-20'])
+                expect_dates('2026-01-01')
                 expect(page.locator('.rc-legend-pill[data-metric="all"] b')).to_have_text('2')
+                actions = page.get_by_role('region', name='Score actions')
+                expect(actions.locator('.ov-donut-slice title')).to_have_text([
+                    'Apply now: 1 (20.0%)', 'Worth applying: 1 (20.0%)', 'Only with a reason: 1 (20.0%)',
+                    'Skip: 1 (20.0%)', 'Not scored yet: 1 (20.0%)',
+                ])
                 opportunities = page.locator('.ov-job-list')
                 expect(opportunities.locator('.t b')).to_have_text(
-                    ['Example Company', 'Example Good', 'Example Stretch', 'Example Long Shot'])
-                expect(opportunities.locator('.fit-chip')).to_have_text(['Strong', 'Good', 'Stretch', 'Long shot'])
+                    ['Example Company', 'Sample Company', 'Training Company', 'Demo Company'])
+                expect(opportunities.locator('.fit-chip')).to_have_text(['4.8 · Apply now', '4.2 · Worth applying', '3.8 · Only with a reason', '3.1 · Skip'])
                 recent = page.locator('.ov-activity-feed')
                 expect(recent.locator('time')).to_have_text(['2026-01-20', '2026-01-19', '2026-01-01'])
-                expect(recent).to_contain_text('Added Example Good (Example Analyst)')
+                expect(recent).to_contain_text('Added Sample Company (Example Analyst)')
                 expect(recent).to_contain_text('Example Company moved to Review')
                 expect(recent).to_contain_text('Added Example Company (Example Engineer)')
                 expect(recent).not_to_contain_text('Example Undated')
@@ -1924,10 +1957,10 @@ class IntegrationSQLite(Integration):
                     drawer = page.locator('#drawer')
                     close = drawer.get_by_role('button', name='Close details')
                     for entry, company in (
-                        (opportunities.get_by_role('button', name='Example Long Shot', exact=False), 'Example Long Shot'),
-                        (page.locator('.ov-attention-list').get_by_role('button', name='Example Stretch', exact=False),
-                         'Example Stretch'),
-                        (recent.get_by_role('button', name='Added Example Good', exact=False), 'Example Good'),
+                        (opportunities.get_by_role('button', name='Demo Company', exact=False), 'Demo Company'),
+                        (page.locator('.ov-attention-list').get_by_role('button', name='Training Company', exact=False),
+                         'Training Company'),
+                        (recent.get_by_role('button', name='Added Sample Company', exact=False), 'Sample Company'),
                     ):
                         entry.tap()
                         expect(drawer).to_be_in_viewport()
@@ -1949,10 +1982,10 @@ class IntegrationSQLite(Integration):
                 page.locator('.jobviews [data-jv="all"]').click()
                 page.locator('#sort').select_option('fit')
                 expect(page.locator('.lcard .co')).to_have_count(5)
-                expect(page.locator('.lcard .fit-chip')).to_have_text(['Strong', 'Good', 'Stretch', 'Long shot', 'Fit pending'])
+                expect(page.locator('.lcard .fit-chip')).to_have_text(['4.8 · Apply now', '4.2 · Worth applying', '3.8 · Only with a reason', '3.1 · Skip', 'Not scored yet'])
                 page.locator('.lcard', has_text='Example Undated').click()
                 match = page.locator('.judge-fit:visible')
-                expect(match.locator('.fit-chip')).to_have_text('Fit pending')
+                expect(match.locator('.fit-chip')).to_have_text('Not scored yet')
                 expect(match.locator('.judge-requirements')).to_have_count(0)
                 expect(page.locator('.ring, .bcard-fit-badge, .gd-match-card')).to_have_count(0)
                 context.close()
@@ -2444,10 +2477,10 @@ class IntegrationSQLite(Integration):
                 expect(page.locator('.bcard')).to_have_count(2)
                 page.locator('.jobviews [data-jv="all"]').click()
                 expect(page.locator('.bcard')).to_have_count(8)
-                # Fit replaces the numeric filter alongside Posted, Place, Posting and Needs attention.
+                # Score action is the filter for the card 04b action labels.
                 page.evaluate('openFilters()')
                 panel = page.locator('#fdrawer')
-                for heading in ('Posted', 'Place', 'Posting', 'Fit'):
+                for heading in ('Posted', 'Place', 'Posting', 'Score action'):
                     expect(panel.get_by_role('heading', name=heading, exact=True)).to_be_visible()
                 for gone in ('Status', 'Verdict', 'List', 'Country / region'):
                     expect(panel.get_by_role('heading', name=gone, exact=True)).to_have_count(0)

@@ -119,6 +119,37 @@ class Base(unittest.TestCase):
 
 
 class Upgrades(Base):
+    def test_migration_eight_clears_unscored_board_labels(self):
+        if 'score' in self.columns('judgements'):
+            self.sql('ALTER TABLE judgements DROP COLUMN score')
+        job_id = self.job_id('Example Co')
+        self.sql("UPDATE meta SET value=7 WHERE key='schema_version'",
+                 f"UPDATE jobs SET fit='Strong' WHERE id={job_id}",
+                 f"INSERT INTO judgements(job_id, current, fit) VALUES ({job_id}, 1, 'Good')",
+                 f"INSERT INTO judgements(job_id, current, fit) VALUES ({job_id}, 0, 'Stretch')",
+                 "UPDATE jobs SET fit='Long shot' WHERE company='Sample Labs'")
+        fields = self.query('SELECT id, fields FROM jobs ORDER BY id')
+        judgements = self.query('SELECT id, job_id, current, fit FROM judgements ORDER BY id')
+        store.Store(self.db_file).close()
+        self.assertEqual(self.version(), 8)
+        self.assertEqual(self.query('SELECT DISTINCT fit FROM jobs'), [(None,)])
+        self.assertEqual(self.query('SELECT id, fields FROM jobs ORDER BY id'), fields)
+        self.assertEqual(self.query('SELECT id, job_id, current, fit FROM judgements ORDER BY id'), judgements)
+
+    def test_migration_eight_adds_nullable_real_score_without_changing_legacy_rows(self):
+        if 'score' in self.columns('judgements'):
+            self.sql('ALTER TABLE judgements DROP COLUMN score')
+        job_id = self.job_id('Example Co')
+        self.sql("UPDATE meta SET value=7 WHERE key='schema_version'",
+                 f"INSERT INTO judgements(job_id, current, fit) VALUES ({job_id}, 1, 'Good')")
+        before = self.query('SELECT id, fit, fields FROM jobs')
+        store.Store(self.db_file).close()
+        self.assertEqual(self.version(), 8)
+        self.assertIn(('score', 'REAL'), [(r[1], r[2]) for r in self.query('PRAGMA table_info(judgements)')])
+        self.assertEqual(self.query('SELECT job_id, current, fit, score FROM judgements'),
+                         [(job_id, 1, 'Good', None)])
+        self.assertEqual(self.query('SELECT id, fit, fields FROM jobs'), before)
+
     def test_fresh_database_is_at_the_latest_version(self):
         self.assertGreaterEqual(self.migrations.LATEST, 3)
         self.assertEqual(self.version(), self.migrations.LATEST)

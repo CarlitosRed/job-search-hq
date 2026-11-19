@@ -675,14 +675,14 @@ border-radius:24px;border:1px solid var(--line);background:var(--card);color:var
 .judge-head .btn{min-height:44px}
 .judge-head .btn[aria-pressed="true"] svg{fill:currentColor;color:var(--amber-ink)}
 .judge-fit p{margin:10px 0 0;overflow-wrap:anywhere}
-.judge-why{margin:8px 0 0;padding:0;list-style:none}
+.judge-why{overflow-wrap:anywhere;margin:8px 0 0;padding:0;list-style:none}
 .judge-why li+li{margin-top:4px}
-.judge-note,.judge-requirements small{color:var(--mute)}
+.judge-note,.judge-why small,.judge-requirements small{color:var(--mute)}
 .judge-requirements{margin-top:10px;overflow-wrap:anywhere}
 .judge-requirements summary{padding:8px 0;cursor:pointer;font-weight:650}
 .judge-requirements ul{list-style:none;padding:0;margin:6px 0 0;display:grid;gap:10px}
 .judge-requirements li{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:start;gap:8px}
-.judge-requirements small{display:block;margin-top:3px}
+.judge-why small,.judge-requirements small{display:block;margin-top:3px}
 .gd-qual-card h4{font-size:16px;font-weight:700;color:var(--ink);margin:0 0 4px 0}
 .gd-qual-list{display:grid;gap:10px;margin:16px 0 20px 0}
 .gd-qual-item{display:flex;align-items:flex-start;gap:12px;padding:10px 14px;background:transparent!important;border:1px solid var(--subtle-border)!important;border-radius:10px}
@@ -1013,24 +1013,33 @@ function initials(n){n=String(n||"?").replace(/\(.*?\)/g,"").replace(/[^\p{L}\p{
  if(w.length>=2)return(w[0][0]+w[1][0]).toUpperCase();const caps=(w[0]||"?").match(/\p{Lu}/gu)||[];return(caps.length>=2?caps[0]+caps[1]:(w[0]||"?").slice(0,2)).toUpperCase()}
 function hue(n){let h=0;for(const c of String(n||""))h=(h*31+c.codePointAt(0))>>>0;return h%360}
 const av=(n,cls="")=>`<span class="av ${cls}" style="--h:${hue(n)}" aria-hidden="true">${esc(initials(n))}</span>`;
-const FIT={"Fit pending":["",0],"Long shot":["r",1],Stretch:["a",2],Good:["",3],Strong:["g",4]};
-const fitBand=j=>Object.hasOwn(FIT,j.judgement?.band)?j.judgement.band:"Fit pending";
-const fitRank=j=>FIT[fitBand(j)][1];
-const fitChip=j=>{const band=fitBand(j);return `<span class="chip fit-chip ${FIT[band][0]}">${band}</span>`};
-const REQUIREMENT_STATE={supported:["Supported","g"],adjacent:["Adjacent","a"],gap:["Gap","r"],unknown:["Unknown",""]};
+const UNSCORED="Not scored yet";
+const SCORE_ACTIONS={
+ "Apply now":["g","var(--tc-offer)"],
+ "Worth applying":["","var(--tc-applied)"],
+ "Only with a reason":["a","var(--tc-ready)"],
+ "Skip":["r","var(--tc-rejected)"],
+ [UNSCORED]:["","var(--tc-skipped)"]
+};
+const fitAction=j=>Number.isFinite(j.judgement?.score)&&Object.hasOwn(SCORE_ACTIONS,j.judgement.action)?j.judgement.action:UNSCORED;
+const fitScore=j=>fitAction(j)===UNSCORED?0:j.judgement.score;
+const fitChip=j=>{
+ const action=fitAction(j);
+ const label=action===UNSCORED?action:fitScore(j).toFixed(1)+" · "+action;
+ return '<span class="chip fit-chip '+SCORE_ACTIONS[action][0]+'">'+label+'</span>';
+};
+const REQUIREMENT_STATE={supported:["Supported","g"],adjacent:["Close","a"],gap:["Missing","r"],unknown:["Unclear",""]};
 function fitDetail(j){
  const judgement=j.judgement;
  const notes=new Set(judgement?.notes||[]);
  if(String(j.Verdict||"").trim().toLowerCase()==="verify")notes.add("Check: source unclear");
- notes.delete(judgement?.suggestion);
- return `<section class="gd-card judge-fit" aria-label="Fit">
+ return `<section class="gd-card judge-fit" aria-label="Score">
   <div class="judge-head">${fitChip(j)}<button class="btn ghost" type="button" data-act="star" aria-label="Star this job" aria-pressed="${!!j.starred}" ${D.canStar&&!STAR_PENDING.has(key(j))?"":"disabled"}>${IC.star}Star</button></div>
-  ${judgement?.suggestion?`<p class="judge-suggestion"><b>Suggestion</b> · ${esc(judgement.suggestion)}</p>`:""}
-  ${judgement?.why.length?`<ul class="judge-why">${judgement.why.map(line=>`<li>${esc(line)}</li>`).join("")}</ul>`:""}
+  ${judgement?.reasons.length?`<ul class="judge-why">${judgement.reasons.map(reason=>`<li>${esc(reason.text)} <q>${esc(reason.quote)}</q>${reason.evidenceTitles.length?`<small>${esc(reason.evidenceTitles.join(" · "))}</small>`:""}</li>`).join("")}</ul>`:""}
   ${[...notes].map(note=>`<p class="judge-note">${esc(note)}</p>`).join("")}
-  ${judgement?.requirements.length?`<details class="judge-requirements"><summary>Requirements (${judgement.requirements.length})</summary>
+  ${judgement?.requirements.length?`<details class="judge-requirements"><summary>Main requirements (${judgement.requirements.length})</summary>
    <ul>${judgement.requirements.map(item=>{const [label,tone]=REQUIREMENT_STATE[item.state];
-    return `<li><span class="chip ${tone}">${label}</span><span>${esc(item.text)}${item.evidenceTitles.length?`<small>${esc(item.evidenceTitles.join(" · "))}</small>`:""}</span></li>`;
+    return `<li><span class="chip ${tone}">${label}</span><span>${esc(item.text)}${item.years?`<small>${esc(item.years)}</small>`:""}${item.note?`<small>${esc(item.note)}</small>`:""}${item.evidenceTitles.length?`<small class="judge-evidence">${esc(item.evidenceTitles.join(" · "))}</small>`:""}</span></li>`;
    }).join("")}</ul></details>`:""}
  </section>`;
 }
@@ -1058,7 +1067,7 @@ S.sheets=[];S.stages=[];
 if(!Object.hasOwn(JOB_VIEWS,S.jobView))S.jobView="todo";
 S.posting=Array.isArray(S.posting)?S.posting.filter(p=>Object.hasOwn(POSTING,p)):[];
 if(!POSTED.some(([days])=>days===S.posted))S.posted=null;
-S.bands=Array.isArray(S.bands)?S.bands.filter(b=>Object.hasOwn(FIT,b)):[];
+S.bands=Array.isArray(S.bands)?S.bands.filter(b=>Object.hasOwn(SCORE_ACTIONS,b)):[];
 if(S.sort==="score")S.sort="fit";
 const save=()=>store.set("state",{jobView:S.jobView,regions:S.regions,posting:S.posting,posted:S.posted,bands:S.bands,sort:S.sort,group:S.group,sel:S.sel});
 const key=j=>j._sheet+"|"+j._row;
@@ -1093,18 +1102,18 @@ function matches(j,skip){const q=S.q.trim().toLowerCase();
  if(skip!=="regions"&&S.regions.length&&!S.regions.includes(j._reg))return false;
  if(skip!=="stages"&&S.stages.length&&!S.stages.includes(stageOf(j).id))return false;
  if(skip!=="posted"&&S.posted!==null&&(j._age==null||j._age>S.posted))return false;
- if(skip!=="bands"&&S.bands.length&&!S.bands.includes(fitBand(j)))return false;
+ if(skip!=="bands"&&S.bands.length&&!S.bands.includes(fitAction(j)))return false;
  if(skip!=="posting"&&S.posting.length&&!S.posting.includes(j._open))return false;
  if(skip!=="attention"&&S.attention&&!attention(j))return false;
  return true}
 const filtered=()=>D.jobs.filter(j=>matches(j));
 const fitDate=j=>j._posted_on||j._first_seen||"";
-const bestFitFirst=(a,b)=>Number(!!b.starred)-Number(!!a.starred)||fitRank(b)-fitRank(a)||fitDate(b).localeCompare(fitDate(a))||a.Company.localeCompare(b.Company)||a.Role.localeCompare(b.Role);
+const bestFitFirst=(a,b)=>Number(!!b.starred)-Number(!!a.starred)||fitScore(b)-fitScore(a)||fitDate(b).localeCompare(fitDate(a))||a.Company.localeCompare(b.Company)||a.Role.localeCompare(b.Role);
 function sorter(){return{
  fit:bestFitFirst,
- company:(a,b)=>a.Company.localeCompare(b.Company)||fitRank(b)-fitRank(a),
- posted:(a,b)=>String(b.Posted).localeCompare(String(a.Posted))||fitRank(b)-fitRank(a),
- applied:(a,b)=>String(b["Date applied"]).localeCompare(String(a["Date applied"]))||stageIdx(b)-stageIdx(a)||fitRank(b)-fitRank(a)}[S.sort]||((a,b)=>0)}
+ company:(a,b)=>a.Company.localeCompare(b.Company)||fitScore(b)-fitScore(a),
+ posted:(a,b)=>String(b.Posted).localeCompare(String(a.Posted))||fitScore(b)-fitScore(a),
+ applied:(a,b)=>String(b["Date applied"]).localeCompare(String(a["Date applied"]))||stageIdx(b)-stageIdx(a)||fitScore(b)-fitScore(a)}[S.sort]||((a,b)=>0)}
 const activeCount=()=>S.sheets.length+S.regions.length+S.bands.length+S.stages.length+S.posting.length+(S.posted!==null)+S.attention;
 function clearFilters(){Object.assign(S,{sheets:[],regions:[],bands:[],stages:[],posting:[],posted:null,attention:false});S.q="";$("#q").value="";render()}
 
@@ -1399,8 +1408,7 @@ function sankey(js,C,phone=innerWidth<960){
 }
 /* ---------- views ---------- */
 function attnBtn(){const n=D.jobs.filter(j=>matches(j,"attention")&&attention(j)).length;return`<button class="btn ${S.attention?"":"ghost"} attn" data-act="attn" aria-pressed="${S.attention}">${IC.warn}Needs attention <span class="count">${n}</span></button>`}
-function donutChart(C){
- const total = C.total || 0;
+function applicationChart(C){
  const stages = STAGES.filter(s => s.id !== "other").map(s => ({
   id: s.id,
   label: s.label,
@@ -1408,6 +1416,20 @@ function donutChart(C){
   val: C[s.id] || 0
  }));
  if(C.other) stages.push({ id: "other", label: "Other", col: "var(--tc-skipped)", val: C.other || 0 });
+ return donutChart(C,stages,"Application progress breakdown");
+}
+
+function scoreChart(jobs){
+ const counts=Object.fromEntries(Object.keys(SCORE_ACTIONS).map(action=>[action,0]));
+ for(const job of jobs)counts[fitAction(job)]++;
+ const entries=Object.entries(SCORE_ACTIONS).map(([label,[,col]])=>({id:label,label,col,val:counts[label]}));
+ const percentages=pcts(entries.map(item=>item.val));
+ const pct=Object.fromEntries(entries.map((s,i)=>[s.id,percentages[i]]));
+ return donutChart({total:jobs.length,pct},entries,"Score actions breakdown",true);
+}
+
+function donutChart(C, stages, label, showCounts=false){
+ const total = C.total || 0;
  const activeStages = stages.filter(s => s.val > 0);
  const R = 64, circ = 2 * Math.PI * R;
  let outSlices = "";
@@ -1424,24 +1446,24 @@ function donutChart(C){
    offset += len;
   });
  }
- const legendRows = activeStages.map(s => `
+ const legendRows = (showCounts ? stages : activeStages).map(s => `
   <div class="ov-legend-row" data-stage="${s.id}" data-tip="${s.val} job${s.val===1?'':'s'} in ${s.label}">
    <div class="ov-legend-left">
     <span class="ov-legend-dot" style="background:${s.col}"></span>
     <span class="ov-legend-name">${s.label}</span>
    </div>
-   <span class="ov-legend-pct">${f1(C.pct[s.id])}</span>
+   <span class="ov-legend-pct">${showCounts?s.val:f1(C.pct[s.id])}</span>
   </div>`).join("");
 
  return `<div class="ov-donut-body">
   <div class="ov-donut-svg-wrap">
-   <svg class="ov-donut-svg" viewBox="0 0 190 190" role="img" aria-label="Application progress breakdown">${outSlices}</svg>
+   <svg class="ov-donut-svg" viewBox="0 0 190 190" role="img" aria-label="${label}">${outSlices}</svg>
    <div class="ov-donut-center">
     <b>${total}</b>
     <small>Total</small>
    </div>
   </div>
-  <div class="ov-donut-legend">${total ? legendRows : '<p style="color:var(--mute);font-size:12px">No jobs tracked yet</p>'}</div>
+  <div class="ov-donut-legend">${total || showCounts ? legendRows : '<p style="color:var(--mute);font-size:12px">No jobs tracked yet</p>'}</div>
  </div>`;
 }
 
@@ -1538,7 +1560,7 @@ function overview(js){const C=counts(js);
    <div class="panel-h ov-chart-header">
     <h2 id="aph">Application progress</h2>
    </div>
-   ${donutChart(C)}
+   ${applicationChart(C)}
   </section>
   <section class="panel ov-chart-card" aria-labelledby="lsh">
    <div class="ov-panel-head">
@@ -1583,6 +1605,10 @@ function overview(js){const C=counts(js);
    ${recentActivity(js)}
   </section>
  </div>
+ <section class="panel ov-chart-card" aria-labelledby="score-action-heading" style="margin-top:16px">
+  <div class="panel-h ov-chart-header"><h2 id="score-action-heading">Score actions</h2></div>
+  ${scoreChart(js)}
+ </section>
 </div>`}
 
 const stageColor=s=>s?s.c:"var(--mute)";
@@ -1684,7 +1710,7 @@ function listView(js){const so=sorter();js=js.slice().sort(so);
   <div class="pref-head">
    <div class="pref-title-group"><h2>${JOB_VIEWS[S.jobView]} · ${js.length} job${js.length===1?"":"s"}</h2></div>
    <div class="pref-controls">
-    <label><span class="sr">Sort</span><select class="sel-s" id="sort"><option value="fit" ${S.sort==="fit"?"selected":""}>Best fit first</option><option value="posted" ${S.sort==="posted"?"selected":""}>Newest posted</option><option value="applied" ${S.sort==="applied"?"selected":""}>Recently applied</option><option value="company" ${S.sort==="company"?"selected":""}>Company A–Z</option></select></label>
+    <label><span class="sr">Sort</span><select class="sel-s" id="sort"><option value="fit" ${S.sort==="fit"?"selected":""}>Highest score first</option><option value="posted" ${S.sort==="posted"?"selected":""}>Newest posted</option><option value="applied" ${S.sort==="applied"?"selected":""}>Recently applied</option><option value="company" ${S.sort==="company"?"selected":""}>Company A–Z</option></select></label>
     <label><span class="sr">Group</span><select class="sel-s" id="group"><option value="none" ${S.group==="none"?"selected":""}>No grouping</option><option value="region" ${S.group==="region"?"selected":""}>By country</option><option value="sheet" ${S.group==="sheet"?"selected":""}>By list</option><option value="stage" ${S.group==="stage"?"selected":""}>By status</option></select></label>
    </div>
   </div>
@@ -1709,14 +1735,14 @@ function contactsView(){const q=S.q.toLowerCase();const cs=D.contacts.filter(c=>
   <label class="f">Status<select class="inp" data-cstatus="${c._row}">${[...new Set([s,...opts])].filter(Boolean).map(o=>`<option ${o===s?"selected":""}>${esc(o)}</option>`).join("")}</select></label></article>`}).join("")}</div>
   <p class="hint">Recording only: this page never sends messages. Marking “Sent” fills today's date.</p>`}
 
-function sidebar(inDrawer){const cnt=(field,val)=>D.jobs.filter(j=>matches(j,field)&&(field==="regions"?j._reg===val:field==="bands"?fitBand(j)===val:j._open===val)).length;
+function sidebar(inDrawer){const cnt=(field,val)=>D.jobs.filter(j=>matches(j,field)&&(field==="regions"?j._reg===val:field==="bands"?fitAction(j)===val:j._open===val)).length;
  const box=(field,val,label,pre="")=>{const on=S[field].includes(val);return`<label class="opt">${`<input type="checkbox" data-f="${field}" value="${esc(val)}" ${on?"checked":""}>`}${pre}<span class="lb">${esc(label)}</span><span class="n">${cnt(field,val)}</span></label>`};
  const regs=Object.keys(REG).filter(r=>D.jobs.some(j=>j._reg===r));
  return`<aside class="side" aria-label="Filters"><div class="side-h"><h2>Filters</h2>${activeCount()?`<button class="linkbtn" data-act="clear">Clear all</button>`:""}${inDrawer?`<button class="btn quiet icon" data-act="closef" aria-label="Close filters">${IC.close}</button>`:""}</div>
  <div><h3>Posted</h3><div class="posted-options">${POSTED.map(([days,label])=>`<button type="button" data-posted="${days??"all"}" aria-pressed="${S.posted===days}">${label}</button>`).join("")}</div></div>
  <div><h3>Place</h3><div class="opts">${regs.map(r=>box("regions",r,REG[r][0])).join("")}</div></div>
  <div><h3>Posting</h3><div class="opts">${Object.entries(POSTING).map(([id,label])=>box("posting",id,label)).join("")}</div></div>
- <div><h3>Fit</h3><div class="opts">${Object.keys(FIT).reverse().map(b=>box("bands",b,b)).join("")}</div></div>
+ <div><h3>Score action</h3><div class="opts">${Object.keys(SCORE_ACTIONS).map(b=>box("bands",b,b)).join("")}</div></div>
  <div class="opts"><label class="switch">Needs attention<input type="checkbox" data-t="attention" ${S.attention?"checked":""}></label></div></aside>`}
 
 function roundSection(j){const rounds=j._rounds||[],interview=stageOf(j).id==="interview";

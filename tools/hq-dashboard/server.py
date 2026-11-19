@@ -175,7 +175,7 @@ def evidence_titles():
         entries = daily_run.judge.judge_evidence(root, excluded)
     except (OSError, UnicodeError):
         return {}
-    return {key: judgement_text(entry['title']) for key, entry in entries.items() if entry['title']}
+    return {key: judgement_text(entry['title']) or 'Untitled evidence' for key, entry in entries.items()}
 
 
 def json_list(value):
@@ -187,17 +187,29 @@ def json_list(value):
 
 
 def qualification_page_data(row, titles):
+    def names(item):
+        evidence = item.get('evidence')
+        if not isinstance(evidence, list):
+            return []
+        return list(dict.fromkeys(titles[key] for key in evidence if isinstance(key, str) and key in titles))
+
     requirements = []
     for item in json_list(row['requirements']):
         if not isinstance(item, dict) or not (label := judgement_text(item.get('text'))):
             continue
         state = item.get('state')
-        evidence = item.get('evidence')
-        names = [titles[e] for e in evidence if isinstance(e, str) and e in titles] if isinstance(evidence, list) else []
-        requirements.append(dict(text=label, state=state if state in daily_run.judge.STATES else 'unknown',
-                                 evidenceTitles=list(dict.fromkeys(names))))
-    return dict(band=row['fit'], suggestion=judgement_text(row['suggestion']),
-                why=[judgement_text(line) for line in json_list(row['why']) if isinstance(line, str)][:3],
+        theme = dict(text=label, state=state if state in daily_run.judge.STATES else 'unknown',
+                     evidenceTitles=names(item))
+        if years := daily_run.judge.years_text(item):
+            theme['years'] = years
+        if note := judgement_text(item.get('note')):
+            theme['note'] = note
+        requirements.append(theme)
+    reasons = [
+        dict(text=judgement_text(item.get('text')), quote=item['quote'], evidenceTitles=names(item))
+        for item in json_list(row['why']) if isinstance(item, dict) and isinstance(item.get('quote'), str)
+    ]
+    return dict(score=row['score'], action=row['fit'], reasons=reasons,
                 notes=[judgement_text(line) for line in json_list(row['notes']) if isinstance(line, str)],
                 requirements=requirements)
 
@@ -354,24 +366,20 @@ class App:
                 if (job := jobs.get(f'{sheet}|{row}')) is not None:
                     job['starred'] = bool(starred)
         data['fitVersion'] = fit_version(db)
-        if data['fitVersion'] is None:
+        if data['fitVersion'] is None or 'score' not in columns(db, 'judgements'):
             return
         titles = evidence_titles()
-        bands = (daily_run.judge.STRONG, daily_run.judge.GOOD, daily_run.judge.STRETCH, daily_run.judge.LONG_SHOT)
-        rows = db.execute('''SELECT j.sheet, j.row, q.fit, q.suggestion, q.why, q.notes, q.requirements,
-                                    q.complete, q.created,
+        rows = db.execute('''SELECT j.sheet, j.row, q.score, q.fit, q.why, q.notes, q.requirements, q.created,
                                     (SELECT latest.error IS NOT NULL FROM judgements latest
                                      WHERE latest.job_id=q.job_id AND latest.pass=q.pass AND latest.id>q.id
                                      ORDER BY latest.id DESC LIMIT 1) AS refresh_failed
                              FROM jobs j JOIN judgements q ON q.job_id=j.id
-                             WHERE q.pass=? AND q.current=1 AND q.error IS NULL ORDER BY q.id DESC''',
+                             WHERE q.pass=? AND q.current=1 AND q.error IS NULL AND q.score IS NOT NULL ORDER BY q.id DESC''',
                           (daily_run.judge.PASS,))
         for row in rows:
             job = jobs.get(f"{row['sheet']}|{row['row']}")
-            if job is not None and job['judgement'] is None and row['fit'] in bands:
+            if job is not None and job['judgement'] is None and row['fit'] in daily_run.judge.ACTIONS:
                 displayed = qualification_page_data(row, titles)
-                if row['complete'] == 0:
-                    displayed['notes'].append('Posting description is incomplete.')
                 if row['refresh_failed']:
                     day = (row['created'] or '')[:10]
                     displayed['notes'].append(f'Last judgement: {day}. The latest check failed.' if day
