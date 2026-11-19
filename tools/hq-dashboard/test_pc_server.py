@@ -6,6 +6,7 @@ import http.client
 import importlib.util
 import json
 import os
+from contextlib import closing
 from pathlib import Path
 import secrets
 import socket
@@ -21,7 +22,7 @@ import unittest
 import uuid
 from types import SimpleNamespace
 from unittest import mock
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import openpyxl
 
@@ -29,6 +30,45 @@ HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('hq_pc', HERE / 'server.py')
 hq = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hq)
+
+
+class StageHistory(unittest.TestCase):
+    def test_replays_only_recorded_days_and_surviving_jobs(self):
+        store = hq.daily_run.land_search.store
+        db = sqlite3.connect(':memory:')
+        self.addCleanup(db.close)
+        db.executescript("""
+            CREATE TABLE jobs (id INTEGER PRIMARY KEY, sheet TEXT, row INTEGER, status TEXT, first_seen TEXT);
+            CREATE TABLE moves (id INTEGER PRIMARY KEY, job_id INTEGER, from_status TEXT, to_status TEXT, at TEXT);
+        """)
+        db.executemany('INSERT INTO jobs VALUES (?,?,?,?,?)', [
+            (1, 'Example jobs', 2, 'Applied', '2026-01-02'),
+            (2, 'Example jobs', 3, 'Skipped', '2026-01-05'),
+            (3, 'Example jobs', 4, 'Offer', None),
+        ])
+        db.executemany('INSERT INTO moves VALUES (?,?,?,?,?)', [
+            (1, 1, 'Tracked', 'Review', '2026-01-05T22:00:00+00:00'),
+            (2, 1, 'Review', 'Apply', '2026-01-06T02:00:00+00:00'),
+            (3, 1, 'Apply', 'Applied', '2026-01-06T06:00:00+00:00'),
+            (4, 99, 'Applied', 'Rejected', '2026-01-01T12:00:00+00:00'),
+        ])
+        job_keys = {'Example jobs|2', 'Example jobs|3', 'Example jobs|4'}
+        history, activity = hq.stage_history(db, store.stages.STAGES, '-06:00', job_keys)
+        stages = dict(tracked=0, review=0, apply=0, applied=0, interview=0, offer=0, rejected=0, skipped=0)
+        self.assertEqual(history, [
+            dict(stages, date='2026-01-02', total=1, tracked=1),
+            dict(stages, date='2026-01-05', total=2, apply=1, skipped=1),
+            dict(stages, date='2026-01-06', total=2, applied=1, skipped=1),
+        ])
+        self.assertEqual(activity, [
+            dict(key='Example jobs|2', date='2026-01-06', status='Applied'),
+            dict(key='Example jobs|2', date='2026-01-05', status='Apply'),
+            dict(key='Example jobs|2', date='2026-01-05', status='Review'),
+            dict(key='Example jobs|3', date='2026-01-05'),
+            dict(key='Example jobs|2', date='2026-01-02'),
+        ])
+        utc, _ = hq.stage_history(db, store.stages.STAGES, '+00:00', job_keys)
+        self.assertEqual(utc[1], dict(stages, date='2026-01-05', total=2, review=1, skipped=1))
 
 
 class RequestLimits(unittest.TestCase):
@@ -807,7 +847,20 @@ try {
                     if width == 375:
                         self.assertTrue(page.locator('.seg').evaluate('(s) => s.scrollWidth <= s.clientWidth'),
                                         f'phone tabs overflow in {view}, allowing viewShown to scroll them')
-                self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), width)
+                    if view not in ('search', 'review'):
+                        page.locator('#q').focus()
+                        page.wait_for_timeout(300)
+                        self.assertEqual(page.evaluate(rects), first, f'focused search shifted tabs at {width}px')
+                        self.assertTrue(page.locator('#appSearch').evaluate("""search => {
+                            const a = search.getBoundingClientRect();
+                            return [...document.querySelectorAll('.seg button')].every(tab => {
+                                const b = tab.getBoundingClientRect();
+                                return a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
+                            });
+                        }"""), f'focused search covers tabs at {width}px in {view}')
+                        page.locator('#q').blur()
+                    self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), width,
+                                         f'page overflows at {width}px in {view}')
                 context.close()
             browser.close()
 
@@ -833,7 +886,8 @@ try {
 
         with sync_playwright() as p:
             browser = p.webkit.launch()
-            for name, options in (('desktop', {'viewport': {'width': 1440, 'height': 900}}), ('phone', p.devices['iPhone 15'])):
+            # Check the initial Applied card on the phone before the desktop moves it to Rejected.
+            for name, options in (('phone', p.devices['iPhone 15']), ('desktop', {'viewport': {'width': 1440, 'height': 900}})):
                 context = browser.new_context(**options, ignore_https_errors=True)
                 page = context.new_page()
                 errors = []
@@ -854,9 +908,8 @@ try {
                 menu = lambda stage: page.eval_on_selector_all(f'.col[data-stage="{stage}"] .bcard-move-item', 'xs => xs.map(x => x.dataset.moveto)')
                 self.assertNotIn('rejected', menu('review'))
                 self.assertIn('skipped', menu('review'))
-                if name == 'desktop':  # the phone board renders the cards of one column at a time
-                    self.assertIn('rejected', menu('applied'))
-                    self.assertNotIn('skipped', menu('applied'))
+                self.assertIn('rejected', menu('applied'))
+                self.assertNotIn('skipped', menu('applied'))
                 result = page.evaluate('trackerSelfTest()')
                 self.assertTrue(result['ok'], result['lines'] if 'lines' in result else result)
                 if name == 'desktop':
@@ -890,6 +943,250 @@ try {
                                 'flow links are curves')
                 self.assertEqual(errors, [], name)
                 context.close()
+            browser.close()
+
+    def test_board_horizontal_scroll_browser(self):
+        from playwright.sync_api import sync_playwright, expect
+
+        self.serve_tls()
+        stages = ['tracked', 'review', 'apply', 'skipped', 'applied', 'interview', 'offer', 'rejected']
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            for width in (1440, 375):
+                with self.subTest(width=width):
+                    phone = width == 375
+                    context = browser.new_context(viewport={'width': width, 'height': 900},
+                                                  is_mobile=phone, has_touch=phone, ignore_https_errors=True)
+                    page = context.new_page()
+                    self.browser_login(page)
+                    expect(page.locator('#sync')).to_contain_text('1 job')
+                    page.click('.seg [data-v="board"]')
+                    expect(page.locator('.jobviews [data-jv="todo"]')).to_have_attribute('aria-pressed', 'true')
+                    board = page.locator('.board-cols')
+                    columns = board.locator(':scope > [data-stage]').evaluate_all(
+                        'cs => cs.map(c => [c.dataset.stage, c.getBoundingClientRect().width])')
+                    self.assertEqual([stage for stage, _ in columns], stages)
+                    for _, column_width in columns:
+                        self.assertAlmostEqual(column_width, width * .84 if phone else 280, delta=1)
+                    if phone:
+                        self.assertEqual(board.evaluate('b => getComputedStyle(b).scrollSnapType'), 'x mandatory')
+                    self.assertTrue(board.evaluate('b => b.scrollWidth > b.clientWidth && b.scrollLeft === 0'))
+                    heading_x = page.locator('.board-title').bounding_box()['x']
+                    filters_x = page.locator('.jobviews').bounding_box()['x']
+                    board.evaluate('b => { b.scrollLeft = b.scrollWidth; }')
+                    page.wait_for_function("""() => {
+                        const b = document.querySelector('.board-cols');
+                        return b.scrollLeft > 0 && b.scrollWidth - b.clientWidth - b.scrollLeft < 2;
+                    }""")
+                    expect(board.locator('[data-stage="rejected"]')).to_be_in_viewport()
+                    self.assertEqual(page.locator('.board-title').bounding_box()['x'], heading_x)
+                    self.assertEqual(page.locator('.jobviews').bounding_box()['x'], filters_x)
+                    self.assertTrue(page.evaluate("""() => {
+                        window.scrollTo(1000, window.scrollY);
+                        const root = document.scrollingElement;
+                        return window.scrollX === 0 && root.scrollWidth === root.clientWidth;
+                    }"""))
+                    context.close()
+            browser.close()
+
+    def test_board_drag_scrolls_to_offscreen_rejected_and_saves(self):
+        from playwright.sync_api import sync_playwright, expect
+
+        wb = openpyxl.load_workbook(self.book)
+        wb.active.cell(2, 4).value = 'Applied'
+        wb.active.cell(2, 5).value = '2026-01-03'
+        wb.save(self.book)
+        wb.close()
+        self.serve_tls()
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            context = browser.new_context(viewport={'width': 1440, 'height': 900}, ignore_https_errors=True)
+            page = context.new_page()
+            self.browser_login(page)
+            expect(page.locator('#sync')).to_contain_text('1 job')
+            page.click('.seg [data-v="board"]')
+            page.locator('.jobviews [data-jv="all"]').click()
+
+            board = page.locator('.board-cols')
+            source = board.locator('[data-stage="applied"] .bcard-top')
+            rejected = board.locator('[data-stage="rejected"]')
+            expect(source).to_be_in_viewport()
+            expect(rejected).not_to_be_in_viewport()
+            self.assertEqual(board.evaluate('b => b.scrollLeft'), 0)
+            bounds = board.bounding_box()
+            start = source.bounding_box()
+            x, y = start['x'] + 30, start['y'] + 12
+            # Hold within the tracker's 48px edge zone, away from the scrollbar and viewport edge.
+            edge_x = bounds['x'] + bounds['width'] - 32
+            page.mouse.move(x, y)
+            page.mouse.down()
+            try:
+                page.mouse.move(x + 12, y, steps=4)
+                expect(page.locator('body.is-dragging')).to_have_count(1)
+                edge_y = bounds['y'] + 24
+                page.mouse.move(edge_x, edge_y, steps=8)
+                page.mouse.move(edge_x, edge_y)
+                deadline = time.monotonic() + 15
+                while not board.evaluate("""board => {
+                    const target = board.querySelector('[data-stage="rejected"]').getBoundingClientRect();
+                    return board.scrollLeft > 0 && target.right <= board.getBoundingClientRect().right;
+                }"""):
+                    if time.monotonic() >= deadline:
+                        self.fail('Dragging did not scroll the Rejected column fully into the board viewport.')
+                    time.sleep(0.05)
+                target = rejected.locator('.col-empty').bounding_box()
+                drop_x, drop_y = target['x'] + target['width'] / 2, target['y'] + target['height'] / 2
+                page.mouse.move(drop_x, drop_y, steps=4)
+                page.mouse.move(drop_x, drop_y)
+                expect(board.locator('[data-stage="rejected"].over')).to_have_count(1)
+            finally:
+                page.mouse.up()
+
+            expect(rejected.locator('.bcard')).to_contain_text('Example Company')
+            for _ in range(100):
+                saved = self.app.data()['jobs'][0]['My status']
+                if saved == 'Rejected':
+                    break
+                time.sleep(0.1)
+            self.assertEqual(saved, 'Rejected')
+            context.close()
+            browser.close()
+
+    def test_overview_empty_history_and_same_origin_browser(self):
+        from playwright.sync_api import sync_playwright, expect
+
+        self.serve_tls()
+        app_data = self.app.data
+
+        def data_with_notices():
+            return dict(app_data(), daily_run={'state': 'failed', 'tone': 'n', 'message': 'Example scan failed.'},
+                        stale_boards=[{'board': 'Example Board', 'since': '2026-01-01', 'reason': 'Incomplete results'}])
+
+        self.enterContext(mock.patch.object(self.app, 'data', side_effect=data_with_notices))
+        outside = []
+        origin = urlsplit(self.app.origin)
+
+        def guard(route):
+            url = urlsplit(route.request.url)
+            if (url.scheme, url.netloc) != (origin.scheme, origin.netloc):
+                outside.append(route.request.url)
+                route.abort()
+            else:
+                route.continue_()
+
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            context = browser.new_context(viewport={'width': 1440, 'height': 900}, ignore_https_errors=True)
+            context.add_init_script("""window.blockedExternal = [];
+                document.addEventListener('securitypolicyviolation', e => {
+                    if (e.blockedURI.startsWith('http') && new URL(e.blockedURI).origin !== location.origin)
+                        window.blockedExternal.push(e.blockedURI);
+                });""")
+            context.route('**/*', guard)
+            page = context.new_page()
+            self.browser_login(page)
+            expect(page.locator('#sync')).to_contain_text('1 jobs')
+            page.click('.seg [data-v="overview"]')
+            expect(page.locator('#main [role="status"]')).to_have_count(2)
+            expect(page.locator('#main .banner[role="status"]')).to_have_text('Example scan failed.')
+            chart_status = page.locator('#main .chart-carousel [role="status"]')
+            expect(chart_status).to_have_text('')
+            expect(page.locator('#main .banner', has_text='Example Board')).to_have_text(
+                'Example Board: not fully read since Jan 1 (Incomplete results)')
+            expect(page.locator('#sk')).to_be_visible()
+            expect(page.locator('.sk-empty')).to_contain_text('No applications yet.')
+            page.get_by_role('button', name='Next chart').click()
+            expect(chart_status).to_have_text('Activity over time')
+            expect(page.get_by_text('History starts once stage changes are recorded.')).to_be_visible()
+            expect(page.locator('#activity-chart')).to_have_count(0)
+            expect(page.locator('.ov-activity-feed')).to_have_count(0)
+            page.click('.seg [data-v="search"]')
+            expect(page.get_by_role('button', name='Search now')).to_be_visible()
+            guide = page.locator('.bento-guide-card')
+            expect(guide).to_contain_text('select Search now')
+            expect(guide).to_contain_text('select Add to tracker for each result you want to keep')
+            expect(page.locator('.search-aside')).not_to_contain_text('crawler')
+            self.assertEqual(page.locator('link[rel="preconnect"], link[rel="dns-prefetch"]').evaluate_all(
+                'links => links.map(link => link.href).filter(href => new URL(href).origin !== location.origin)'), [])
+            self.assertEqual(page.evaluate('window.blockedExternal'), [])
+            self.assertEqual(outside, [])
+            context.close()
+            browser.close()
+
+    def test_overview_donut_tracked_and_empty_browser(self):
+        from playwright.sync_api import sync_playwright, expect
+
+        wb = openpyxl.load_workbook(self.book)
+        ws = wb.active
+        ws.cell(2, 4).value = 'Tracked'
+        ws.append([2, 'Second Company', 'Example Analyst', 'Tracked'])
+        ws.append([3, 'Third Company', 'Example Analyst', 'Tracked'])
+        wb.save(self.book)
+        wb.close()
+        self.serve_tls()
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            context = browser.new_context(viewport={'width': 1440, 'height': 900}, ignore_https_errors=True)
+            page = context.new_page()
+            self.browser_login(page)
+            expect(page.locator('#sync')).to_contain_text('3 jobs')
+            page.click('.seg [data-v="overview"]')
+            progress = page.get_by_role('region', name='Application progress')
+            expect(progress.locator('.ov-donut-center b')).to_have_text('3')
+            expect(progress.locator('.ov-legend-row[data-stage="tracked"]')).to_have_text('Tracked 100.0%')
+            expect(progress.locator('.ov-donut-slice')).to_have_count(1)
+            expect(progress.locator('.ov-donut-slice title')).to_have_text('Tracked: 3 (100.0%)')
+            expect(progress).not_to_contain_text('No jobs tracked yet')
+
+            wb = openpyxl.load_workbook(self.book)
+            wb.active.delete_rows(2, 3)
+            wb.save(self.book)
+            wb.close()
+            page.reload()
+            expect(page.locator('#sync')).to_contain_text('0 jobs')
+            page.click('.seg [data-v="overview"]')
+            expect(progress.locator('.ov-donut-center b')).to_have_text('0')
+            expect(progress.get_by_text('No jobs tracked yet')).to_be_visible()
+            expect(progress.locator('.ov-donut-slice')).to_have_count(0)
+            context.close()
+            browser.close()
+
+    def test_shortcuts_popover_one_toggle_per_activation_browser(self):
+        from playwright.sync_api import sync_playwright, expect
+
+        self.serve_tls()
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            for native in (True, False):
+                with self.subTest(native=native):
+                    context = browser.new_context(viewport={'width': 1440, 'height': 900}, ignore_https_errors=True)
+                    if native:
+                        context.add_init_script("""window.scriptPopoverToggles = 0;
+                            const toggle = HTMLElement.prototype.togglePopover;
+                            HTMLElement.prototype.togglePopover = function(...args) {
+                                if (this.id === 'help') window.scriptPopoverToggles++;
+                                return toggle.apply(this, args);
+                            };""")
+                    else:
+                        context.add_init_script("Object.defineProperty(HTMLElement.prototype, 'showPopover', {value: undefined});")
+                    page = context.new_page()
+                    self.browser_login(page)
+                    trigger = page.get_by_role('button', name='Keyboard shortcuts')
+                    help_panel = page.locator('#help')
+                    expect(help_panel).to_be_hidden()
+                    trigger.click()
+                    expect(help_panel).to_be_visible()
+                    if native:
+                        self.assertTrue(help_panel.evaluate('el => el.matches(":popover-open")'))
+                    else:
+                        expect(trigger).to_have_attribute('aria-expanded', 'true')
+                    trigger.press('Enter')
+                    expect(help_panel).to_be_hidden()
+                    if native:
+                        self.assertEqual(page.evaluate('window.scriptPopoverToggles'), 0)
+                    else:
+                        expect(trigger).to_have_attribute('aria-expanded', 'false')
+                    context.close()
             browser.close()
 
     def test_phone_browser(self):
@@ -1117,6 +1414,216 @@ class IntegrationSQLite(Integration):
         self.login()
         self.assertEqual(self.data()['store'], 'sqlite')
 
+    def test_history_excludes_a_stored_row_the_tracker_hides(self):
+        store = self.app.tracker.store
+        with closing(store.Store(store.db_path(self.book))) as storage, storage.db:
+            db = storage.db
+            sheet = 'Fictional jobs'
+            head = store.decode(db.execute('SELECT header FROM layouts WHERE sheet=?', (sheet,)).fetchone()[0])
+            storage.put_row('jobs', sheet, 3, head,
+                            [3, '', 'Example Engineer', 'Applied', '', 'Partial row', ''])
+            visible_id, hidden_id = (storage.job_ref(f'{sheet}|{row}') for row in (2, 3))
+            self.assertIsNotNone(hidden_id)
+            db.execute("UPDATE jobs SET first_seen='2026-01-02' WHERE id=?", (visible_id,))
+            db.execute("UPDATE jobs SET first_seen='2026-01-03' WHERE id=?", (hidden_id,))
+            db.execute("INSERT INTO moves(job_id, from_status, to_status, at) VALUES (?, 'Review', 'Applied', '2026-01-04')",
+                       (hidden_id,))
+
+        self.login()
+        data = self.data()
+        self.assertEqual([job['_id'] for job in data['jobs']], [f'{sheet}|2'])
+        self.assertEqual([(day['date'], day['total'], day['review']) for day in data['history']],
+                         [('2026-01-02', 1, 1)])
+        self.assertEqual(data['activity'], [{'key': f'{sheet}|2', 'date': '2026-01-02'}])
+
+    def test_page_data_reads_an_older_schema_without_upgrading(self):
+        path = self.app.tracker_db_path
+        backups = path.parent / '.tracker-backups'
+
+        def snapshot():
+            with closing(sqlite3.connect(path)) as db:
+                schema = db.execute('SELECT * FROM sqlite_master ORDER BY name').fetchall()
+                meta = db.execute('SELECT * FROM meta ORDER BY key').fetchall()
+            return schema, meta, backups.exists(), sorted(backups.iterdir()) if backups.exists() else []
+
+        with closing(sqlite3.connect(path)) as db, db:
+            db.execute('DROP TABLE board_reads')
+            db.execute('DROP TABLE judgements')
+            db.execute('DROP TABLE choice_signals')
+            for table, columns in {
+                'checks': ('run_id', 'posting_row', 'kind', 'observation', 'detail', 'at'),
+                'postings': ('state', 'closed_on', 'close_reason', 'title', 'place'),
+                'jobs': ('starred',), 'old_jobs': ('starred',),
+            }.items():
+                for column in columns:
+                    db.execute(f'ALTER TABLE {table} DROP COLUMN {column}')
+            db.execute("UPDATE meta SET value=3 WHERE key='schema_version'")
+            db.execute("UPDATE jobs SET first_seen='2026-01-02'")
+        before = snapshot()
+        self.login()
+        data = self.data()
+        self.assertEqual(data['store'], 'sqlite')
+        self.assertEqual(data['version'], 'db-1')
+        self.assertEqual(data['jobs'][0]['posting']['state'], 'unknown')
+        self.assertEqual(data['stale_boards'], [])
+        self.assertEqual([(day['date'], day['total']) for day in data['history']], [('2026-01-02', 1)])
+        self.assertEqual(snapshot(), before)
+
+    def test_overview_charts_scores_and_dated_activity_browser(self):
+        from playwright.sync_api import sync_playwright, expect
+
+        store = self.app.tracker.store
+        store.db_path(self.book).unlink()
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Fictional jobs'
+        ws.append(('Company', 'Role', 'My status', 'Verdict', 'Score'))
+        ws.append(('Example Company', 'Example Engineer', 'Review', 'Long shot', 1.0))
+        ws.append(('Example Good', 'Example Analyst', 'Applied', 'Good fit', 2.0))
+        ws.append(('Example Stretch', 'Example Analyst', 'Apply', 'Stretch', 4.9))
+        ws.append(('Example Long Shot', 'Example Analyst', 'Tracked', 'Long shot', 5.0))
+        ws.append(('Example Undated', 'Example Analyst', 'Offer', '', 5.0))
+        wb.save(self.book)
+        wb.close()
+        self.assertTrue(store.migrate(self.book, apply=True)['ok'])
+        with closing(store.Store(store.db_path(self.book))) as storage, storage.db:
+            db = storage.db
+            job_id = db.execute("SELECT id FROM jobs WHERE company='Example Company'").fetchone()[0]
+            db.execute("UPDATE jobs SET first_seen=NULL")
+            db.execute("UPDATE jobs SET first_seen='2026-01-01' WHERE id=?", (job_id,))
+            db.execute("UPDATE jobs SET first_seen='2026-01-20' WHERE company='Example Good'")
+            db.execute("""INSERT INTO moves(job_id, from_status, to_status, at, who)
+                          VALUES (?, 'Tracked', 'Review', '2026-01-19T12:00:00+00:00', 'site')""", (job_id,))
+            db.execute("UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='revision'")
+
+        settings = dict(hq.hq_settings.load(), timezone_offset='+00:00')
+        self.enterContext(mock.patch.object(hq.hq_settings, 'load', return_value=settings))
+        self.serve_tls()
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            for width in (1366, 375):
+                context = browser.new_context(viewport={'width': width, 'height': 900}, ignore_https_errors=True,
+                                              has_touch=width == 375,
+                                              reduced_motion='reduce' if width == 375 else 'no-preference')
+                page = context.new_page()
+                self.browser_login(page)
+                expect(page.locator('#sync')).to_contain_text('5 jobs')
+                page.click('.seg [data-v="overview"]')
+                tiles = page.locator('.ov-tiles .tile')
+                expect(tiles).to_have_count(9)
+                if width == 1366:
+                    self.assertEqual(len(set(tiles.evaluate_all('ts => ts.map(t => t.offsetTop)'))), 1)
+                sankey = page.locator('#sk')
+                chart = page.locator('#activity-chart')
+                carousel = page.get_by_role('region', name='Overview charts')
+                next_chart = carousel.get_by_role('button', name='Next chart')
+                previous = carousel.get_by_role('button', name='Previous chart')
+                summary_dot = carousel.get_by_role('button', name='Show Job search summary')
+                activity_dot = carousel.get_by_role('button', name='Show Activity over time')
+                expect(sankey).to_be_visible()
+                expect(chart).to_be_hidden()
+                expect(summary_dot).to_have_attribute('aria-current', 'true')
+                for stage in ('Tracked', 'Review', 'Apply'):
+                    node = sankey.locator(f'.nd[data-key="{stage.lower()}"]')
+                    expect(node).to_have_attribute('data-n', '1')
+                    expect(node.locator('text')).to_contain_text(stage)
+                    expect(node.locator('text')).to_have_css('opacity', '1')
+                    expect(node.locator('.nd-dot')).to_have_css('opacity', '1')
+                    self.assertTrue(node.locator('.nd-dot').evaluate(
+                        'dot => getComputedStyle(dot).fill === getComputedStyle(dot).color'))
+                    self.assertTrue(node.locator('text').evaluate("""label => {
+                        const text = label.getBoundingClientRect(), svg = label.ownerSVGElement.getBoundingClientRect();
+                        return text.width > 0 && text.height > 0 && text.left >= svg.left && text.right <= svg.right
+                            && text.top >= svg.top && text.bottom <= svg.bottom;
+                    }"""), f'{stage} label fits inside the Sankey at {width}px')
+                expect(page.locator('#chart-summary .sk-note')).to_contain_text('Previous stages are unknown.')
+                self.assertTrue(carousel.evaluate("""c => {
+                    const button = c.querySelector('#chart-activity .ov-time-btn');
+                    button.focus();
+                    return document.activeElement !== button;
+                }"""))
+                if width == 375:
+                    expect(sankey).to_have_class('compact')
+                    self.assertEqual(page.locator('.ov-wrap').evaluate("""overview =>
+                        [overview, ...overview.querySelectorAll('*')]
+                            .filter(el => el.getBoundingClientRect().right > window.innerWidth)
+                            .map(el => `${el.tagName}.${el.getAttribute('class') || ''}: ${el.getBoundingClientRect().right}`)
+                    """), [], 'Overview elements must fit within the 375px viewport')
+                next_chart.click()
+                expect(chart).to_be_visible()
+                expect(sankey).to_be_hidden()
+                expect(activity_dot).to_have_attribute('aria-current', 'true')
+                expect(carousel.get_by_role('heading', name='Job search summary')).to_have_count(0)
+                if width == 375:
+                    expect(page.locator('#chart-activity')).to_have_css('animation-name', 'none')
+                previous.click()
+                expect(sankey).to_be_visible()
+                expect(sankey.locator('.nd[data-key="apply"] text')).to_have_css('opacity', '1')
+                activity_dot.click()
+                expect(chart).to_be_visible()
+                # Moving away from a chart while one of its controls has focus keeps focus in the carousel.
+                carousel.get_by_role('button', name='1W', exact=True).press('ArrowLeft')
+                expect(sankey).to_be_visible()
+                expect(summary_dot).to_be_focused()
+                summary_dot.press('ArrowRight')
+                expect(chart).to_be_visible()
+                page.reload()
+                expect(page.locator('.seg [data-v="list"]')).to_have_attribute('aria-selected', 'true')
+                page.click('.seg [data-v="overview"]')
+                expect(chart).to_be_visible()
+                expect(activity_dot).to_have_attribute('aria-current', 'true')
+                expect(chart.locator('path[data-metric]')).to_have_count(9)
+                self.assertEqual(page.locator('.rc-x-lbl').evaluate_all("xs => xs.map(x => x.dateTime)"),
+                                 ['2026-01-19', '2026-01-20'])
+                page.get_by_role('button', name='4W', exact=True).click()
+                self.assertEqual(page.locator('.rc-x-lbl').evaluate_all("xs => xs.map(x => x.dateTime)"),
+                                 ['2026-01-01', '2026-01-20'])
+                expect(page.locator('.rc-legend-pill[data-metric="all"] b')).to_have_text('2')
+                opportunities = page.locator('.ov-job-list')
+                expect(opportunities.locator('.t b')).to_have_text(
+                    ['Example Long Shot', 'Example Undated', 'Example Stretch', 'Example Good'])
+                opportunity_scores = opportunities.locator('.ring').evaluate_all('rings => rings.map(r => r.outerHTML)')
+                recent = page.locator('.ov-activity-feed')
+                expect(recent.locator('time')).to_have_text(['2026-01-20', '2026-01-19', '2026-01-01'])
+                expect(recent).to_contain_text('Added Example Good (Example Analyst)')
+                expect(recent).to_contain_text('Example Company moved to Review')
+                expect(recent).to_contain_text('Added Example Company (Example Engineer)')
+                expect(recent).not_to_contain_text('Example Undated')
+                if width == 375:
+                    drawer = page.locator('#drawer')
+                    close = drawer.get_by_role('button', name='Close details')
+                    for entry, company in (
+                        (opportunities.get_by_role('button', name='Example Long Shot', exact=False), 'Example Long Shot'),
+                        (page.locator('.ov-attention-list').get_by_role('button', name='Example Stretch', exact=False),
+                         'Example Stretch'),
+                        (recent.get_by_role('button', name='Added Example Good', exact=False), 'Example Good'),
+                    ):
+                        entry.tap()
+                        expect(drawer).to_be_in_viewport()
+                        expect(drawer.locator('.detail')).to_contain_text(company)
+                        close.tap()
+                        expect(page.locator('#drawer.on')).to_have_count(0)
+                    entry = recent.get_by_role('button', name='Example Company moved to Review', exact=False)
+                    entry.focus()
+                    expect(entry).to_be_focused()
+                    entry.press('Enter')
+                    expect(drawer).to_be_in_viewport()
+                    expect(drawer.locator('.detail')).to_contain_text('Example Company')
+                    close.tap()
+                    expect(entry).to_be_focused()
+                page.click('.seg [data-v="list"]')
+                page.locator('.jobviews [data-jv="all"]').click()
+                page.locator('#sort').select_option('score')
+                expect(page.locator('.lcard .co')).to_have_count(5)
+                list_scores = page.locator('.lcard .ring').evaluate_all('rings => rings.map(r => r.outerHTML)')
+                self.assertEqual(opportunity_scores, list_scores[:4])
+                page.locator('.lcard', has_text='Example Undated').click()
+                match = page.locator('.gd-match-card:visible')
+                expect(match.get_by_role('heading', name='Is your resume a good match?')).to_be_visible()
+                expect(match.locator('.ring b')).to_have_text('5')
+                context.close()
+            browser.close()
+
     def test_queue_survives_restart_and_retries_once(self):
         self.login()
         lock = self.book.with_name('~$' + self.book.name)
@@ -1164,6 +1671,18 @@ class IntegrationSQLite(Integration):
 
     def test_board_stages_browser(self):
         self.skipTest('Browser checks run in Excel mode; the page does not depend on the store.')
+
+    def test_board_horizontal_scroll_browser(self):
+        self.skipTest('Board layout is checked in Excel mode.')
+
+    def test_board_drag_scrolls_to_offscreen_rejected_and_saves(self):
+        self.skipTest('Board drag scrolling is checked in Excel mode.')
+
+    def test_overview_empty_history_and_same_origin_browser(self):
+        self.skipTest('The no-history Overview browser check runs in Excel mode.')
+
+    def test_overview_donut_tracked_and_empty_browser(self):
+        self.skipTest('The tracked-only and empty Overview fixtures use Excel.')
 
     def posting(self, cv, job_id=None):
         key = str(uuid.uuid4())
@@ -1578,18 +2097,16 @@ class IntegrationSQLite(Integration):
                     for company in companies:
                         expect(page.locator('.lcard', has_text=company)).to_have_count(1)
                     expect(page.locator('.list-view-wrap h2').first).to_contain_text(label)
-                # Board: only the columns of the stages in the view.
+                # Board: views filter cards while all stage columns stay in place.
                 bar.locator('[data-jv="todo"]').click()
                 page.click('.seg [data-v="board"]')
                 expect(page.locator('.jobviews [data-jv="todo"]')).to_have_attribute('aria-pressed', 'true')
-                expect(page.locator('.col[data-stage]')).to_have_count(3)
-                for stage in ('tracked', 'review', 'apply'):
-                    expect(page.locator(f'.col[data-stage="{stage}"]')).to_have_count(1)
+                expect(page.locator('.col[data-stage]')).to_have_count(8)
                 expect(page.locator('.bcard')).to_have_count(3)
                 page.locator('.jobviews [data-jv="progress"]').click()
                 for stage in ('applied', 'interview', 'offer'):
                     expect(page.locator(f'.col[data-stage="{stage}"]')).to_have_count(1)
-                expect(page.locator('.col[data-stage="skipped"]')).to_have_count(0)
+                expect(page.locator('.col[data-stage="skipped"] .bcard')).to_have_count(0)
                 expect(page.locator('.bcard')).to_have_count(2)
                 page.locator('.jobviews [data-jv="all"]').click()
                 expect(page.locator('.bcard')).to_have_count(8)

@@ -5,8 +5,9 @@ Typed AI tasks run through the restricted worker; search reads bounded public jo
 Secrets and login throttle state live outside the checkout, in LOCALAPPDATA.
 """
 import argparse
+from collections import Counter, defaultdict
 from contextlib import closing
-from datetime import datetime
+from datetime import date, datetime, timezone
 import getpass
 import hashlib
 import hmac
@@ -98,6 +99,69 @@ def load_component(name):
     module=importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _recorded_time(value, site_tz):
+    """Date-only records already name a local day. Move timestamps are UTC."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.combine(date.fromisoformat(value), datetime.min.time(), site_tz)
+    except ValueError:
+        try:
+            moment = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+        return (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).astimezone(site_tz)
+
+
+def stage_history(db, stages, timezone_offset, job_keys):
+    """Replay surviving jobs on each recorded local day, returning counts and dated activity."""
+    site_tz = datetime.fromisoformat('2000-01-01T00:00:00' + timezone_offset).tzinfo or timezone.utc
+    stage_ids = {stage['name']: stage['id'] for stage in stages}
+    jobs = {job_id: (ref, status, first_seen)
+            for job_id, sheet, row, status, first_seen in db.execute(
+                'SELECT id, sheet, row, status, first_seen FROM jobs')
+            if (ref := f'{sheet}|{row}') in job_keys}
+    moves = defaultdict(list)
+    for move_id, job_id, before, after, at in db.execute('SELECT id, job_id, from_status, to_status, at FROM moves'):
+        if job_id not in jobs:
+            continue
+        moment = _recorded_time(at, site_tz)
+        if moment is not None:
+            moves[job_id].append((moment, move_id, before, after))
+
+    days = defaultdict(list)
+    activity = []
+    for job_id, (ref, status, first_seen) in jobs.items():
+        seen = _recorded_time(first_seen, site_tz)
+        recorded = sorted(moves.get(job_id, ()))
+        if seen is not None:
+            activity.append((seen, 0, dict(key=ref, date=seen.date().isoformat())))
+        if recorded:
+            first_move = recorded[0]
+            start = min(seen, first_move[0]) if seen is not None else first_move[0]
+            days[start.date()].append((job_id, first_move[2]))
+        elif seen is not None:
+            days[seen.date()].append((job_id, status))
+        for moment, move_id, _, after in recorded:
+            days[moment.date()].append((job_id, after))
+            activity.append((moment, move_id, dict(key=ref, date=moment.date().isoformat(), status=after or '')))
+
+    # Add jobs at the beginning of their first known day, then replay that day's moves.
+    counts = Counter()
+    current = {}
+    history = []
+    for day, changes in sorted(days.items()):
+        for job_id, status in changes:
+            if job_id in current:
+                counts[current[job_id]] -= 1
+            stage_id = stage_ids.get(str(status or '').strip())
+            current[job_id] = stage_id
+            counts[stage_id] += 1
+        history.append(dict(date=day.isoformat(), total=len(current),
+                            **{stage_id: counts[stage_id] for stage_id in stage_ids.values()}))
+    return history, [event for _, _, event in sorted(activity, key=lambda item: item[:2], reverse=True)]
 
 
 class App:
@@ -196,21 +260,32 @@ class App:
                 c['_id'] = 'Contacts|' + str(c['_row'])
             # Card 03: closing and re-check.
             d['stale_boards'] = []
+            d['history'], d['activity'] = [], []
             for job in d['jobs']:
                 job['posting'] = dict(state='unknown', since=None, reason='', checked=None)
-            tracker_db = self.tracker.XLSX.with_suffix('.sqlite3')
-            if tracker_db.is_file():
-                with closing(daily_run.land_search.store.Store(tracker_db)) as storage:
-                    for job in d['jobs']:
-                        job_id = storage.job_ref(job['_id'])
-                        if job_id is not None:
-                            job['posting'] = daily_run.recheck.posting_status(storage, job_id)
-                    try:
-                        profile = daily_run.daily_search.profiles.load(hq_settings.data_root() / 'profile.json')
-                        current = {(c['provider'], c['label']) for c in profile['search']['companies']}
-                    except (OSError, ValueError, KeyError, TypeError):
-                        current = set()
-                    d['stale_boards'] = daily_run.recheck.stale_boards(storage, datetime.now().date(), current=current)
+            tracker_db = self.store_path
+            if tracker_db is not None:
+                store = daily_run.land_search.store
+                with closing(store.Store(tracker_db.as_uri() + '?mode=ro', upgrade=False)) as storage, storage.db:
+                    storage.db.execute('BEGIN')
+                    d['history'], d['activity'] = stage_history(
+                        storage.db, self.tracker.stages.STAGES, hq_settings.load()['timezone_offset'],
+                        {job['_id'] for job in d['jobs']})
+                    # Pre-check schemas can still supply history. Leave their posting status unknown.
+                    columns = store.migrations.columns
+                    if ({'observation', 'detail'} <= columns(storage.db, 'checks') and
+                            {'state', 'closed_on', 'close_reason'} <= columns(storage.db, 'postings')):
+                        for job in d['jobs']:
+                            job_id = storage.job_ref(job['_id'])
+                            if job_id is not None:
+                                job['posting'] = daily_run.recheck.posting_status(storage, job_id)
+                    if columns(storage.db, 'board_reads'):
+                        try:
+                            profile = daily_run.daily_search.profiles.load(hq_settings.data_root() / 'profile.json')
+                            current = {(c['provider'], c['label']) for c in profile['search']['companies']}
+                        except (OSError, ValueError, KeyError, TypeError):
+                            current = set()
+                        d['stale_boards'] = daily_run.recheck.stale_boards(storage, datetime.now().date(), current=current)
             try:
                 at = hq_settings.load()['daily_run']['at']
                 d['daily_run'] = daily_run.status(self.tracker.XLSX.parent / 'daily-runs.sqlite3',

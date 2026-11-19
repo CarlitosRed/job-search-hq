@@ -407,8 +407,8 @@ if(window.ResizeObserver)new ResizeObserver(fitTop).observe($(".top"));addEventL
 /* The keyboard shrinks only the visual viewport: Add lead follows it, so its sticky footer stays above the keyboard. Pinch zoom is left alone. */
 if(window.visualViewport){const vv=visualViewport,fit=()=>{if(vv.scale>1.05)return;const r=document.documentElement.style;r.setProperty("--vvh",vv.height+"px");r.setProperty("--vvt",vv.offsetTop+"px")};vv.addEventListener("resize",fit);vv.addEventListener("scroll",fit);fit()}
 $("#addDlg").addEventListener("focusin",e=>{if(!wide()&&/INPUT|TEXTAREA/.test(e.target.tagName))setTimeout(()=>e.target.scrollIntoView({block:"center"}),300)});
-/* Board on a phone: Wishlist is far longer than the rest, so a sideways swipe can land past the end of a short column. Jump up to its title. */
-let bT;document.addEventListener("scroll",e=>{const b=e.target;if(!b.matches||!b.matches(".board")||wide())return;clearTimeout(bT);bT=setTimeout(()=>{const mid=b.getBoundingClientRect().left+b.clientWidth/2,c=$$(".col",b).find(x=>x.getBoundingClientRect().right>mid);
+/* A sideways swipe can land past the end of a short column. Jump up to its title. */
+let bT;document.addEventListener("scroll",e=>{const b=e.target;if(!b.matches||!b.matches(".board-cols")||wide()||document.body.classList.contains("is-dragging"))return;clearTimeout(bT);bT=setTimeout(()=>{if(!b.isConnected)return;const mid=b.getBoundingClientRect().left+b.clientWidth/2,c=$$(".col",b).find(x=>x.getBoundingClientRect().right>mid);
  if(c&&c.getBoundingClientRect().bottom<innerHeight*.4)scrollBy({top:c.getBoundingClientRect().top-(parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--stick"))||0)-8,behavior:"smooth"})},140)},true);
 /* Sankey: a tap gives the same detail as hovering. */
 const tapTip=e=>{const el=e.target.closest&&e.target.closest("#sk [data-tip]");if(!el){tip.style.opacity=0;return}const b=el.getBoundingClientRect();tip.innerHTML=el.dataset.tip;tip.style.opacity=1;const r=tip.getBoundingClientRect();

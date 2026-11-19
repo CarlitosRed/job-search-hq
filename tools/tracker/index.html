@@ -5,15 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Job Search HQ</title>
 <meta name="color-scheme" content="light dark">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&family=Sora:wght@100..800&display=swap" rel="stylesheet">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%232f6bff'/%3E%3Cpath d='M9 12h14v11a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2z' fill='%23fff'/%3E%3Cpath d='M13 12V9.5A1.5 1.5 0 0 1 14.5 8h3A1.5 1.5 0 0 1 19 9.5V12' stroke='%23fff' stroke-width='2' fill='none'/%3E%3C/svg%3E">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&family=Sora:wght@100..800&display=swap');
 :root{
- --font-display:'Sora',system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
- --font-body:'Geist',system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+ --font-display:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+ --font-body:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
  --sidebar-bg:#ffffff;--bg:#f7f8fa;--card:#ffffff;--ink:#111827;--ink2:#374151;--mute:#64748b;--line:#eaedf1;--soft:#f1f3f5;--hover:#e9ecef;
  --blue:#2563eb;--blue-ink:#1d4ed8;--blue-soft:#eff6ff;
  --green:#16a34a;--green-ink:#15803d;--green-soft:#f0fdf4;
@@ -28,9 +24,8 @@
  --r:16px;--r-sm:10px;--on-blue:#fff;
 }
 @media (prefers-color-scheme:dark){:root{
- --font-display:'Sora',system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
- --font-body:'Geist',system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
- --font-mono:'Geist Mono',ui-monospace,"Cascadia Mono",Consolas,monospace;
+ --font-display:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+ --font-body:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
  --sidebar-bg:#0e1015;--bg:#0e1116;--card:#15181f;--ink:#ffffff;--ink2:#cbd2de;--mute:#868c99;--line:#1f232b;--soft:#171a22;--hover:#1c202a;
  --blue:#3b82f6;--blue-ink:#93c5fd;--blue-soft:#172554;
  --rc-primary:#10b981;--rc-secondary:#38bdf8;
@@ -79,7 +74,7 @@ button,input,select,textarea{font:inherit;color:inherit;touch-action:manipulatio
 button{cursor:pointer}
 a{touch-action:manipulation}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
-.tile b,.ring b,.bar b,.col-h em,.facts dd,.count,time,[data-pct],.ov-metric-val,.ov-donut-center b,.tile-val .num,.tile-val .pct,.rc-x-lbl,.rc-tip-v,.rc-tip-total,.rc-tip-num,.opt .n,.stepper .sd,.tile-trend,.ov-trend-chip,.ov-legend-pct,.bcard-fit-badge,.bcard-round,.badge,.status-pill,td.numeric,.tabular,.fchip span{font-family:var(--font-body);font-variant-numeric:tabular-nums slashed-zero;font-feature-settings:"tnum" 1,"zero" 1,"cv01" 1}
+.tile b,.ring b,.bar b,.col-h em,.facts dd,.count,time,[data-pct],.ov-metric-val,.ov-donut-center b,.tile-val .num,.tile-val .pct,.rc-x-lbl,.rc-tip-v,.rc-tip-total,.rc-tip-num,.opt .n,.stepper .sd,.tile-trend,.ov-legend-pct,.bcard-fit-badge,.bcard-round,.badge,.status-pill,td.numeric,.tabular,.fchip span{font-family:var(--font-body);font-variant-numeric:tabular-nums slashed-zero;font-feature-settings:"tnum" 1,"zero" 1,"cv01" 1}
 .drawer,dialog{overscroll-behavior:contain}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 svg{display:block}
@@ -87,7 +82,7 @@ a{color:var(--blue-ink)}
 
 /* header */
 .top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
-.top-in{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px;padding:10px 24px;max-width:1680px;margin:0 auto}
+.top-in{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(400px,1.5fr);align-items:center;gap:16px;padding:10px 24px;max-width:1680px;margin:0 auto}
 .brand{display:flex;align-items:center;gap:11px;min-width:0;justify-self:start}
 .logo{width:36px;height:36px;border-radius:10px;background:var(--blue);color:var(--on-blue);display:grid;place-items:center;flex:none}
 .brand h1{font-family:var(--font-display);font-size:18px;margin:0;letter-spacing:-.02em;line-height:1.2;font-weight:700;white-space:nowrap}
@@ -97,8 +92,16 @@ a{color:var(--blue-ink)}
 .seg button[aria-selected=true]{background:transparent;color:var(--ink);box-shadow:none}
 .seg button[aria-selected=true]::after{content:"";position:absolute;bottom:0;left:10px;right:10px;height:2px;border-radius:2px;background:var(--blue)}
 .seg svg{width:16px;height:16px}
-.right{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0;justify-self:end}
-.actions{display:flex;align-items:center;gap:8px}
+.right{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0;width:100%;justify-self:end}
+.actions{display:flex;align-items:center;gap:8px;flex:none}
+@media (min-width:901px) and (max-width:1280px){
+ .top-in{grid-template-columns:minmax(0,1fr) auto minmax(300px,1.5fr);gap:10px;padding-inline:16px}
+ .actions{gap:6px}
+ .actions .btn,.actions #fbtn{padding-inline:8px}
+ .actions .btn .l{display:none}
+ .brand h1{overflow:hidden;text-overflow:ellipsis}
+}
+@media (min-width:1281px){.actions:has(#undoBtn:not([hidden])) .btn .l{display:none}}
 
 /* theme toggle button */
 #themeBtn{position:relative;width:36px;height:36px;min-width:36px;padding:0;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:0;color:var(--mute);border-radius:var(--r-sm,10px);cursor:pointer;transition:background .15s,color .15s}
@@ -113,13 +116,11 @@ a{color:var(--blue-ink)}
 .top .btn.ghost{background:transparent;border-color:transparent;color:var(--mute)}
 .top .btn.ghost:hover{background:color-mix(in srgb,var(--soft) 50%,transparent);color:var(--ink)}
 
-/* Expandable search aligned with welcome header: icon-only idle, expands on hover / focus */
-.top-search-group{display:flex;align-items:center;gap:8px;margin-left:auto}
-.search{box-sizing:border-box;position:relative;display:flex;align-items:center;justify-content:flex-end;width:36px;height:36px;border:1px solid var(--line);background:var(--card);border-radius:var(--r-sm,8px);box-shadow:none;cursor:pointer;transition:width .26s cubic-bezier(.16,1,.3,1),border-color .15s ease;overflow:hidden}
+.search{box-sizing:border-box;position:relative;display:flex;align-items:center;justify-content:flex-end;width:36px;min-width:36px;height:36px;border:1px solid var(--line);background:var(--card);border-radius:var(--r-sm,8px);box-shadow:none;cursor:pointer;transition:width .26s cubic-bezier(.16,1,.3,1),border-color .15s ease;overflow:hidden}
 .search:hover,.search:focus-within,.search:has(input:not(:placeholder-shown)){width:260px;border-color:var(--blue);cursor:text}
 .search svg{position:absolute;left:10px;top:10px;width:16px;height:16px;color:var(--mute);pointer-events:none;z-index:2;transition:color .15s ease}
 .search:hover svg,.search:focus-within svg{color:var(--blue)}
-.search input{width:100%;height:34px;border:0;background:transparent;border-radius:var(--r-sm,8px);padding:0 34px 0 34px;outline:none;font-size:13px;color:transparent;cursor:pointer;box-shadow:none;transition:color .15s ease}
+.search input{box-sizing:border-box;min-width:0;width:100%;height:34px;border:0;background:transparent;border-radius:var(--r-sm,8px);padding:0 34px 0 34px;outline:none;font-size:13px;color:transparent;cursor:pointer;box-shadow:none;transition:color .15s ease}
 .search:hover input,.search:focus-within input,.search:has(input:not(:placeholder-shown)) input{color:var(--ink);cursor:text}
 .search input::placeholder{color:transparent;transition:color .15s ease}
 .search:hover input::placeholder,.search:focus-within input::placeholder,.search:has(input:not(:placeholder-shown)) input::placeholder{color:var(--mute)}
@@ -169,13 +170,6 @@ main{flex:1 0 auto;width:100%;max-width:100%;margin:0;padding:20px 32px 60px}
 .panel-h{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .panel-h p{margin:0;color:var(--mute);font-size:12.5px}
 .panel-h .sp{margin-left:auto}
-.user-capsule{box-sizing:border-box;height:36px;display:inline-flex;align-items:center;gap:8px;padding:4px 8px;border-radius:10px;background:color-mix(in srgb,var(--soft) 50%,transparent);border:1px solid var(--line);cursor:default;user-select:none}
-.user-av{width:26px;height:26px;border-radius:7px;background:color-mix(in srgb,#7c3aed 18%,var(--soft));color:#7c3aed;font-size:11px;font-weight:700;display:grid;place-items:center;flex-shrink:0}
-:root:not([data-theme="light"]) .user-av{background:rgba(167,139,250,.18);color:#a78bfa}
-.user-info{display:flex;flex-direction:column}
-.user-name{font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap}
-.user-chev{color:var(--mute);font-size:11px}
-@media (max-width:900px){.user-capsule{display:none}}
 
 .ov-wrap{display:flex;flex-direction:column;gap:calc(18px * 0.97);width:100%}
 @media (min-width:960px){
@@ -183,12 +177,10 @@ main{flex:1 0 auto;width:100%;max-width:100%;margin:0;padding:20px 32px 60px}
 }
 .ov-header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:8px}
 .ov-title-wrap{display:flex;flex-direction:column;gap:2px}
-.ov-header-slot{display:flex;align-items:center;justify-content:flex-end}
 .ov-activity-feed .t{display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px;min-width:0}
 .ov-activity-feed .ov-act-title{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ov-activity-feed small{margin-left:auto;flex-shrink:0;font-size:12px;color:var(--mute)}
 .ov-crumb{font-size:12px;font-weight:600;color:var(--mute);letter-spacing:.04em;text-transform:uppercase}
-.ov-welcome{font-family:var(--font-display);font-size:24px;font-weight:700;color:var(--ink);margin:0;letter-spacing:-.025em;line-height:1.2}
 .ov-subtitle{font-family:var(--font-display);font-size:15px;font-weight:300;color:var(--ink2);margin:0;letter-spacing:-0.01em}
 
 /* 8 Metrics Cards in sleek card containers with 3D flip */
@@ -256,15 +248,26 @@ main{flex:1 0 auto;width:100%;max-width:100%;margin:0;padding:20px 32px 60px}
 }
 
 /* Overview Charts Layout */
-.ov-chart-full{width:100%;box-sizing:border-box}
 .ov-middle-grid{display:grid;grid-template-columns:1fr 1fr;gap:calc(16px * 0.97);align-items:stretch;margin-top:16px;width:100%;box-sizing:border-box}
 @media (max-width:959px){.ov-middle-grid{grid-template-columns:1fr}}
-.ov-activity-full{width:100%;margin-top:16px;box-sizing:border-box}
-.ov-charts-grid{display:grid;grid-template-columns:1.45fr 1fr;gap:calc(16px * 0.97);align-items:stretch}
-@media (max-width:959px){.ov-charts-grid{grid-template-columns:1fr}}
+.chart-nav{display:flex;align-items:center;justify-content:center;gap:4px;margin-bottom:12px}
+.chart-nav .btn{display:grid;place-items:center;min-width:44px;min-height:44px}
+.chart-nav .btn span{font-size:20px;line-height:1}
+.chart-dot{display:grid;place-items:center;width:44px;height:44px;border:0;border-radius:8px;background:transparent;color:var(--mute)}
+.chart-dot::before{content:"";width:9px;height:9px;border:1px solid currentColor;border-radius:50%}
+.chart-dot[aria-current="true"]{color:var(--blue)}
+.chart-dot[aria-current="true"]::before{background:currentColor}
+.chart-slides{min-width:0;overflow-x:clip}
+.chart-slides,.chart-slides .sk-wrap{touch-action:pan-y pinch-zoom}
+@media (prefers-reduced-motion:no-preference){
+ html:not(.no-anim) #chart-activity[data-enter-from]{animation:chartEnter .18s ease-out}
+ .chart-slide[data-enter-from="left"]{--chart-offset:-8px}
+ .chart-slide[data-enter-from="right"]{--chart-offset:8px}
+ @keyframes chartEnter{from{transform:translateX(var(--chart-offset));opacity:.65}}
+}
 
 .ov-chart-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;box-shadow:var(--shadow);display:flex;flex-direction:column;min-width:0}
-.ov-chart-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.ov-chart-header{display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:12px;margin-bottom:12px}
 .ov-chart-header h2{font-size:15px;font-weight:700;margin:0;letter-spacing:-.01em;color:var(--ink)}
 
 /* Time filter buttons inside left chart card */
@@ -279,10 +282,6 @@ main{flex:1 0 auto;width:100%;max-width:100%;margin:0;padding:20px 32px 60px}
 .ov-metric-val{font-size:28px;font-weight:700;color:#a78bfa;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 :root[data-theme="light"] .ov-metric-val{color:#7c3aed}
 .ov-metric-lbl{font-size:12px;color:var(--mute);margin-top:4px}
-.ov-metric-right{align-items:flex-end}
-.ov-metric-right .ov-metric-val{color:var(--ink);font-size:24px}
-.ov-trend-row{display:flex;align-items:center;gap:8px}
-.ov-trend-chip{font-size:11.5px;font-weight:700;color:var(--green);font-variant-numeric:tabular-nums}
 
 /* Donut Chart in Right Card */
 .ov-donut-body{display:flex;align-items:center;justify-content:space-around;gap:26px;margin-top:8px;flex:1}
@@ -301,6 +300,10 @@ main{flex:1 0 auto;width:100%;max-width:100%;margin:0;padding:20px 32px 60px}
 .ov-legend-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
 .ov-legend-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
 .ov-legend-pct{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;margin-left:auto}
+@media (max-width:430px){
+ .ov-donut-body{flex-direction:column;gap:12px}
+ .ov-donut-legend{align-self:stretch;flex:none}
+}
 
 /* Bottom Row */
 .ov-bottom-grid{display:grid;grid-template-columns:1fr 1fr;gap:calc(16px * 0.97);align-items:stretch}
@@ -340,7 +343,7 @@ main{flex:1 0 auto;width:100%;max-width:100%;margin:0;padding:20px 32px 60px}
 
 /* Activity Feed */
 .ov-activity-feed{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none}
-.ov-activity-item{display:flex;align-items:flex-start;gap:11px;padding:8px 10px;border-radius:8px;transition:background .15s;cursor:pointer}
+.ov-activity-item{display:flex;align-items:flex-start;gap:11px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:none;font:inherit;text-align:left;transition:background .15s;cursor:pointer}
 .ov-activity-item:hover{background:var(--soft)}
 .ov-activity-icon{width:26px;height:26px;border-radius:6px;background:var(--soft);color:var(--ink);display:grid;place-items:center;font-size:11px;flex-shrink:0;margin-top:1px}
 .ov-activity-text{flex:1;min-width:0;font-size:12.5px;color:var(--ink2);line-height:1.35}
@@ -349,22 +352,22 @@ main{flex:1 0 auto;width:100%;max-width:100%;margin:0;padding:20px 32px 60px}
 .ov-empty-msg{color:var(--mute);margin:0;font-size:13px;padding:12px 0}
 .ov-chart-panel,.grid-sub-ov>*,.grid-ov>*,.stack>*,.panel,.split>*{min-width:0}
 
-/* sankey - fine lines & tree branching animation */
 
-/* Rollercoaster curve chart & multi-metric pipeline */
-.sk-wrap{position:relative;margin:0;padding:2px 0;width:100%;overflow:visible;cursor:default !important}
-.rc-chart{width:100%;aspect-ratio:1000/185;height:auto;max-height:200px;display:block;margin:0;overflow:visible;cursor:default !important}
+/* Activity chart */
+.rc-wrap{position:relative;margin:0;padding:2px 0;width:100%;overflow:visible;cursor:default !important}
+.rc-chart{width:100%;aspect-ratio:1000/185;height:auto;min-height:110px;max-height:200px;display:block;margin:0;overflow:visible;cursor:default !important}
 .rc-grid-h{stroke:var(--line);stroke-width:1;opacity:0.5}
-.rc-grid-v{stroke:var(--line);stroke-width:1;opacity:0.25}
 
 .rc-metric-line{fill:none;stroke-linecap:round;stroke-linejoin:round;transition:stroke-width .2s ease,opacity .2s ease,filter .2s ease;pointer-events:none}
 .rc-metric-line.dimmed{opacity:0.12 !important}
 .rc-metric-line.focused{stroke-width:3.6px !important;opacity:1 !important}
 
-/* Days of the week / X axis labels in crisp native HTML - No distortion! */
-.rc-x-axis{display:flex;justify-content:space-between;align-items:center;width:100%;margin-top:10px;padding:0 2px;box-sizing:border-box}
+/* Dates sampled for the axis, with all recorded dates available in the tooltip. */
+.rc-x-axis{position:relative;width:100%;height:18px;margin-top:10px}
+.rc-x-lbl{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.rc-x-lbl.start{transform:none}
+.rc-x-lbl.end{transform:translateX(-100%)}
 .rc-x-lbl{font-family:var(--font-body);font-size:13px;font-weight:600;color:var(--mute);user-select:none;transition:color .15s ease,transform .15s ease}
-.rc-x-lbl.active{color:var(--ink);font-weight:700}
 
 /* Continuous fluid guide line and perfect round indicator dot */
 .rc-guide-line{position:absolute;top:4px;bottom:36px;width:1.5px;background:repeating-linear-gradient(to bottom,var(--ink) 0,var(--ink) 4px,transparent 4px,transparent 8px);opacity:0;pointer-events:none;transition:opacity .12s ease;transform:translateX(-50%);z-index:15}
@@ -376,7 +379,7 @@ main{flex:1 0 auto;width:100%;max-width:100%;margin:0;padding:20px 32px 60px}
 .rc-legend-pill b{margin-left:3px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
 .rc-legend-pill .dot{width:7.5px;height:7.5px;border-radius:50%;flex-shrink:0}
 
-.rc-floating-tooltip{position:absolute;z-index:70;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;box-shadow:0 12px 32px rgba(0,0,0,0.4),0 2px 6px rgba(0,0,0,0.2);pointer-events:none;transition:opacity .15s ease;min-width:250px;max-width:300px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.rc-floating-tooltip{position:absolute;z-index:70;opacity:0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;box-shadow:0 12px 32px rgba(0,0,0,0.4),0 2px 6px rgba(0,0,0,0.2);pointer-events:none;transition:opacity .15s ease;width:min(270px,100%);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 :root[data-theme="light"] .rc-floating-tooltip{background:rgba(255,255,255,0.95);box-shadow:0 12px 28px rgba(0,0,0,0.12),0 2px 6px rgba(0,0,0,0.06)}
 .rc-tip-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
 .rc-tip-date{font-size:11.5px;font-weight:700;color:var(--ink);font-family:var(--font-display)}
@@ -386,7 +389,13 @@ main{flex:1 0 auto;width:100%;max-width:100%;margin:0;padding:20px 32px 60px}
 .rc-tip-k{display:flex;align-items:center;gap:6px;white-space:nowrap}
 .rc-tip-k .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .rc-tip-v{font-size:11.5px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;margin-left:4px}
-#sk{width:100%;max-width:100%;height:auto;display:block;margin:0}
+#sk{
+ --tc-all:var(--ink);--tc-tracked:var(--mute);--tc-review:var(--mute);--tc-apply:var(--mute);--tc-skipped:var(--mute);--tc-applied:var(--mute);--tc-interview:var(--mute);--tc-offer:var(--green);--tc-rejected:var(--red);--tc-other:var(--mute);
+ --conn-tracked:var(--mute);--conn-review:var(--mute);--conn-apply:var(--mute);--conn-skipped:var(--mute);--conn-applied:var(--mute);--conn-interview:var(--mute);--conn-offer:var(--green);--conn-rejected:var(--red);--conn-other:var(--mute);--conn-zero:var(--mute);
+}
+/* sankey - fine lines & tree branching animation */
+.sk-wrap{overflow-x:hidden;margin:0;padding:4px 0;width:100%}
+#sk{width:100%;max-width:960px;height:auto;display:block;margin:0 auto}
 #sk.compact{max-width:360px;margin:0 auto}
 #sk .lnk-wrap{outline:none}
 #sk .lnk{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;animation:growBranch .68s cubic-bezier(.16,1,.3,1) forwards;transition:stroke-width .22s cubic-bezier(.16,1,.3,1),filter .22s ease;pointer-events:none}
@@ -394,31 +403,31 @@ main{flex:1 0 auto;width:100%;max-width:100%;margin:0;padding:20px 32px 60px}
 #sk .lnk[data-tier="1"]{animation-delay:.46s}
 #sk .lnk[data-tier="2"]{animation-delay:.86s}
 #sk .lnk[data-tier="3"]{animation-delay:1.26s}
-#sk{width:100%;max-width:100%;height:auto;max-height:210px;display:block;margin:0 auto}
-#sk.compact{max-width:360px;max-height:360px;margin:0 auto}
-#sk text{font-size:12.5px;fill:var(--ink);paint-order:stroke;stroke:var(--card);stroke-width:3px;stroke-linejoin:round;user-select:none;font-family:var(--font-body)}
-#sk text.nd-pill-txt{stroke:none!important;stroke-width:0!important;fill:#fff!important;font-size:11px!important;font-weight:700!important;paint-order:normal!important}
-#sk text .v{font-weight:700;font-size:12.5px}
-#sk text .p{fill:var(--mute);font-size:11.5px}
-#sk.compact text{font-size:9px;stroke:none!important;stroke-width:0!important}
-#sk.compact text .v{font-size:9.5px}
-#sk.compact text .p{font-size:8px}
+#sk text{font-size:13.5px;fill:var(--ink);paint-order:stroke;stroke:var(--card);stroke-width:4px;stroke-linejoin:round;user-select:none}
+#sk.compact text{font-size:13.5px;stroke-width:3.5px}
+#sk text.v{font-weight:700}
+#sk .p{fill:var(--mute);font-size:12.5px}
+#sk.compact .p{font-size:13px}
 #sk .nd{cursor:default}
 #sk .nd-dot{transform-box:fill-box;transform-origin:center;transition:r .22s cubic-bezier(.34,1.56,.64,1),filter .22s ease}
-#sk .nd[data-col="0"] .nd-dot,#sk .nd[data-row="0"] .nd-dot{animation:popDot .35s cubic-bezier(.34,1.56,.64,1) .01s forwards}
-#sk .nd[data-col="1"] .nd-dot,#sk .nd[data-row="1"] .nd-dot{animation:popDot .35s cubic-bezier(.34,1.56,.64,1) .05s forwards}
-#sk .nd[data-col="2"] .nd-dot,#sk .nd[data-row="2"] .nd-dot{animation:popDot .35s cubic-bezier(.34,1.56,.64,1) .09s forwards}
-#sk .nd[data-col="3"] .nd-dot,#sk .nd[data-row="3"] .nd-dot{animation:popDot .35s cubic-bezier(.34,1.56,.64,1) .13s forwards}
-#sk .nd[data-col="4"] .nd-dot,#sk .nd[data-row="4"] .nd-dot{animation:popDot .35s cubic-bezier(.34,1.56,.64,1) .17s forwards}
-#sk .nd[data-col="0"] text,#sk .nd[data-row="0"] text{animation:fadeInLabel .3s ease .02s forwards}
-#sk .nd[data-col="1"] text,#sk .nd[data-row="1"] text{animation:fadeInLabel .3s ease .06s forwards}
-#sk .nd[data-col="2"] text,#sk .nd[data-row="2"] text{animation:fadeInLabel .3s ease .10s forwards}
-#sk .nd[data-col="3"] text,#sk .nd[data-row="3"] text{animation:fadeInLabel .3s ease .14s forwards}
-#sk .nd[data-col="4"] text,#sk .nd[data-row="4"] text{animation:fadeInLabel .3s ease .18s forwards}
-#sk .nd:hover .nd-dot,#sk .nd:focus-visible .nd-dot{r:6px;filter:drop-shadow(0 0 8px currentColor)}
+#sk .nd[data-col="0"] .nd-dot,#sk .nd[data-row="0"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .02s both}
+#sk .nd[data-col="1"] .nd-dot,#sk .nd[data-row="1"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .42s both}
+#sk .nd[data-col="2"] .nd-dot,#sk .nd[data-row="2"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) .82s both}
+#sk .nd[data-col="3"] .nd-dot,#sk .nd[data-row="3"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) 1.22s both}
+#sk .nd[data-col="4"] .nd-dot,#sk .nd[data-row="4"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) 1.62s both}
+#sk .nd[data-col="0"] text,#sk .nd[data-row="0"] text{animation:fadeInLabel .35s ease .06s both}
+#sk .nd[data-col="1"] text,#sk .nd[data-row="1"] text{animation:fadeInLabel .35s ease .46s both}
+#sk .nd[data-col="2"] text,#sk .nd[data-row="2"] text{animation:fadeInLabel .35s ease .86s both}
+#sk .nd[data-col="3"] text,#sk .nd[data-row="3"] text{animation:fadeInLabel .35s ease 1.26s both}
+#sk .nd[data-col="4"] text,#sk .nd[data-row="4"] text{animation:fadeInLabel .35s ease 1.66s both}
+#sk .nd:hover .nd-dot,#sk .nd:focus-visible .nd-dot{r:8.5px;filter:drop-shadow(0 0 8px currentColor)}
 .sk-note{font-size:12px;color:var(--mute);margin:8px 0 0;line-height:1.4}
 .sk-empty{display:flex;align-items:center;gap:8px;color:var(--mute);font-size:12.5px;margin-top:6px}
 
+#sk .lnk[data-tier="4"]{animation-delay:1.66s}
+#sk .lnk[data-tier="5"]{animation-delay:2.06s}
+#sk .nd[data-col="5"] .nd-dot,#sk .nd[data-row="5"] .nd-dot{animation:popDot .42s cubic-bezier(.34,1.56,.64,1) 2.02s both}
+#sk .nd[data-col="5"] text,#sk .nd[data-row="5"] text{animation:fadeInLabel .35s ease 2.06s both}
 @keyframes growBranch{0%{stroke-dashoffset:100}100%{stroke-dashoffset:0}}
 @keyframes popDot{0%{transform:scale(0);opacity:0}65%{transform:scale(1.32);opacity:1}100%{transform:scale(1);opacity:1}}
 @keyframes fadeInLabel{0%{opacity:0;transform:translateY(3px)}100%{opacity:1;transform:translateY(0)}}
@@ -480,7 +489,7 @@ html.no-anim #sk text,html.no-anim #sk [data-col] text,html.no-anim #sk [data-ro
 .ring.none{color:var(--mute);font-size:12px;width:34px;height:34px;border-radius:50%;border:2px dashed var(--line)}
 
 /* board - Kanban pipeline */
-.board{display:flex;flex-direction:column;gap:18px;width:100%;max-width:100%;padding-bottom:48px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.board{display:flex;flex-direction:column;gap:18px;width:100%;min-width:0;padding-bottom:48px}
 
 /* top pipeline banner */
 .board-top-bar{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:8px;padding-bottom:14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
@@ -502,7 +511,13 @@ html.no-anim #sk text,html.no-anim #sk [data-col] text,html.no-anim #sk [data-ro
 .bpill-closed-btn.active{background:color-mix(in srgb,var(--red) 12%,transparent);border-color:var(--red);color:var(--red)}
 
 /* kanban columns grid */
-.board-cols{display:grid;gap:14px;align-items:start;width:100%;min-width:1160px}
+.board-cols{display:grid;grid-auto-flow:column;grid-auto-columns:280px;gap:14px;align-items:start;width:100%;overflow-x:auto;overscroll-behavior-x:contain;padding:4px 3px 12px}
+@media (max-width:640px){.board-cols{grid-auto-columns:84vw}}
+@media (pointer:coarse){
+ .board-cols{scroll-snap-type:x mandatory;scroll-padding-inline:3px}
+ .board .col{scroll-snap-align:start}
+ body.is-dragging .board-cols{scroll-snap-type:none}
+}
 .board .col{background:transparent;border:1.5px dashed transparent;border-radius:var(--r,16px);padding:6px 5px 14px 5px;min-height:auto;height:auto;display:flex;flex-direction:column;align-self:start;justify-content:flex-start;transition:background .2s ease,border-color .2s ease,box-shadow .2s ease}
 .board .col.over{background:color-mix(in srgb,var(--blue-soft) 40%,transparent);border-color:var(--blue);box-shadow:0 0 0 3px color-mix(in srgb,var(--blue-soft) 30%,transparent)}
 body.is-dragging .board .col{border-color:color-mix(in srgb,var(--line) 75%,transparent)}
@@ -578,7 +593,7 @@ body.is-dragging .board .col.over{border-color:var(--blue)}
 .bcard-move-btn:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
 .bcard-move-caret{transition:transform .15s ease}
 .bcard-move-btn[aria-expanded="true"] .bcard-move-caret{transform:rotate(180deg)}
-.bcard-move-menu{position:absolute;right:0;bottom:calc(100% + 4px);z-index:60;background:var(--card,#ffffff);border:1px solid var(--line,#e2e8f0);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.14),0 1px 3px rgba(0,0,0,.06);padding:3px;min-width:140px;display:flex;flex-direction:column;gap:1px}
+.bcard-move-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:60;background:var(--card,#ffffff);border:1px solid var(--line,#e2e8f0);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.14),0 1px 3px rgba(0,0,0,.06);padding:3px;min-width:140px;display:flex;flex-direction:column;gap:1px}
 :root:not([data-theme="light"]) .bcard-move-menu{background:var(--card,#1a1d24);border-color:var(--line,#272c38);box-shadow:0 6px 20px rgba(0,0,0,.5)}
 .bcard-move-menu[hidden]{display:none}
 .bcard-move-item{display:flex;align-items:center;gap:7px;width:100%;padding:6px 8px;background:transparent;border:none;border-radius:5px;font-family:inherit;font-size:11.5px;font-weight:500;color:var(--ink);text-align:left;cursor:pointer;transition:background .12s ease}
@@ -671,8 +686,10 @@ border-radius:24px;border:1px solid var(--line);background:var(--card);color:var
 .gd-btn-icon{border:1.5px solid var(--line)!important;background:transparent!important;color:var(--mute)!important;border-radius:9999px!important;width:38px!important;height:38px!important;padding:0!important;display:inline-flex;align-items:center;justify-content:center;transition:color .15s ease,border-color .15s ease!important}
 .gd-btn-icon:hover{color:var(--ink)!important;border-color:var(--ink2)!important}
 .gd-card{background:transparent!important;border:1px solid var(--subtle-border)!important;box-shadow:var(--float-shadow)!important;border-radius:16px!important;padding:22px 24px!important;transition:box-shadow .2s ease,border-color .2s ease}
+.gd-btn-insights{background:var(--green)!important;color:#fff!important;border:none!important;border-radius:8px!important;padding:8px 16px!important;font-size:13px!important;font-weight:700!important;display:inline-flex;align-items:center;gap:6px}
+.gd-btn-insights:hover{opacity:.9}
 .gd-match-card{background:#ebf9f2!important;border:1px solid #bbf0d4!important;border-radius:16px!important;box-shadow:0 4px 16px -2px rgba(16,185,129,0.08),0 2px 6px -1px rgba(0,0,0,0.04)!important;padding:22px 24px!important}
-.gd-match-card h4{font-family:var(--font-display);font-size:16px;font-weight:700;color:#064e3b!important;margin:0 0 6px 0;display:flex;align-items:center;gap:8px;letter-spacing:-.01em}
+.gd-match-card h4{font-size:16px;font-weight:700;color:#064e3b!important;margin:0 0 6px 0;display:flex;align-items:center;gap:8px;letter-spacing:-.01em}
 .gd-match-card p.gd-sub{font-size:13px;color:#047857!important;margin:0 0 16px 0;line-height:1.45;font-weight:500}
 .gd-match-body{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-top:1px solid rgba(6,78,59,0.14)!important;padding-top:14px}
 .gd-match-score{display:flex;align-items:center;gap:14px}
@@ -841,14 +858,15 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;paddi
 
 @media (max-width:1240px){.grid-ov{grid-template-columns:1fr}.split{grid-template-columns:minmax(310px,380px) minmax(0,1fr)}.split>.side{display:none}}
 @media (max-width:900px){
+ body{overflow-x:clip}
  .top-in{padding:10px 16px;gap:10px;display:flex;flex-wrap:wrap}
  .brand{margin-right:auto}
  .right{display:contents}
  .search[hidden]{display:flex!important;visibility:hidden}.actions .btn{align-self:center}
  .seg{order:3;width:100%;justify-content:center}
  .seg button{flex:1;justify-content:center;padding:7px 6px}
- .search{order:4;flex:1;width:auto;height:auto}
- .search input{width:100%;height:auto;color:var(--ink);cursor:text;background:var(--card);border-color:var(--line)}
+ .search,.search:hover,.search:focus-within,.search:has(input:not(:placeholder-shown)){order:4;flex:1;width:100%;min-width:0;height:44px}
+ .search input{width:100%;height:100%;color:var(--ink);cursor:text;background:var(--card);border-color:var(--line)}
  .search input::placeholder{color:var(--mute)}
  .actions{order:5}
  .activebar{padding:0 16px 10px}
@@ -860,6 +878,7 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;paddi
 }
 @media (max-width:560px){
  .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .seg{gap:1px}
  .seg button span.l{font-size:12.5px}
  .seg svg{display:none}
  .actions .btn .l{display:none}
@@ -880,13 +899,13 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;paddi
 html{overflow-y:scroll;scrollbar-gutter:stable}
 
 .rounds{margin-top:16px;background:var(--soft);border-radius:var(--r,16px);padding:14px 16px;display:grid;gap:10px}
-.rounds h4{margin:0 0 4px;font-family:var(--font-display, Sora);font-size:14px;color:var(--ink)}
+.rounds h4{margin:0 0 4px;font-family:var(--font-display, system-ui);font-size:14px;color:var(--ink)}
 .round{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:var(--r-sm,10px);padding:10px 14px}
 .round b{font-size:13px;color:var(--ink)}
 .bcard-round{font-size:11px;font-weight:600;color:var(--amber-ink);background:var(--amber-soft);padding:1px 6px;border-radius:6px;display:inline-block;margin-top:3px}
 
-/* Overview 8-column metric tiles */
-.ov-tiles{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:9px;width:100%}
+/* Desktop stage tiles share one row, including Other when present. */
+@media (min-width:901px){.ov-tiles{grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);grid-template-columns:none}}
 .tile b{position:relative;display:block;height:36px;line-height:1;perspective:600px;transform-style:preserve-3d}
 .tile b .num,.tile b .pct{position:absolute;left:0;top:0;width:100%;height:100%;display:flex;align-items:center;letter-spacing:-.02em;font-variant-numeric:tabular-nums;transform-style:preserve-3d;backface-visibility:hidden;will-change:transform,opacity}
 .tile b .num{font-size:28px;font-weight:700;line-height:1;color:var(--tc,var(--ink));z-index:2;transform-origin:50% 100%;transform:translateZ(10px) rotateX(0deg);transition:transform .42s cubic-bezier(0.2,0.8,0.2,1),opacity .32s ease}
@@ -894,7 +913,7 @@ html{overflow-y:scroll;scrollbar-gutter:stable}
 .tile:hover b .num,.tile:focus-visible b .num{opacity:0;transform:translateZ(10px) rotateX(90deg)}
 .tile:hover b .pct,.tile:focus-visible b .pct{opacity:1;transform:translateZ(10px) rotateX(0deg)}
 
-@media (max-width:1300px){.ov-tiles{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width:900px){.ov-tiles{grid-template-columns:repeat(4,minmax(0,1fr))}
 .tile b{position:relative;display:block;height:36px;line-height:1;perspective:600px;transform-style:preserve-3d}
 .tile b .num,.tile b .pct{position:absolute;left:0;top:0;width:100%;height:100%;display:flex;align-items:center;letter-spacing:-.02em;font-variant-numeric:tabular-nums;transform-style:preserve-3d;backface-visibility:hidden;will-change:transform,opacity}
 .tile b .num{font-size:28px;font-weight:700;line-height:1;color:var(--tc,var(--ink));z-index:2;transform-origin:50% 100%;transform:translateZ(10px) rotateX(0deg);transition:transform .42s cubic-bezier(0.2,0.8,0.2,1),opacity .32s ease}
@@ -911,17 +930,11 @@ html{overflow-y:scroll;scrollbar-gutter:stable}
 .tile:hover b .pct,.tile:focus-visible b .pct{opacity:1;transform:translateZ(10px) rotateX(0deg)}
 }
 
-/* Middle row: line chart on left, donut on right */
-.ov-charts-row{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(340px,1fr);gap:14px;margin-top:14px;width:100%;align-items:stretch}
-@media (max-width:1100px){.ov-charts-row{grid-template-columns:minmax(0,1fr)}}
-
 /* Bottom row: Needs attention on left, Recent activity on right */
 .ov-bottom-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px;width:100%}
 @media (max-width:960px){.ov-bottom-row{grid-template-columns:minmax(0,1fr)}}
 
-/* Line chart height and full edge-to-edge layout */
 .ov-chart-card{display:flex;flex-direction:column;min-width:0;background:var(--card);border:1px solid var(--line);border-radius:var(--r,16px);padding:18px 20px;box-shadow:none}
-.ov-chart-card .sk-wrap{flex:1;min-height:160px;position:relative}
 
 /* SVG Line Drawing Animation */
 .rc-metric-line{
@@ -952,16 +965,6 @@ html{overflow-y:scroll;scrollbar-gutter:stable}
    <button class="btn ghost" id="fbtn" aria-controls="fdrawer" title="Filters" aria-label="Filters"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg><span class="l">Filters</span><span class="count" id="fcount" hidden></span></button>
    <button class="btn ghost" id="undoBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg><span class="l">Undo</span><span class="count" id="undoCount">0</span></button>
    <button class="btn" id="addbtn" data-act="add" title="Add a lead"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="l">Add lead</span></button>
-   <!-- DESIGN PROPOSAL / SUGGESTION FOR OWNER:
-        Profile indicator / switcher pill. Shows active local profile and avatar initials.
-        Ready to be connected to local profile management backend. -->
-   <div class="user-capsule" title="Alejandro">
-    <span class="user-av">AE</span>
-    <div class="user-info">
-     <span class="user-name">Alejandro</span>
-    </div>
-    <span class="user-chev">▾</span>
-   </div>
   </div>
  </div>
 </div><div class="activebar" id="activebar"></div></header>
@@ -1075,11 +1078,20 @@ const POSTED=[[3,"Last 3 days"],[7,"1 week"],[14,"2 weeks"],[21,"3 weeks"],[28,"
 function postedAge(j){if(j._age==null)return"";const age=j._age;
  return`<span class="posted-age">${j._posted_on?"Posted":"First seen"}${j._about?" about":""} ${age===0?"today":`${age} day${age===1?"":"s"} ago`}</span>`}
 let D={jobs:[],contacts:[],sheets:[],statuses:[]};
+const OVERVIEW_CHARTS=[
+ {id:"summary",label:"Job search summary"},
+ {id:"activity",label:"Activity over time"}
+];
+const CHART_STORAGE_KEY="hq-overview-chart";
+let overviewChart=0;
+try{
+ const saved=OVERVIEW_CHARTS.findIndex(chart=>chart.id===sessionStorage.getItem(CHART_STORAGE_KEY));
+ if(saved>=0)overviewChart=saved;
+}catch{}
 const JOB_VIEWS={todo:"To do",progress:"In progress",skipped:"Skipped",closed:"Closed",all:"All"};
 const POSTING={open:"Open",closed:"Closed",unknown:"Not checked"};
 const S=Object.assign({view:"overview",jobView:"todo",sheets:[],regions:[],verdicts:[],stages:[],posting:[],posted:null,minScore:0,sort:"score",group:"none",sel:null},store.get("state",{}));
 S.q="";S.view="list";S.attention=false;
-{const v=location.hash.slice(1);if(["overview","list","board","contacts","search","review"].includes(v))S.view=v;}
 delete S.openOnly;delete S.hideClosed;
 S.sheets=[];S.verdicts=[];S.stages=[];
 if(!Object.hasOwn(JOB_VIEWS,S.jobView))S.jobView="todo";
@@ -1124,8 +1136,9 @@ function matches(j,skip){const q=S.q.trim().toLowerCase();
  if(skip!=="attention"&&S.attention&&!attention(j))return false;
  return true}
 const filtered=()=>D.jobs.filter(j=>matches(j));
+const bestFitFirst=(a,b)=>(b._sc?.val??-1)-(a._sc?.val??-1)||a.Company.localeCompare(b.Company);
 function sorter(){return{
- score:(a,b)=>(b._sc?.val??-1)-(a._sc?.val??-1)||a.Company.localeCompare(b.Company),
+ score:bestFitFirst,
  company:(a,b)=>a.Company.localeCompare(b.Company)||(b._sc?.val??-1)-(a._sc?.val??-1),
  posted:(a,b)=>String(b.Posted).localeCompare(String(a.Posted))||(b._sc?.val??-1)-(a._sc?.val??-1),
  applied:(a,b)=>String(b["Date applied"]).localeCompare(String(a["Date applied"]))||stageIdx(b)-stageIdx(a)||(b._sc?.val??-1)-(a._sc?.val??-1)}[S.sort]||((a,b)=>0)}
@@ -1221,9 +1234,10 @@ function warnFor(j,compact){const st=stageOf(j).id;if(["skipped","rejected"].inc
  if(j._open==="closed")return`<div class="warn">${IC.warn}Posting looks closed</div>`;
  return""}
 function locLine(j){return`<div class="loc">${flag(j._reg)}<span>${esc(j.Where||"Location not listed")}</span></div>`}
+const jobScore=(j,opts)=>ring(j._sc,opts.list?40:36);
 function jobCard(j,opts={}){const st=stageOf(j);const dim=closedStage(st)||j._open==="closed";
  return`<article class="card ${opts.list?"lcard":""} ${dim?"dim":""} ${S.sel===key(j)&&opts.list?"sel":""}" tabindex="0" ${opts.drag?'draggable="true"':""} data-k="${esc(key(j))}" aria-label="${esc(jname(j))}, ${esc(j.Role)}, ${esc(sl(j["My status"]))}">
- <div class="card-top">${av(j.Company,"sm")}<div class="t"><div class="co">${esc(j.Company)} <span class="pl">· ${flag(j._reg)}${esc(place(j))}</span></div><div class="ro">${esc(j.Role)}</div></div>${ring(j._sc,opts.list?40:36)}</div>
+ <div class="card-top">${av(j.Company,"sm")}<div class="t"><div class="co">${esc(j.Company)} <span class="pl">· ${flag(j._reg)}${esc(place(j))}</span></div><div class="ro">${esc(j.Role)}</div></div>${jobScore(j,opts)}</div>
  ${postedAge(j)}
  <div class="card-foot"><div class="chips">${vchip(j._v)}${j.posting?.state==="closed"?`<span class="chip">Closed</span>`:""}${opts.list?`<span class="chip st"><i class="dot" style="color:${st.c}"></i>${esc(sl(j["My status"]))}</span>`:""}${j._sib.length?`<span class="chip" title="Also: ${esc(j._sib.map(x=>place(x)+" ("+sheetShort(x._sheet)+")").join("; "))}">Also in ${j._sib.length} place${j._sib.length>1?"s":""}</span>`:""}</div></div>
  ${warnFor(j,true)||(S.attention&&attention(j)?`<div class="warn a">${IC.info}${esc(attention(j))}</div>`:"")}${opts.drag?`<span class="drag-handle" title="Arrastrar para mover" aria-label="Arrastrar para mover ${esc(j.Company)}">${IC.grip}</span>`:""}</article>`}
@@ -1263,7 +1277,7 @@ const TILE_ICONS={
  skipped:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="19"/></svg>`
 };
 
-Object.assign(TILE_COLORS, {
+const OVERVIEW_COLORS={...TILE_COLORS,
  all:"var(--tc-all)",
  tracked:"var(--tc-all)",
  review:"var(--tc-wish)",
@@ -1274,7 +1288,7 @@ Object.assign(TILE_COLORS, {
  rejected:"var(--tc-rejected)",
  skipped:"var(--tc-skipped)",
  other:"var(--tc-skipped)"
-});
+};
 
 const METRIC_DEFS = [
  { id: "all", key: "total", label: "All jobs", color: "var(--ink)", strokeWidth: 2.8, area: true },
@@ -1282,296 +1296,149 @@ const METRIC_DEFS = [
   id: s.id,
   key: s.id,
   label: s.label,
-  color: TILE_COLORS[s.id] || (s.id==="offer"?"var(--tc-offer, #10b981)":s.id==="rejected"?"var(--tc-rejected, #dc2626)":s.id==="skipped"?"var(--tc-skipped, #64748b)":s.c),
+  color: OVERVIEW_COLORS[s.id] || (s.id==="offer"?"var(--tc-offer, #10b981)":s.id==="rejected"?"var(--tc-rejected, #dc2626)":s.id==="skipped"?"var(--tc-skipped, #64748b)":s.c),
   strokeWidth: (s.id==="rejected"||s.id==="skipped")?1.8:2.0
  }))
 ];
 
-function getMetricTimeline(js, C, range) {
- let labels = [], fullLabels = [], timeline = [];
- if(range === "4w") {
-  labels = ["Week 1", "Week 2", "Week 3", "Week 4"];
-  fullLabels = ["Week 1", "Week 2", "Week 3", "Week 4 (Current)"];
-  timeline = [
-   { total: 2, review: 1, apply: 0, applied: 0, interview: 0, offer: 0, rejected: 0, skipped: 1 },
-   { total: 5, review: 1, apply: 2, applied: 0, interview: 1, offer: 0, rejected: 1, skipped: 0 },
-   { total: 6, review: 2, apply: 1, applied: 0, interview: 1, offer: 1, rejected: 1, skipped: 0 },
-   { total: C.total, review: C.review||0, apply: C.apply||0, applied: C.applied||0, interview: C.interview||0, offer: C.offer||0, rejected: C.rejected||0, skipped: C.skipped||0 }
-  ];
- } else if(range === "1y") {
-  labels = ["Q1", "Q2", "Q3", "Q4", "Today"];
-  fullLabels = ["Q1 2025", "Q2 2025", "Q3 2025", "Q4 2025", "Current Pipeline"];
-  timeline = [
-   { total: 0, review: 0, apply: 0, applied: 0, interview: 0, offer: 0, rejected: 0, skipped: 0 },
-   { total: 1, review: 0, apply: 0, applied: 0, interview: 0, offer: 0, rejected: 1, skipped: 0 },
-   { total: 3, review: 1, apply: 1, applied: 0, interview: 0, offer: 0, rejected: 1, skipped: 0 },
-   { total: 5, review: 2, apply: 1, applied: 0, interview: 1, offer: 0, rejected: 1, skipped: 0 },
-   { total: C.total, review: C.review||0, apply: C.apply||0, applied: C.applied||0, interview: C.interview||0, offer: C.offer||0, rejected: C.rejected||0, skipped: C.skipped||0 }
-  ];
- } else if(range === "all") {
-  labels = ["Q3 '25", "Oct '25", "Nov '25", "Dec '25", "Today"];
-  fullLabels = ["Q3 2025", "October 2025", "November 2025", "December 2025", "Current"];
-  timeline = [
-   { total: 0, review: 0, apply: 0, applied: 0, interview: 0, offer: 0, rejected: 0, skipped: 0 },
-   { total: 2, review: 1, apply: 1, applied: 0, interview: 0, offer: 0, rejected: 0, skipped: 0 },
-   { total: 4, review: 1, apply: 2, applied: 0, interview: 0, offer: 0, rejected: 1, skipped: 0 },
-   { total: 6, review: 2, apply: 1, applied: 0, interview: 1, offer: 1, rejected: 1, skipped: 0 },
-   { total: C.total, review: C.review||0, apply: C.apply||0, applied: C.applied||0, interview: C.interview||0, offer: C.offer||0, rejected: C.rejected||0, skipped: C.skipped||0 }
-  ];
- } else {
-  // 1w default: Mon to Sun
-  labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  fullLabels = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday (Today)"];
-  timeline = [
-   { total: 2, review: 1, apply: 0, applied: 0, interview: 0, offer: 0, rejected: 0, skipped: 1 },
-   { total: 3, review: 1, apply: 1, applied: 0, interview: 0, offer: 0, rejected: 0, skipped: 1 },
-   { total: 4, review: 1, apply: 1, applied: 0, interview: 1, offer: 0, rejected: 0, skipped: 1 },
-   { total: 6, review: 2, apply: 2, applied: 0, interview: 1, offer: 0, rejected: 0, skipped: 1 },
-   { total: 5, review: 2, apply: 1, applied: 0, interview: 1, offer: 0, rejected: 1, skipped: 0 },
-   { total: 7, review: 2, apply: 2, applied: 0, interview: 1, offer: 1, rejected: 1, skipped: 0 },
-   { total: C.total, review: C.review||0, apply: C.apply||0, applied: C.applied||0, interview: C.interview||0, offer: C.offer||0, rejected: C.rejected||0, skipped: C.skipped||0 }
-  ];
- }
- return { labels, fullLabels, timeline };
-}
+const HISTORY_RANGES = [["1w","1W",7],["4w","4W",28],["1y","1Y",365],["all","All",Infinity]];
+const HISTORY_DAY = 86400000;
+const historyTime = day => Date.parse(day.date);
+const historyDateLabel = new Intl.DateTimeFormat(undefined,{month:"short",day:"numeric",timeZone:"UTC"});
 
-function splinePath(points, tension = 0.85){
- if(points.length < 2) return "";
- const pts = [points[0], ...points, points[points.length - 1]];
- let d = `M ${points[0][0].toFixed(1)},${points[0][1].toFixed(1)}`;
- for(let i = 1; i < pts.length - 2; i++){
-  const p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2];
-  const cp1x = p1[0] + (p2[0] - p0[0]) / 6.0 * tension;
-  const cp1y = p1[1] + (p2[1] - p0[1]) / 6.0 * tension;
-  const cp2x = p2[0] - (p3[0] - p1[0]) / 6.0 * tension;
-  const cp2y = p2[1] - (p3[1] - p1[1]) / 6.0 * tension;
-  d += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+function splinePath(points){
+ let [x,y]=points[0], d="M "+x+","+y;
+ for(const [nextX,nextY] of points.slice(1)){
+  const bend=(nextX-x)/3;
+  d+=" C "+(x+bend)+","+y+" "+(nextX-bend)+","+nextY+" "+nextX+","+nextY;
+  x=nextX;
+  y=nextY;
  }
  return d;
 }
 
-function rollercoasterChart(js, C){
- const range = S.timeRange || "1w";
- const W = 1000, H = 185;
- const leftPad = 4, rightPad = 4;
- const usableW = W - leftPad - rightPad;
- const topY = 16, botY = 165;
- const usableH = botY - topY;
- 
- const maxY = Math.max(C.total, 8);
- const yCeil = Math.ceil((maxY + 1) / 2) * 2;
- function yCoord(v){ return botY - usableH * (Math.max(0, v) / yCeil); }
- 
- const tData = getMetricTimeline(js, C, range);
- const nPoints = tData.labels.length;
- const step = usableW / (nPoints - 1);
- 
- const metricPts = {};
- METRIC_DEFS.forEach(m => {
-  metricPts[m.id] = tData.timeline.map((mObj, i) => [leftPad + i * step, yCoord(mObj[m.key] !== undefined ? mObj[m.key] : (mObj[m.id] !== undefined ? mObj[m.id] : 0))]);
- });
- 
- window.__rcData = {
-  W, H, leftPad, rightPad, usableW, topY, botY, usableH,
-  metricPts,
-  labels: tData.labels,
-  fullLabels: tData.fullLabels,
-  points: tData.timeline.map((mObj, i) => {
-   const x = leftPad + i * step;
-   const coords = {};
-   METRIC_DEFS.forEach(m => {
-    coords[m.id] = yCoord(mObj[m.key] !== undefined ? mObj[m.key] : (mObj[m.id] !== undefined ? mObj[m.id] : 0));
-   });
-   return { idx: i, x, date: tData.labels[i], fullDate: tData.fullLabels[i], metrics: mObj, coords };
-  })
+let historyChartPoints=[];
+function rollercoasterChart(timeline){
+ const W=1000,H=185,top=16,bottom=165;
+ const max=Math.max(1,timeline.at(-1).total);
+ const first=historyTime(timeline[0]), span=historyTime(timeline.at(-1))-first;
+ historyChartPoints=timeline.map(day=>({
+  day,x:(historyTime(day)-first)/span,
+  coords:Object.fromEntries(METRIC_DEFS.map(m=>[m.id,(bottom-(bottom-top)*day[m.key]/max)/H]))
+ }));
+ const paths=METRIC_DEFS.map(m=>splinePath(historyChartPoints.map(p=>[p.x*W,p.coords[m.id]*H])));
+ const grid=Array.from({length:5},(_,i)=>{
+  const y=top+(bottom-top)*i/4;
+  return '<line class="rc-grid-h" x1="0" y1="'+y+'" x2="'+W+'" y2="'+y+'" stroke-dasharray="3 3"/>';
+ }).join("");
+ return `<svg id="activity-chart" class="rc-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Recorded job stage counts over time" preserveAspectRatio="none">
+  <defs><linearGradient id="rcTrackedGrad" x2="0" y2="1">
+   <stop offset="0%" stop-color="var(--ink)" stop-opacity=".16"/>
+   <stop offset="100%" stop-color="var(--ink)" stop-opacity="0"/>
+  </linearGradient></defs>
+  ${grid}
+  <path d="${paths[0]} L ${W},${bottom} L 0,${bottom} Z" fill="url(#rcTrackedGrad)"/>
+  ${METRIC_DEFS.map((m,i)=>`<path class="rc-metric-line" data-metric="${m.id}" d="${paths[i]}" stroke="${m.color}" stroke-width="${m.strokeWidth}"/>`).join("")}
+ </svg>`;
+}
+
+function activityChart(){
+ const history=D.history||[], range=S.timeRange||"1w";
+ const [,,days]=HISTORY_RANGES.find(([id])=>id===range);
+ const end=history.at(-1);
+ const timeline=end?history.filter(day=>historyTime(end)-historyTime(day)<days*HISTORY_DAY):[];
+ const controls=HISTORY_RANGES.map(([id,label])=>
+  `<button type="button" class="ov-time-btn ${id===range?"active":""}" aria-pressed="${id===range}" data-range="${id}">${label}</button>`).join("");
+ let content;
+ historyChartPoints=[];
+ if(history.length<2){
+  content='<p class="ov-empty-msg">History starts once stage changes are recorded.</p>';
+ }else if(timeline.length<2){
+  content='<p class="ov-empty-msg">Fewer than two recorded days in this range.</p>';
+ }else{
+  const chart=rollercoasterChart(timeline);
+  const ticks=[historyChartPoints[0]];
+  const mid=historyChartPoints.find(p=>p.x>=.35&&p.x<=.65);
+  if(mid)ticks.push(mid);
+  ticks.push(historyChartPoints.at(-1));
+  const labels=ticks.map(({day,x},i)=>{
+   const edge=i===0?"start":i===ticks.length-1?"end":"";
+   return `<time class="rc-x-lbl ${edge}" style="left:${x*100}%" datetime="${esc(day.date)}" title="${esc(day.date)}">${historyDateLabel.format(historyTime(day))}</time>`;
+  }).join("");
+  const legend=METRIC_DEFS.map(m=>`<button type="button" class="rc-legend-pill" data-metric="${m.id}" title="Focus ${m.label} curve">
+   <i class="dot" style="background:${m.color}"></i><span>${m.label}</span><b>${end[m.key]}</b>
+  </button>`).join("");
+  content=`<div class="ov-summary-metrics">
+   <div class="ov-metric-block"><span class="ov-metric-val">${end.total}</span><span class="ov-metric-lbl">Total positions on ${esc(end.date)}</span></div>
+  </div>
+  <div class="rc-metric-legend" role="toolbar" aria-label="Metric curves">${legend}</div>
+  <div class="rc-wrap" id="rcChartWrap">
+   ${chart}<div class="rc-guide-line"></div><div class="rc-guide-dot"></div>
+   <div id="rcTooltip" class="rc-floating-tooltip" role="tooltip" aria-hidden="true"></div>
+   <div class="rc-x-axis">${labels}</div>
+  </div>`;
+ }
+ return `<section class="chart-slide" id="chart-activity" aria-labelledby="activity-heading"${overviewChart!==1?" hidden":""}>
+  <div class="panel-h ov-chart-header">
+   <h2 id="activity-heading">Activity over time</h2>
+   ${history.length>=2?`<div class="ov-time-filters" role="group" aria-label="Time period">${controls}</div>`:""}
+  </div>
+  ${content}
+  ${historyChartPoints.length?`<p class="sk-note">Counts reflect the end of each recorded day.</p>`:""}
+ </section>`;
+}
+
+function sankey(js,C,phone=innerWidth<960){
+ const TIERS={tracked:0,review:1,apply:2,skipped:3,applied:3,interview:4,rejected:4,offer:5,other:1};
+ const nodes=STAGES.filter(s=>s.id!=="other"||C.other);
+ const N=Object.fromEntries(nodes.map(s=>[s.id,s]));
+ const L=[["tracked","review"],["review","apply"],["apply","skipped"],["apply","applied"],["applied","interview"],["applied","rejected"],["interview","offer"]];
+ if(C.other)L.push(["tracked","other"]);
+ const P=phone?{
+  tracked:{cx:112,cy:34},review:{cx:112,cy:126},apply:{cx:112,cy:218},
+  applied:{cx:112,cy:310},interview:{cx:112,cy:402},offer:{cx:112,cy:494},
+  skipped:{cx:222,cy:310},rejected:{cx:222,cy:402},other:{cx:222,cy:126}
+ }:{
+  tracked:{cx:65,cy:128},review:{cx:215,cy:128},apply:{cx:365,cy:128},
+  applied:{cx:515,cy:128},interview:{cx:665,cy:128},offer:{cx:815,cy:128},
+  skipped:{cx:515,cy:245},rejected:{cx:665,cy:245},other:{cx:215,cy:40}
  };
-
- let out = `<desc>Multi-metric job search pipeline rollercoaster chart</desc>`;
- out += `<defs>
-  <linearGradient id="rcTrackedGrad" x1="0" y1="0" x2="0" y2="1">
-   <stop offset="0%" stop-color="var(--ink)" stop-opacity="0.16"/>
-   <stop offset="70%" stop-color="var(--ink)" stop-opacity="0.03"/>
-   <stop offset="100%" stop-color="var(--ink)" stop-opacity="0.0"/>
-  </linearGradient>
- </defs>`;
- 
- const yTicks = [10, 8, 6, 4, 2, 0];
- yTicks.forEach(val => {
-  const y = yCoord(val);
-  const dash = val > 0 ? 'stroke-dasharray="3 3"' : '';
-  out += `<line class="rc-grid-h" x1="${leftPad}" y1="${y}" x2="${W - rightPad}" y2="${y}" ${dash}/>`;
- });
- 
- tData.labels.forEach((lbl, i) => {
-  const x = leftPad + i * step;
-  out += `<line class="rc-grid-v" x1="${x}" y1="${topY}" x2="${x}" y2="${botY}" stroke-dasharray="3 3"/>`;
- });
- 
- const trackedPts = metricPts.all;
- const trackedPath = splinePath(trackedPts, 0.85);
- const trackedArea = `${trackedPath} L ${W - rightPad},${botY} L ${leftPad},${botY} Z`;
- out += `<path class="rc-metric-area" d="${trackedArea}" fill="url(#rcTrackedGrad)" pointer-events="none"/>`;
- 
- METRIC_DEFS.forEach(m => {
-  const pts = metricPts[m.id];
-  const pStr = splinePath(pts, 0.85);
-  out += `<path class="rc-metric-line rc-line-${m.id}" data-metric="${m.id}" d="${pStr}" stroke="${m.color}" stroke-width="${m.strokeWidth}"/>`;
- });
- 
- out += `<rect class="rc-event-catcher" x="0" y="0" width="${W}" height="${H}" fill="transparent" style="cursor: default; pointer-events: all;"/>`;
- 
- return `<svg id="sk" class="rc-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Job search activity rollercoaster timeline chart" preserveAspectRatio="none">${out}</svg>`;
-}
-
-function sankey(js, C, phone){
- if(phone !== undefined) return schematicSankey(js, C, phone);
- return rollercoasterChart(js, C);
-}
-function schematicSankey(js, C, phone = innerWidth < 960) {
-  const SH = Object.fromEntries(STAGES.map(s => [s.id, s.label]));
-  const N = {};
-  const D_COLS = { review: 0, apply: 1, skipped: 1, applied: 2, interview: 3, rejected: 3, offer: 4 };
-  const P_ROWS = { review: 0, apply: 1, skipped: 1, applied: 2, interview: 3, rejected: 3, offer: 4 };
-  
-  ["review", "apply", "skipped", "applied", "interview", "rejected", "offer"].forEach(k => {
-    const s = STAGES.find(x => x.id === k);
-    const label = s ? s.label : SH[k];
-    const val = C[k] || 0;
-    const col = TILE_COLORS[k] || "var(--tc-skipped)";
-    N[k] = [label, val, phone ? P_ROWS[k] : D_COLS[k], col];
-  });
-  
-  const order = ["review", "apply", "skipped", "applied", "interview", "rejected", "offer"];
-  const nodes = order.map(k => [k, N[k]]).filter(([, v]) => !!v);
-  
-  const baseL = [
-    ["review", "apply"],
-    ["review", "skipped"],
-    ["apply", "applied"],
-    ["applied", "interview"],
-    ["applied", "rejected"],
-    ["interview", "offer"]
-  ];
-  const L = baseL.filter(([a, b]) => N[a] && N[b]);
-  const dotR = phone ? 5.5 : 6;
-  const P = {};
-  
-  if (phone) {
-    P.review = { cx: 150, cy: 34 };
-    P.apply = { cx: 70, cy: 110 };
-    P.skipped = { cx: 215, cy: 110 };
-    P.applied = { cx: 150, cy: 186 };
-    P.interview = { cx: 70, cy: 262 };
-    P.rejected = { cx: 215, cy: 262 };
-    P.offer = { cx: 150, cy: 338 };
-  } else {
-    P.review = { cx: 50, cy: 115 };
-    P.apply = { cx: 245, cy: 55 };
-    P.skipped = { cx: 245, cy: 175 };
-    P.applied = { cx: 440, cy: 115 };
-    P.interview = { cx: 635, cy: 55 };
-    P.rejected = { cx: 635, cy: 175 };
-    P.offer = { cx: 830, cy: 115 };
+ const W=phone?300:960,H=phone?550:300,dotR=phone?5.5:6;
+ const note="Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown. Rejection can happen before or after an interview.";
+ let out=`<desc>${note}</desc>`;
+ L.forEach(([a,b])=>{
+  const v=C[b],A=P[a],B=P[b],tier=TIERS[a];
+  const col=v>0?`var(--conn-${b})`:"var(--conn-zero)";
+  let pathD;
+  if(phone){
+   const x0=A.cx,y0=A.cy+dotR,x1=B.cx,y1=B.cy-dotR,ym=(y0+y1)/2;
+   pathD=`M${x0},${y0}C${x0},${ym} ${x1},${ym} ${x1},${y1}`;
+  }else{
+   const x0=A.cx+dotR,y0=A.cy,x1=B.cx-dotR,y1=B.cy,xm=(x0+x1)/2;
+   pathD=`M${x0},${y0}C${xm},${y0} ${xm},${y1} ${x1},${y1}`;
   }
-  
-  const W = phone ? 300 : 880, H = phone ? 370 : 220;
-  let out = `<desc>Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown. Rejection can happen before or after an interview.</desc>`;
-  out += `<defs>
-    <linearGradient id="skGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.25"/>
-      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
-    </linearGradient>
-    <filter id="skGlow">
-      <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#a78bfa" flood-opacity="0.55"/>
-    </filter>
-  </defs>`;
-  
-  const colX = phone ? [150] : [50, 245, 440, 635, 830];
-  if (!phone) {
-    colX.forEach(x => {
-      out += `<line class="sk-grid-line" x1="${x}" y1="16" x2="${x}" y2="204" stroke="var(--line)" stroke-dasharray="3 3" opacity="0.55"/>`;
-    });
-    out += `<polygon points="${P.review.cx},${P.review.cy} ${P.apply.cx},${P.apply.cy} ${P.applied.cx},${P.applied.cy} ${P.interview.cx},${P.interview.cy} ${P.offer.cx},${P.offer.cy} ${P.offer.cx},204 ${P.review.cx},204" fill="url(#skGrad)"/>`;
-  }
-  
-  L.forEach(([a, b]) => {
-    const v = N[b][1], A = P[a], B = P[b];
-    if (!A || !B) return;
-    const tier = phone ? P_ROWS[a] : D_COLS[a];
-    const isMainLine = ["review-apply", "apply-applied", "applied-interview", "interview-offer"].includes(a + "-" + b);
-    const col = isMainLine ? "#a78bfa" : (v > 0 ? (TILE_COLORS[b] || "var(--line)") : "rgba(255,255,255,0.15)");
-    const strokeW = isMainLine ? 3.2 : (v > 0 ? 2.4 : 1.8);
-    const dash = isMainLine ? "" : (v > 0 ? "" : "stroke-dasharray:4 4;");
-    const glow = isMainLine ? 'filter="url(#skGlow)"' : "";
-    
-    const x0 = phone ? A.cx : (A.cx + dotR);
-    const y0 = phone ? (A.cy + dotR) : A.cy;
-    const x1 = phone ? B.cx : (B.cx - dotR);
-    const y1 = phone ? (B.cy - dotR) : B.cy;
-    const pathD = `M${x0},${y0}L${x1},${y1}`;
-    
-    out += `<g class="lnk-wrap">
-      <path class="lnk" data-tier="${tier}" data-link="${N[a][0]} to ${N[b][0]}" pathLength="100" d="${pathD}" ${glow} style="stroke:${col};color:${col};stroke-width:${strokeW};opacity:1;${dash}">
-        <title>${N[a][0]} to ${N[b][0]}</title>
-      </path>
-    </g>`;
-  });
-  
-  nodes.forEach(([key, v]) => {
-    const p = P[key];
-    if (!p) return;
-    const pct = `${f1(C.pct[key] || 0)}`;
-    const col = TILE_COLORS[key] || "var(--tc-skipped)";
-    const isPill = v[1] > 0 && ["review", "offer"].includes(key);
-    let lx, ly, anchor;
-    if (phone) {
-      anchor = "middle";
-      lx = p.cx;
-      ly = ["review", "applied"].includes(key) ? p.cy - 16 : p.cy + 21;
-    } else {
-      if (key === "offer") {
-        anchor = "end";
-        lx = p.cx - 16;
-        ly = p.cy + 4.5;
-      } else if (key === "interview" || key === "apply") {
-        anchor = "middle";
-        lx = p.cx;
-        ly = p.cy - 13;
-      } else if (key === "rejected" || key === "skipped") {
-        anchor = "middle";
-        lx = p.cx;
-        ly = p.cy + 23;
-      } else {
-        anchor = "start";
-        lx = isPill ? p.cx + 16 : p.cx + dotR + 8;
-        ly = p.cy + 4.5;
-      }
-    }
-    const nm = SH[key] || v[0];
-    out += `<g class="nd" data-key="${key}" data-${phone ? "row" : "col"}="${v[2]}" data-n="${v[1]}" data-tip="<b>${v[0]}</b><br>${v[1]} job${v[1] === 1 ? "" : "s"} · ${pct} of tracked">
-      <circle cx="${p.cx}" cy="${p.cy}" r="${dotR + 12}" fill="transparent"/>`;
-    if (isPill) {
-      out += `<rect class="nd-pill" x="${p.cx - 11}" y="${p.cy - 11}" width="22" height="22" rx="11" fill="${col}"/>
-      <text class="nd-pill-txt" x="${p.cx}" y="${p.cy + 4}" text-anchor="middle" fill="#fff" font-weight="700" font-size="11">${v[1]}</text>`;
-    } else {
-      out += `<circle class="nd-dot" cx="${p.cx}" cy="${p.cy}" r="${dotR}" fill="${col}" style="fill:${col};color:${col}"/>`;
-    }
-    out += `<text x="${lx}" y="${ly}" text-anchor="${anchor}">${isPill ? "" : `<tspan class="v" font-weight="700">${v[1]}</tspan> `}${nm} <tspan class="p">${pct}</tspan></text></g>`;
-  });
-  
-  return `<svg id="sk" class="${phone ? "compact" : ""}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Job search pipeline flow">${out}</svg>`;
+  const label=`${N[a].label} to ${N[b].label}`;
+  out+=`<g class="lnk-wrap"><path class="lnk" data-tier="${tier}" data-link="${label}" pathLength="100" d="${pathD}" style="stroke:${col};color:${col};stroke-width:${v>0?2.85:2};opacity:1;${v>0?"":"stroke-dasharray:4 4;"}"><title>${label}</title></path></g>`;
+ });
+ nodes.forEach(s=>{
+  const key=s.id,p=P[key],n=C[key],pct=f1(C.pct[key]),col=TILE_COLORS[key];
+  const side=phone&&!["skipped","rejected","other"].includes(key);
+  const lx=side?50:p.cx,ly=p.cy+(side?-8:phone?20:25);
+  out+=`<g class="nd" data-key="${key}" data-${phone?"row":"col"}="${TIERS[key]}" data-n="${n}" data-tip="<b>${s.label}</b><br>${n} job${n===1?"":"s"} · ${pct} of all jobs">
+  <circle cx="${p.cx}" cy="${p.cy}" r="${dotR+10}" fill="transparent"/>
+  <circle class="nd-dot" cx="${p.cx}" cy="${p.cy}" r="${dotR}" style="fill:${col};color:${col}"/>
+  <text x="${lx}" y="${ly}" text-anchor="middle"><tspan x="${lx}"><tspan class="v" font-weight="700">${n}</tspan> <tspan class="p">${pct}</tspan></tspan><tspan x="${lx}" dy="16">${s.label}</tspan></text></g>`;
+ });
+ return`<svg id="sk" class="${phone?"compact":""}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Job search flow: ${nodes.map(s=>C[s.id]+" "+s.label+" ("+f1(C.pct[s.id])+")").join(", ")}. ${note}">${out}</svg>`;
 }
-
-/* DESIGN PROPOSAL / SUGGESTION FOR OWNER:
-   Application progress donut chart component.
-   Currently computes real-time distribution client-side from filtered jobs and stage counts (C).
-   Clean frontend presentation ready for optional backend stage transitions or historical timeline wiring. */
-function donutChart(js, C){
+/* ---------- views ---------- */
+function attnBtn(){const n=D.jobs.filter(j=>matches(j,"attention")&&attention(j)).length;return`<button class="btn ${S.attention?"":"ghost"} attn" data-act="attn" aria-pressed="${S.attention}">${IC.warn}Needs attention <span class="count">${n}</span></button>`}
+function donutChart(C){
  const total = C.total || 0;
- const stages = STAGES.filter(s => s.id !== "other" && s.id !== "tracked").map(s => ({
+ const stages = STAGES.filter(s => s.id !== "other").map(s => ({
   id: s.id,
   label: s.label,
-  col: TILE_COLORS[s.id] || (s.id==="offer"?"var(--tc-offer, #10b981)":s.id==="rejected"?"var(--tc-rejected, #ef4444)":s.id==="skipped"?"var(--tc-skipped, #64748b)":s.c),
+  col: OVERVIEW_COLORS[s.id] || (s.id==="offer"?"var(--tc-offer, #10b981)":s.id==="rejected"?"var(--tc-rejected, #ef4444)":s.id==="skipped"?"var(--tc-skipped, #64748b)":s.c),
   val: C[s.id] || 0
  }));
  if(C.other) stages.push({ id: "other", label: "Other", col: "var(--tc-skipped)", val: C.other || 0 });
@@ -1608,112 +1475,25 @@ function donutChart(js, C){
     <small>Total</small>
    </div>
   </div>
-  <div class="ov-donut-legend">${legendRows || '<p style="color:var(--mute);font-size:12px">No jobs tracked yet</p>'}</div>
+  <div class="ov-donut-legend">${total ? legendRows : '<p style="color:var(--mute);font-size:12px">No jobs tracked yet</p>'}</div>
  </div>`;
 }
 
-function timeAgo(d){
- if(!d||d==="Lead"||d==="Active"||d==="Recently")return d||"Recent";
- const p=Date.parse(d);if(isNaN(p))return d;
- let refDate = new Date().getTime();
- if(typeof D !== "undefined" && D?.jobs?.length){
-  const dates = D.jobs.map(j => Date.parse(j["Date applied"] || j.Posted || j._checkdate || "")).filter(n => !isNaN(n));
-  if(dates.length){
-   const maxD = Math.max(...dates);
-   if(refDate - maxD > 30 * 86400000) refDate = maxD + 86400000;
-  }
- }
- const diff=Math.max(0,Math.round((refDate-p)/86400000));
- if(diff===0)return"Today";
- if(diff===1)return"Yesterday";
- if(diff<7)return `${diff}d ago`;
- if(diff<30)return `${Math.round(diff/7)}w ago`;
- return d;
-}
-
-/* DESIGN PROPOSAL / SUGGESTION FOR OWNER:
-   Recent activity feed component.
-   Currently synthesizes recent in-memory status changes (from UNDO buffer) and latest updates from jobs.
-   Backend team can easily connect this to a dedicated event/audit log endpoint (e.g. /api/activity) without changing layout. */
 function recentActivity(js){
- const acts=[];
- if(typeof UNDO!=="undefined"&&UNDO.length){
-  UNDO.slice(-3).reverse().forEach(u=>{
-   acts.push({
-    icon: "✓",
-    color: "var(--tc-wish)",
-    title: `Updated <b>${esc(u.expect?.Company||"job")}</b> to ${esc(u.status||"new status")}`,
-    time: "Just now",
-    key: u.sheet+"|"+u.row
-   });
-  });
- }
- const candidates=[...js].sort((a,b)=>{
-  const da=a["Date applied"]||a.Posted||a._checkdate||"";
-  const db=b["Date applied"]||b.Posted||b._checkdate||"";
-  return db.localeCompare(da);
- });
- candidates.forEach(j=>{
-  if(acts.length>=4)return;
-  const st=stageOf(j).id;
-  if(st==="offer"){
-   acts.push({icon:"★",color:"var(--tc-offer)",title:`Received offer from <b>${esc(j.Company)}</b>`,time:j["Date applied"]||"Recently",key:key(j)});
-  }else if(st==="interview"){
-   acts.push({icon:"◆",color:"var(--tc-interview)",title:`In interview loop at <b>${esc(j.Company)}</b>`,time:j["Date applied"]||"Active",key:key(j)});
-  }else if(j["Date applied"]){
-   acts.push({icon:"✓",color:"var(--tc-applied)",title:`Applied for <b>${esc(j.Role)}</b> at <b>${esc(j.Company)}</b>`,time:j["Date applied"],key:key(j)});
-  }else if(j._check==="OPEN"&&j._checkdate){
-   acts.push({icon:"●",color:"var(--tc-ready)",title:`Verified posting is open at <b>${esc(j.Company)}</b>`,time:j._checkdate,key:key(j)});
-  }else{
-   acts.push({icon:"+",color:"var(--tc-wish)",title:`Added lead <b>${esc(j.Company)}</b> (${esc(j.Role)})`,time:j.Posted||"Lead",key:key(j)});
-  }
- });
- if(!acts.length){
-  return `<p class="ov-empty-msg">No recent actions recorded yet.</p>`;
- }
- return `<ul class="ov-activity-feed">${acts.slice(0,4).map(a=>`
-  <li class="ov-activity-item" data-open="${esc(a.key)}" title="Open ${esc(a.title.replace(/<[^>]+>/g,''))}">
-   <span class="ov-activity-icon" style="color:${a.color};background:color-mix(in srgb,${a.color} 15%,transparent)">${a.icon}</span>
-   <div class="ov-activity-text">${a.title}</div>
-   <div class="ov-activity-time">${timeAgo(a.time)}</div>
-  </li>`).join("")}</ul>`;
-}
-
-function getPeriodActiveCount(js, range) {
- return Math.max(1, Math.min(js.length, 7));
-}
-
-function getPeriodLabel(range) {
- if(range === "4w") return "Last 4 weeks";
- if(range === "1y") return "Last 12 months";
- if(range === "all") return "All-time pipeline";
- return "Last 7 days";
+ const jobs=new Map(js.map(j=>[key(j),j]));
+ const events=(D.activity||[]).filter(event=>jobs.has(event.key)).slice(0,4);
+ if(!events.length)return '<p class="ov-empty-msg">No recent actions recorded yet.</p>';
+ return '<ul class="ov-activity-feed">'+events.map(event=>{
+  const job=jobs.get(event.key), moved="status" in event;
+  const company="<b>"+esc(job.Company)+"</b>";
+  const title=moved?company+" moved to "+esc(sl(event.status)||"Other status"):"Added "+company+" ("+esc(job.Role)+")";
+  const color=moved?OVERVIEW_COLORS[stageOf({"My status":event.status}).id]:"var(--mute)";
+  return `<li><button type="button" class="ov-activity-item" data-open="${esc(event.key)}"><span class="ov-activity-icon" aria-hidden="true" style="color:${color}">${moved?"&#10003;":"+"}</span>
+   <span class="ov-activity-text">${title}</span><time class="ov-activity-time" datetime="${esc(event.date)}">${esc(event.date)}</time></button></li>`;
+ }).join("")+'</ul>';
 }
 
 window.__activeRcMetric = "all";
-
-function getCurveY(pts, targetX, tension = 0.85) {
- if(!pts || !pts.length) return 0;
- if(targetX <= pts[0][0]) return pts[0][1];
- if(targetX >= pts[pts.length - 1][0]) return pts[pts.length - 1][1];
- const p = [pts[0], ...pts, pts[pts.length - 1]];
- for(let i = 0; i < pts.length - 1; i++){
-  const x0 = pts[i][0], x1 = pts[i+1][0];
-  if(targetX >= x0 && targetX <= x1){
-   const t = (targetX - x0) / (x1 - x0 || 1);
-   const p0 = p[i], p1 = p[i+1], p2 = p[i+2], p3 = p[i+3];
-   const m0 = (p2[1] - p0[1]) * 0.5 * tension;
-   const m1 = (p3[1] - p1[1]) * 0.5 * tension;
-   const t2 = t * t, t3 = t2 * t;
-   const h00 = 2 * t3 - 3 * t2 + 1;
-   const h10 = t3 - 2 * t2 + t;
-   const h01 = -2 * t3 + 3 * t2;
-   const h11 = t3 - t2;
-   return h00 * p1[1] + h10 * m0 + h01 * p2[1] + h11 * m1;
-  }
- }
- return pts[pts.length - 1][1];
-}
 
 function highlightRcMetric(metricId) {
  window.__activeRcMetric = metricId || "all";
@@ -1755,96 +1535,32 @@ function highlightRcMetric(metricId) {
  tiles.forEach(t => t.classList.toggle("active-focus", t.dataset.tile === metricId));
 }
 
-function parkSearch(forceHome = false){
- const s = $("#appSearch");
- if(!s) return;
- const home = $("#topSearchGroup");
- if(forceHome){
-  if(home && !home.contains(s)) home.prepend(s);
-  return;
- }
- const slot = (S.view === "overview" && $("#headerSearchSlot")) ? $("#headerSearchSlot") : home;
- if(slot && !slot.contains(s)) slot.prepend(s);
-}
-
-function syncSearchSlot(){ parkSearch(); }
-
-function overview(js){const st=j=>stageOf(j).id,C=counts(js);
+function overview(js){const C=counts(js);
  const appliedN=C.sent;
- const SUB=Object.assign({
-  tracked:"Found, not looked at yet",
-  review:"Looking at it; Fit shows here",
-  apply:`${C.cvready||0} ready · ${C.drafted||0} drafted`,
-  skipped:"Decided not to apply",
-  applied:"Waiting on a reply",
-  interview:"In interviews now",
-  offer:"Holding an offer",
-  rejected:"After applying",
-  other:"Unrecognised status"
- }, Object.fromEntries(STAGES.map(s=>[s.id, s.means || ""])));
- 
- // Exact 8 stages matching the mockup header
- const stageOrder = ["tracked", "review", "apply", "applied", "interview", "offer", "rejected", "skipped"];
- const T = stageOrder.map(id => {
-  if(id === "tracked") return [C.total, "All jobs", `${C.sent} application${C.sent===1?"":"s"} so far`, "--ink", "all"];
-  const s = STAGES.find(x => x.id === id);
-  const label = s ? s.label : (id.charAt(0).toUpperCase() + id.slice(1));
-  const col = TILE_COLORS[id] || (s ? s.c : "--mute");
-  return [C[id] || 0, label, `${f1(C.pct[id] || 0)} · ${SUB[id] || ""}`, col, id];
- });
-
+ const SUB=Object.fromEntries(STAGES.map(s=>[s.id,s.means||"Unrecognised status"]));
+ const T=[[C.total,"All jobs",`${C.sent} application${C.sent===1?"":"s"} so far`,"--ink","all"],...BUCKETS.filter(([k])=>k!=="other"||C.other).map(([k,l,col])=>[C[k],l,`${f1(C.pct[k])} · ${SUB[k]}`,col,k])];
  const att=js.filter(j=>attention(j));
  const why=attention;
- const listJobs=js.slice().sort(sorter()).slice(0,4);
+ const listJobs=js.slice().sort(bestFitFirst).slice(0,4);
  return`<div class="ov-wrap">
  <div class="ov-header">
   <div class="ov-title-wrap">
    <div class="ov-crumb">Overview</div>
-   <!-- DESIGN PROPOSAL / SUGGESTION FOR OWNER:
-        Active profile greeting. Wire to current user profile name when multi-profile support lands. -->
-   <h1 class="ov-welcome">Welcome, Alejandro</h1>
    <h2 class="ov-subtitle">Job search at a glance</h2>
   </div>
-  <div class="ov-header-slot" id="headerSearchSlot"></div>
  </div>
- <section class="tiles ov-tiles" aria-label="Summary of job stages. Each job counts once by its current status.">${T.map(t=>{const pct=t[4]==="all"?"100%":f1(C.pct[t[4]]);const col=TILE_COLORS[t[4]]||`var(${t[3]})`;const ico=TILE_ICONS[t[4]]||"";const note=t[4]==="all"?t[2]:(SUB[t[4]]||t[2]);return`<button class="tile ${t[4]==="all"?"total":""}" style="--tc:${col}" data-tile="${t[4]}" data-n="${t[0]}" data-pct="${pct}"><div class="tile-head"><span class="tile-lbl">${t[1]}</span><span class="tile-ico" aria-hidden="true">${ico}</span></div><div class="tile-val"><span class="num">${t[0]}</span></div><div class="tile-foot"><span class="tile-trend">${t[4]==="all"?"":pct}</span><span class="tile-note">${note}</span></div></button>`}).join("")}</section>
- <section class="panel ov-chart-panel ov-chart-card ov-chart-full" aria-labelledby="skh">
-  <div class="panel-h ov-chart-header">
-   <h2 id="skh">Job search summary</h2>
-   <div class="ov-time-filters" role="group" aria-label="Time period">
-    <button type="button" class="ov-time-btn ${(!S.timeRange||S.timeRange==='1w')?'active':''}" data-range="1w">1W</button>
-    <button type="button" class="ov-time-btn ${S.timeRange==='4w'?'active':''}" data-range="4w">4W</button>
-    <button type="button" class="ov-time-btn ${S.timeRange==='1y'?'active':''}" data-range="1y">1Y</button>
-    <button type="button" class="ov-time-btn ${S.timeRange==='all'?'active':''}" data-range="all">All</button>
-   </div>
+ <section class="tiles ov-tiles" aria-label="Summary of job stages. Each job counts once by its current status.">${T.map(t=>{const pct=t[4]==="all"?"100%":f1(C.pct[t[4]]);const col=OVERVIEW_COLORS[t[4]]||`var(${t[3]})`;const ico=TILE_ICONS[t[4]]||"";const note=t[4]==="all"?t[2]:(SUB[t[4]]||t[2]);return`<button class="tile ${t[4]==="all"?"total":""}" style="--tc:${col}" data-tile="${t[4]}" data-n="${t[0]}" data-pct="${pct}"><div class="tile-head"><span class="tile-lbl">${t[1]}</span><span class="tile-ico" aria-hidden="true">${ico}</span></div><div class="tile-val"><span class="num">${t[0]}</span></div><div class="tile-foot"><span class="tile-trend">${t[4]==="all"?"":pct}</span><span class="tile-note">${note}</span></div></button>`}).join("")}</section>
+ <section class="panel chart-carousel" aria-label="Overview charts" aria-roledescription="carousel">
+  <div class="chart-nav" role="group" aria-label="Choose a chart">
+   <button class="btn ghost icon" type="button" data-chart-step="-1" aria-label="Previous chart"><span aria-hidden="true">‹</span></button>
+   ${OVERVIEW_CHARTS.map(({id,label},i)=>`<button class="chart-dot" type="button" data-chart-index="${i}" aria-label="Show ${label}" aria-controls="chart-${id}" aria-current="${i===overviewChart}"></button>`).join("")}
+   <button class="btn ghost icon" type="button" data-chart-step="1" aria-label="Next chart"><span aria-hidden="true">›</span></button>
   </div>
-  <div class="ov-summary-metrics">
-   <div class="ov-metric-block">
-    <span class="ov-metric-val">${C.total}</span>
-    <span class="ov-metric-lbl">Total positions</span>
-   </div>
-   <div class="ov-metric-block ov-metric-right">
-    <div class="ov-trend-row">
-     <span class="ov-trend-chip">+12.5%</span>
-     <span class="ov-metric-val">${getPeriodActiveCount(js, S.timeRange||"1w")}</span>
-    </div>
-    <span class="ov-metric-lbl">${getPeriodLabel(S.timeRange||"1w")}</span>
-   </div>
-  </div>
-  <div class="rc-metric-legend" role="toolbar" aria-label="Metric curves">
-   ${METRIC_DEFS.map(m => {
-    const count = m.id === "all" ? C.total : (C[m.key] !== undefined ? C[m.key] : 0);
-    return `<button type="button" class="rc-legend-pill active" data-metric="${m.id}" title="Focus ${m.label} curve"><i class="dot" style="background:${m.color}"></i><span>${m.label}</span><b>${count}</b></button>`;
-   }).join("")}
-  </div>
-  <div class="sk-wrap" id="rcChartWrap">
-   ${rollercoasterChart(js,C)}
-   <div class="rc-guide-line" style="opacity:0;pointer-events:none;"></div>
-   <div class="rc-guide-dot" style="opacity:0;pointer-events:none;"></div>
-   <div id="rcTooltip" class="rc-floating-tooltip" style="opacity:0;pointer-events:none;" role="tooltip" aria-hidden="true"></div>
-   <div class="rc-x-axis" role="presentation">
-    ${(window.__rcData?.labels || ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]).map((l, i, arr) => `<span class="rc-x-lbl ${i===0?'start':(i===arr.length-1?'end':'')}" data-idx="${i}">${l}</span>`).join("")}
-   </div>
+  <div class="sr" role="status"></div>
+  <div class="chart-slides">
+   <section class="chart-slide ov-chart-panel" id="chart-summary" aria-labelledby="skh"${overviewChart!==0?" hidden":""}><div class="panel-h"><h2 id="skh">Job search summary</h2><p>${activeCount()||S.q?"Filtered view":"All lists"}</p></div>
+    <div class="sk-wrap">${sankey(js,C)}</div><p class="sk-note">Current-status counts; lines show possible steps, not recorded moves. Previous stages are unknown. Rejection can happen before or after an interview.</p>${appliedN?"":`<div class="sk-empty">${IC.info.replace("<svg",'<svg width="16" height="16"')}No applications yet. Once you mark one Applied, it flows on to interviews, offers or rejections here.</div>`}</section>
+   ${activityChart()}
   </div>
  </section>
  <div class="ov-middle-grid">
@@ -1852,14 +1568,11 @@ function overview(js){const st=j=>stageOf(j).id,C=counts(js);
    <div class="panel-h ov-chart-header">
     <h2 id="aph">Application progress</h2>
    </div>
-   ${donutChart(js,C)}
+   ${donutChart(C)}
   </section>
   <section class="panel ov-chart-card" aria-labelledby="lsh">
    <div class="ov-panel-head">
     <div class="ov-panel-title-group">
-     <!-- DESIGN PROPOSAL / SUGGESTION FOR OWNER:
-      Top opportunities list. Displays current highest-attainability leads based on fit score rings.
-      Can be wired to custom AI ranking or priority flags in future backend updates. -->
      <h2 id="lsh" style="margin:0;font-size:15px;font-weight:700">Top opportunities</h2>
      <span class="ov-pill-badge g">${js.length}</span>
     </div>
@@ -1871,12 +1584,12 @@ function overview(js){const st=j=>stageOf(j).id,C=counts(js);
       ${av(j.Company,"sm")}
       <span class="t">
        <b>${esc(j.Company)}</b>
-       <small style="color:var(--mute)"><span>${esc(j.Role)}</span><span class="ov-stage-tag"><i class="dot" style="background:${TILE_COLORS[st?.id]||stageColor(st)}"></i>${esc(sl(j["My status"]))}</span></small>
+       <small style="color:var(--mute)"><span>${esc(j.Role)}</span><span class="ov-stage-tag"><i class="dot" style="background:${OVERVIEW_COLORS[st?.id]||stageColor(st)}"></i>${esc(sl(j["My status"]))}</span></small>
       </span>
-      ${ring(j._sc, 30)}
+      ${jobScore(j,{list:true})}
       <span class="ov-item-arrow">→</span>
      </button></li>`;
-   }).join("")}</ul>` : `<p class="ov-empty-msg">No active job listings found.</p>`}
+   }).join("")}</ul>` : `<p class="ov-empty-msg">No jobs to show.</p>`}
   </section>
  </div>
  <div class="ov-bottom-grid" style="margin-top:16px">
@@ -1968,7 +1681,7 @@ function board(js){const so=sorter();
  const activeJobs=js.filter(j=>!closedStage(stageOf(j))&&stageOf(j).id!=="other");
  const otherJobs=js.filter(j=>stageOf(j).id==="other");
  const attJobs=js.filter(j=>attention(j));
- const stagesToShow=STAGES.filter(s=>S.jobView==="todo"?["tracked","review","apply"].includes(s.id)||(s.id==="other"&&otherJobs.length>0):S.jobView==="progress"?["applied","interview","offer"].includes(s.id):S.jobView==="skipped"?s.id==="skipped":S.jobView==="closed"?js.some(j=>stageOf(j)===s):s.id!=="other"||otherJobs.length>0);
+ const stagesToShow=STAGES.filter(s=>s.id!=="other"||otherJobs.length>0);
  return`<div class="board" role="list">
   <div class="board-top-bar">
    <div class="board-top-left">
@@ -1984,7 +1697,7 @@ function board(js){const so=sorter();
     </div>
    </div>
   </div>
-  <div class="board-cols" style="grid-template-columns:repeat(${stagesToShow.length},minmax(230px,1fr))">
+  <div class="board-cols" role="group" aria-label="Stage columns" tabindex="0">
    ${stagesToShow.map(s=>{
     const items=js.filter(j=>stageOf(j)===s).sort(so);
     return`<section class="col" data-stage="${s.id}" role="listitem" aria-label="${s.label}, ${items.length}">
@@ -2096,7 +1809,7 @@ function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
  </article>`}
 
 /* ---------- render ---------- */
-function render(){parkSearch();const keep=$$("textarea[data-note][data-dirty='1']").map(t=>[t.closest("[data-k]").dataset.k,t.value,t===document.activeElement,t.selectionStart]);
+function render(){const keep=$$("textarea[data-note][data-dirty='1']").map(t=>[t.closest("[data-k]").dataset.k,t.value,t===document.activeElement,t.selectionStart]);
  const rounds=$$(".round input[data-field]").filter(t=>t.value!==t.defaultValue||t===document.activeElement).map(t=>[t.closest("[data-k]").dataset.k,t.closest(".round").dataset.id,t.dataset.field,t.value,t===document.activeElement,t.selectionStart,t.selectionEnd,t.selectionDirection]);
  renderInner();
  keep.forEach(([k,v,f,pos])=>{$$(`[data-k="${CSS.escape(k)}"] textarea[data-note]`).forEach(t=>{t.value=v;noteState(t);if(f){t.focus();t.setSelectionRange(pos,pos)}})});
@@ -2104,17 +1817,16 @@ function render(){parkSearch();const keep=$$("textarea[data-note][data-dirty='1'
 function renderInner(){const js=filtered();$$(".seg button").forEach(b=>b.setAttribute("aria-selected",b.dataset.v===S.view));
  const ac=activeCount();$("#fcount").hidden=!ac;$("#fcount").textContent=ac;$("#fbtn").hidden=S.view==="contacts";
  activebar();const m=$("#main");
- const scroll=$(".board")?.scrollLeft;
- parkSearch(true);
- if(!D.jobs.length&&S.view!=="contacts")m.innerHTML=emptyBox("No jobs yet","Add your first lead, or let the daily rerun fill the spreadsheet.",`<button class="btn" data-act="add">Add a lead</button>`);
- else if(S.view==="overview")m.innerHTML=js.length?overview(js):noMatch();
+ const scroll=$(".board-cols")?.scrollLeft;
+ if(S.view==="overview"&&(!D.jobs.length||js.length))m.innerHTML=overview(js);
+ else if(!D.jobs.length&&S.view!=="contacts")m.innerHTML=emptyBox("No jobs yet","Add your first lead, or let the daily rerun fill the spreadsheet.",`<button class="btn" data-act="add">Add a lead</button>`)+(S.view==="board"?board(js):"");
+ else if(S.view==="overview")m.innerHTML=noMatch();
  else if(S.view==="board")m.innerHTML=board(js);
  else if(S.view==="list")m.innerHTML=listView(js);
  else m.innerHTML=contactsView();
- parkSearch();
- if(["board","list"].includes(S.view)&&D.daily_run){const tone=["a","n"].includes(D.daily_run.tone)?" "+D.daily_run.tone:"";const stale=D.stale_boards||[];m.insertAdjacentHTML("afterbegin",`<div class="banner${tone}" role="status" style="margin-bottom:10px">${esc(D.daily_run.message)}</div>${stale.length?`<div class="banner n" style="margin-bottom:10px">${esc(stale.map(b=>`${b.board}: not fully read since ${new Date(b.since+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}${b.reason?" ("+b.reason+")":""}`).join("; "))}</div>`:""}`)}
+ if(["overview","board","list"].includes(S.view)&&D.daily_run){const tone=["a","n"].includes(D.daily_run.tone)?" "+D.daily_run.tone:"";const stale=D.stale_boards||[];m.insertAdjacentHTML("afterbegin",`<div class="banner${tone}" role="status" style="margin-bottom:10px">${esc(D.daily_run.message)}</div>${stale.length?`<div class="banner n" style="margin-bottom:10px">${esc(stale.map(b=>`${b.board}: not fully read since ${new Date(b.since+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}${b.reason?" ("+b.reason+")":""}`).join("; "))}</div>`:""}`)}
  if(usesJobView())m.insertAdjacentHTML("afterbegin",jobViews());
- if(scroll&&$(".board"))$(".board").scrollLeft=scroll;
+ if(scroll&&$(".board-cols"))$(".board-cols").scrollLeft=scroll;
  const sp=$("#split");if(sp&&!sp.querySelector(".side"))sp.classList.add("noside");
  if($("#sort"))$("#sort").value=S.sort;if($("#group"))$("#group").value=S.group;
  if($("#fdrawer").classList.contains("on"))$("#fdrawer").innerHTML=sidebar(true);
@@ -2142,9 +1854,8 @@ function closeDrawers(){const dirty=$("#drawer textarea[data-dirty='1']");if(dir
  ["#drawer","#fdrawer"].forEach(s=>$(s).classList.remove("on"));$("#drawer").dataset.k="";$("#scrim").classList.remove("on");lastFocus&&lastFocus.focus&&lastFocus.focus();return true}
 
 /* ---------- events ---------- */
-$$(".seg button").forEach(b=>b.onclick=()=>{S.view=b.dataset.v;location.hash=b.dataset.v;save();render()});
-window.addEventListener("hashchange",()=>{const v=location.hash.slice(1);const target=v&&["overview","list","board","contacts","search","review"].includes(v)?v:"overview";if(S.view!==target){S.view=target;save();render();}});
-$(".seg").addEventListener("keydown",e=>{if(!["ArrowLeft","ArrowRight"].includes(e.key))return;const bs=$$(".seg button");const i=bs.findIndex(b=>b.dataset.v===S.view);const n=bs[(i+(e.key==="ArrowRight"?1:bs.length-1))%bs.length];S.view=n.dataset.v;location.hash=n.dataset.v;render();n.focus()});
+$$(".seg button").forEach(b=>b.onclick=()=>{S.view=b.dataset.v;render()});
+$(".seg").addEventListener("keydown",e=>{if(!["ArrowLeft","ArrowRight"].includes(e.key))return;const bs=$$(".seg button");const i=bs.findIndex(b=>b.dataset.v===S.view);const n=bs[(i+(e.key==="ArrowRight"?1:bs.length-1))%bs.length];S.view=n.dataset.v;render();n.focus()});
 let qT;const onQ=e=>{clearTimeout(qT);const v=e.target.value;if(!v.trim()){S.q="";render();return}qT=setTimeout(()=>{S.q=$("#q").value;render()},120)};
 ["input","search","change"].forEach(ev=>$("#q").addEventListener(ev,onQ));
 $("#themeBtn").onclick=toggleTheme;
@@ -2159,25 +1870,20 @@ document.addEventListener("click",async e=>{const t=e.target;
  const posted=t.closest("[data-posted]");if(posted){S.posted=posted.dataset.posted==="all"?null:Number(posted.dataset.posted);render();return}
  if(!t.closest(".bcard-move-wrap")){$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"))}
  const a=t.closest("[data-act]");if(a){const v=a.dataset.act;if(v==="clear")clearFilters();if(v==="close"||v==="closef")closeDrawers();if(v==="openf")openFilters();if(v==="add")openAdd();if(v==="attn"){S.attention=!S.attention;render()}
-  if(v==="attn-list"){S.attention=true;S.view="list";location.hash="list";render();return}
-  if(v==="view-list"){S.view="list";location.hash="list";render();return}
-  if(v==="view-activity"){S.view="list";S.sort="applied";location.hash="list";render();return}
+  if(v==="attn-list"){S.attention=true;S.view="list";render();return}
+  if(v==="view-list"){S.view="list";render();return}
+  if(v==="view-activity"){S.view="list";S.sort="applied";render();return}
   if(v==="add-round"||v==="save-round"){await saveRound(byKey(a.closest("[data-k]").dataset.k),a);return}
   if(v==="open-move"){const w=a.closest(".bcard-move-wrap"),m=w.querySelector(".bcard-move-menu"),opening=m.hidden;$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"));m.hidden=!opening;a.setAttribute("aria-expanded",String(opening));if(opening){const f=m.querySelector(".bcard-move-item");if(f)f.focus()}else a.focus();return}
   return}
  const mv=t.closest("[data-moveto]");if(mv){const k=mv.dataset.k,keyboard=e.detail===0,j=byKey(k),st=STAGES.find(x=>x.id===mv.dataset.moveto);if(j&&st&&boardMove(j,st)&&stageOf(j)!==st){setStatus(j,dropStatus(j,st)).then(()=>{const card=$(`.card[data-k="${CSS.escape(k)}"]`);if(card)card.focus();})}$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"));return}
  const rm=t.closest("[data-rm]");if(rm){const f=rm.dataset.rm;if(Array.isArray(S[f]))S[f]=S[f].filter(x=>x!==rm.dataset.v);else S[f]=f==="posted"?null:f==="minScore"?0:false;render();return}
- const tile=t.closest("[data-tile]");if(tile){const v=tile.dataset.tile;S.view="list";S.jobView="all";S.stages=v==="all"?[]:[v];location.hash="list";save();render();return}
- const reg=t.closest("[data-reg]");if(reg){S.regions=[reg.dataset.reg];S.view="list";location.hash="list";save();render();return}
+ const tile=t.closest("[data-tile]");if(tile){const v=tile.dataset.tile;S.view="list";S.jobView="all";S.stages=v==="all"?[]:[v];save();render();return}
+ const reg=t.closest("[data-reg]");if(reg){S.regions=[reg.dataset.reg];S.view="list";save();render();return}
  const op=t.closest("[data-open]");if(op){
-  if(S.view==="overview"){
+  if(S.view==="overview"&&wide()){
    S.view="list";
    S.jobView="all";
-   S.sel=op.dataset.open;
-   location.hash="list";
-   save();
-   render();
-   return;
   }
   openJob(op.dataset.open);
   return;
@@ -2212,6 +1918,12 @@ document.addEventListener("keydown",e=>{const t=e.target,typing=/INPUT|TEXTAREA|
  if(e.key==="/"){e.preventDefault();$("#q").focus();return}
  if(e.key==="n"){e.preventDefault();openAdd();return}
  if(/^[1-4]$/.test(e.key)){S.view=["overview","list","board","contacts"][+e.key-1];render();return}
+ const carousel=t.closest(".chart-carousel");
+ if(carousel&&!e.shiftKey&&(e.key==="ArrowLeft"||e.key==="ArrowRight")){
+  e.preventDefault();
+  stepChart(carousel,e.key==="ArrowLeft"?-1:1);
+  return;
+ }
  const card=t.closest&&t.closest(".card[data-k]");
  if(card&&t===card&&(e.key==="Enter"||e.key===" ")){e.preventDefault();openJob(card.dataset.k);return}
  if(card&&e.shiftKey&&(e.key==="ArrowRight"||e.key==="ArrowLeft")&&S.view==="board"){e.preventDefault();const j=byKey(card.dataset.k);const i=stageIdx(j)+(e.key==="ArrowRight"?1:-1);
@@ -2219,37 +1931,66 @@ document.addEventListener("keydown",e=>{const t=e.target,typing=/INPUT|TEXTAREA|
  if(S.view==="list"&&(e.key==="j"||e.key==="k"||e.key==="ArrowDown"||e.key==="ArrowUp")&&(card||t===document.body)){e.preventDefault();const cs=$$(".lcard");const i=cs.findIndex(c=>c.dataset.k===S.sel);
   const n=cs[Math.max(0,Math.min(cs.length-1,i+(/j|ArrowDown/.test(e.key)?1:-1)))];if(n){if(wide())openJob(n.dataset.k);else n.focus();$(`.lcard[data-k="${CSS.escape(n.dataset.k)}"]`)?.scrollIntoView({block:"nearest"})}}});
 /* drag and drop */
-let draggingKey=null;
+let draggingKey=null, boardScrollFrame=0, boardScrollSpeed=0;
+function stopBoardDragScroll(){
+ cancelAnimationFrame(boardScrollFrame);
+ boardScrollFrame=0;
+}
+function endBoardDrag(){
+ draggingKey=null;
+ stopBoardDragScroll();
+ document.body.classList.remove("is-dragging");
+ $$(".dragging").forEach(x=>x.classList.remove("dragging"));
+ $$(".col.over").forEach(x=>x.classList.remove("over"));
+}
+function scrollBoardAtEdge(board,x){
+ if(!board){stopBoardDragScroll();return}
+ const {left,right}=board.getBoundingClientRect(), edge=48;
+ boardScrollSpeed=(Math.max(0,edge-(right-x))-Math.max(0,edge-(x-left)))/4;
+ if(!boardScrollSpeed){stopBoardDragScroll();return}
+ if(boardScrollFrame)return;
+ function scroll(){
+  boardScrollFrame=0;
+  if(!board.isConnected||!draggingKey)return;
+  const before=board.scrollLeft;
+  board.scrollLeft+=Math.sign(boardScrollSpeed)*Math.ceil(Math.abs(boardScrollSpeed));
+  if(board.scrollLeft!==before)boardScrollFrame=requestAnimationFrame(scroll);
+ }
+ boardScrollFrame=requestAnimationFrame(scroll);
+}
 document.addEventListener("dragstart",e=>{
  const c=e.target.closest&&e.target.closest(".card[draggable]");if(!c)return;
  draggingKey=c.dataset.k;
  e.dataTransfer.setData("text/plain",c.dataset.k);e.dataTransfer.effectAllowed="move";
  if(e.dataTransfer.setDragImage)e.dataTransfer.setDragImage(c,24,24);
  document.body.classList.add("is-dragging");
- requestAnimationFrame(()=>c.classList.add("dragging"))
-});
-document.addEventListener("dragend",e=>{
- draggingKey=null;
- document.body.classList.remove("is-dragging");
- $$(".dragging").forEach(x=>x.classList.remove("dragging"));
- $$(".col.over").forEach(x=>x.classList.remove("over"))
+ c.addEventListener("dragend",endBoardDrag,{once:true});
+ requestAnimationFrame(()=>{if(draggingKey===c.dataset.k)c.classList.add("dragging")});
 });
 document.addEventListener("dragover",e=>{
- const c=e.target.closest&&e.target.closest(".col");if(!c)return;
+ if(!draggingKey)return;
+ scrollBoardAtEdge(e.target.closest?.(".board-cols"),e.clientX);
+ const c=e.target.closest?.(".col");
+ $$(".col.over").forEach(x=>x!==c&&x.classList.remove("over"));
+ if(!c)return;
  const j=byKey(draggingKey),s=STAGES.find(s=>s.id===c.dataset.stage);
  if(!j||!boardMove(j,s)){e.dataTransfer.dropEffect="none";return}
  e.preventDefault();e.dataTransfer.dropEffect="move";
- $$(".col.over").forEach(x=>x!==c&&x.classList.remove("over"));
  c.classList.add("over")
 });
 document.addEventListener("dragleave",e=>{
  const c=e.target.closest&&e.target.closest(".col");
- if(c&&e.relatedTarget&&!c.contains(e.relatedTarget))c.classList.remove("over")
+ if(c&&e.relatedTarget&&!c.contains(e.relatedTarget))c.classList.remove("over");
+ const board=e.target.closest?.(".board-cols");
+ if(board&&!board.contains(e.relatedTarget)){
+  const {left,right,top,bottom}=board.getBoundingClientRect();
+  if(e.relatedTarget||e.clientX<left||e.clientX>=right||e.clientY<top||e.clientY>=bottom)stopBoardDragScroll();
+ }
 });
 document.addEventListener("drop",e=>{
- document.body.classList.remove("is-dragging");
+ endBoardDrag();
  const c=e.target.closest&&e.target.closest(".col");if(!c)return;
- e.preventDefault();c.classList.remove("over");$$(".col.over").forEach(x=>x.classList.remove("over"));
+ e.preventDefault();
  const j=byKey(e.dataTransfer.getData("text/plain"));const s=STAGES.find(x=>x.id===c.dataset.stage);
  if(j&&s&&boardMove(j,s)&&stageOf(j)!==s)setStatus(j,dropStatus(j,s))
 });
@@ -2314,12 +2055,61 @@ window.trackerSelfTest=function(){
 };
 
 
+function selectChart(carousel,index,direction){
+ if(index===overviewChart)return;
+ const slides=carousel.querySelectorAll(".chart-slide");
+ const dots=carousel.querySelectorAll(".chart-dot");
+ const outgoing=slides[overviewChart];
+ if(outgoing.contains(document.activeElement))dots[index].focus({preventScroll:true});
+ outgoing.hidden=true;
+ tip.style.opacity=0;
+ delete outgoing.dataset.enterFrom;
+ overviewChart=index;
+ slides[index].dataset.enterFrom=direction<0?"left":"right";
+ slides[index].hidden=false;
+ dots.forEach((dot,i)=>dot.setAttribute("aria-current",String(i===index)));
+ carousel.querySelector('[role="status"]').textContent=OVERVIEW_CHARTS[index].label;
+ try{sessionStorage.setItem(CHART_STORAGE_KEY,OVERVIEW_CHARTS[index].id)}catch{}
+}
+function stepChart(carousel,direction){
+ const count=OVERVIEW_CHARTS.length;
+ selectChart(carousel,(overviewChart+direction+count)%count,direction);
+}
+
+let chartTouch=null;
+document.addEventListener("touchstart",e=>{
+ const carousel=e.target.closest(".chart-slides")?.closest(".chart-carousel");
+ const touch=e.touches[0];
+ chartTouch=carousel&&e.touches.length===1?{carousel,id:touch.identifier,x:touch.clientX,y:touch.clientY}:null;
+},{passive:true});
+document.addEventListener("touchcancel",()=>{chartTouch=null},{passive:true});
+document.addEventListener("touchend",e=>{
+ const start=chartTouch;
+ chartTouch=null;
+ if(!start?.carousel.isConnected)return;
+ const touch=Array.from(e.changedTouches).find(t=>t.identifier===start.id);
+ if(!touch)return;
+ const dx=touch.clientX-start.x,dy=touch.clientY-start.y;
+ if(Math.abs(dx)<45||Math.abs(dx)<Math.abs(dy)*1.5)return;
+ e.preventDefault();
+ stepChart(start.carousel,dx<0?1:-1);
+},{passive:false});
+
 document.addEventListener("click",e=>{
  const t=e.target;
+ const step=t.closest("[data-chart-step]");
+ if(step){stepChart(step.closest(".chart-carousel"),Number(step.dataset.chartStep));return}
+ const dot=t.closest("[data-chart-index]");
+ if(dot){
+  const index=Number(dot.dataset.chartIndex);
+  selectChart(dot.closest(".chart-carousel"),index,index-overviewChart);
+  return;
+ }
  const timeBtn=t.closest(".ov-time-btn");
  if(timeBtn){
   S.timeRange=timeBtn.dataset.range;
   render();
+  if(e.detail===0)$(`.ov-time-btn[data-range="${S.timeRange}"]`)?.focus({preventScroll:true});
   return;
  }
  const pill=t.closest(".rc-legend-pill");
@@ -2327,16 +2117,20 @@ document.addEventListener("click",e=>{
   highlightRcMetric(pill.dataset.metric);
   return;
  }
- const scBtn=t.closest("#shortcutsBtn");
- if(scBtn){
-  const help=$("#help");
-  if(help){
-   if(help.showPopover)help.togglePopover();
-   else help.hidden=!help.hidden;
-  }
-  return;
- }
 });
+
+const shortcutsHelp=$("#help");
+if(typeof shortcutsHelp.showPopover!=="function"){
+ shortcutsHelp.hidden=true;
+ shortcutsHelp.removeAttribute("popover");
+ $("#shortcutsBtn").setAttribute("aria-expanded","false");
+ document.addEventListener("click",e=>{
+  const trigger=e.target.closest('[popovertarget="help"]');
+  if(!trigger)return;
+  shortcutsHelp.hidden=trigger.getAttribute("popovertargetaction")==="hide"||!shortcutsHelp.hidden;
+  $("#shortcutsBtn").setAttribute("aria-expanded",String(!shortcutsHelp.hidden));
+ });
+}
 
 document.addEventListener("mouseover", e => {
  const tile = e.target.closest && e.target.closest(".tile[data-tile]");
@@ -2356,93 +2150,30 @@ document.addEventListener("mouseout", e => {
  }
 });
 
-document.addEventListener("mousemove", e => {
- const wrap = $("#rcChartWrap");
- if(!wrap || !window.__rcData) return;
- 
- const rect = wrap.getBoundingClientRect();
- const inside = (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom - 22);
- 
- const line = wrap.querySelector(".rc-guide-line");
- const dot = wrap.querySelector(".rc-guide-dot");
- const rcTip = $("#rcTooltip");
- 
- if(!inside) {
-  if(line) line.style.opacity = "0";
-  if(dot) dot.style.opacity = "0";
-  if(rcTip) rcTip.style.opacity = "0";
-  wrap.querySelectorAll(".rc-x-lbl").forEach(l => l.classList.remove("active"));
+document.addEventListener("mousemove",e=>{
+ const chart=$("#chart-activity:not([hidden]) #activity-chart");
+ if(!chart)return;
+ const rect=chart.getBoundingClientRect(), wrap=$("#rcChartWrap"), tip=$("#rcTooltip");
+ const line=wrap.querySelector(".rc-guide-line"), dot=wrap.querySelector(".rc-guide-dot");
+ const x=(e.clientX-rect.left)/rect.width;
+ if(x<0||x>1||e.clientY<rect.top||e.clientY>rect.bottom){
+  line.style.opacity=dot.style.opacity=tip.style.opacity="0";
+  tip.setAttribute("aria-hidden","true");
   return;
  }
- 
- const clientX = e.clientX - rect.left;
- const fracX = Math.max(0, Math.min(1, clientX / rect.width));
- const data = window.__rcData;
- const svgX = data.leftPad + fracX * data.usableW;
- 
- if(line) {
-  line.style.left = clientX + "px";
-  line.style.opacity = "0.75";
- }
- 
- const activeMetric = window.__activeRcMetric || "all";
- const pts = (data.metricPts && data.metricPts[activeMetric]) || data.metricPts.all;
- const activeDef = METRIC_DEFS.find(m => m.id === activeMetric) || METRIC_DEFS[0];
- const activeColor = activeDef.id === "all" ? "var(--ink)" : (activeDef.color || "var(--blue)");
- 
- const svgY = getCurveY(pts, svgX, 0.85);
- const svgH = data.H || 185;
- const chartH = rect.height - 30;
- const clientY = Math.max(8, Math.min(chartH, (svgY / svgH) * chartH));
- 
- if(dot) {
-  dot.style.left = clientX + "px";
-  dot.style.top = clientY + "px";
-  dot.style.backgroundColor = activeColor;
-  dot.style.color = activeColor;
-  dot.style.opacity = "1";
- }
- 
- const checkpoints = data.points;
- if(checkpoints && checkpoints.length) {
-  let closest = checkpoints[0], minDist = Infinity;
-  checkpoints.forEach(pt => {
-   const d = Math.abs(pt.x - svgX);
-   if(d < minDist) { minDist = d; closest = pt; }
-  });
-  
-  wrap.querySelectorAll(".rc-x-lbl").forEach(l => {
-   l.classList.toggle("active", parseInt(l.dataset.idx, 10) === closest.idx);
-  });
-  
-  if(rcTip) {
-   rcTip.innerHTML = `<div class="rc-tip-head">
-    <span class="rc-tip-date">${esc(closest.fullDate || closest.date)}</span>
-    <span class="rc-tip-total">${Math.round(closest.metrics.total || closest.metrics.all || 0)} total</span>
-   </div>
-   <div class="rc-tip-grid">
-    ${METRIC_DEFS.map(m => {
-     const v = Math.round(closest.metrics[m.key] !== undefined ? closest.metrics[m.key] : (closest.metrics[m.id] !== undefined ? closest.metrics[m.id] : 0));
-     const col = m.id === "all" ? "var(--ink)" : m.color;
-     const isCur = m.id === activeMetric;
-     return `<div class="rc-tip-row ${isCur ? 'active-row' : ''}"><span class="rc-tip-k"><i class="dot" style="background:${col}"></i>${m.label}</span><b class="rc-tip-v">${v}</b></div>`;
-    }).join("")}
-   </div>`;
-   rcTip.style.opacity = "1";
-   rcTip.setAttribute("aria-hidden", "false");
-   
-   const tipRect = rcTip.getBoundingClientRect();
-   let tipLeft = clientX - tipRect.width / 2;
-   if(tipLeft < 8) tipLeft = 8;
-   if(tipLeft + tipRect.width > rect.width - 8) tipLeft = rect.width - tipRect.width - 8;
-   
-   let tipTop = clientY - tipRect.height - 14;
-   if(tipTop < 6) tipTop = clientY + 18;
-   
-   rcTip.style.left = tipLeft + "px";
-   rcTip.style.top = tipTop + "px";
-  }
- }
+ const point=historyChartPoints.reduce((a,b)=>Math.abs(x-b.x)<Math.abs(x-a.x)?b:a);
+ const metric=METRIC_DEFS.find(m=>m.id===window.__activeRcMetric)||METRIC_DEFS[0];
+ const left=point.x*rect.width, top=point.coords[metric.id]*rect.height+chart.offsetTop;
+ line.style.left=dot.style.left=left+"px";
+ dot.style.top=top+"px";
+ dot.style.backgroundColor=dot.style.color=metric.color;
+ line.style.opacity=dot.style.opacity="1";
+ tip.innerHTML='<div class="rc-tip-head"><span class="rc-tip-date">'+esc(point.day.date)+'</span><span class="rc-tip-total">'+point.day.total+' total</span></div>'
+  +'<div class="rc-tip-grid">'+METRIC_DEFS.map(m=>'<div class="rc-tip-row"><span class="rc-tip-k"><i class="dot" style="background:'+m.color+'"></i>'+m.label+'</span><b class="rc-tip-v">'+point.day[m.key]+'</b></div>').join("")+'</div>';
+ tip.style.opacity="1";
+ tip.setAttribute("aria-hidden","false");
+ tip.style.left=Math.max(0,Math.min(left-tip.offsetWidth/2,rect.width-tip.offsetWidth))+"px";
+ tip.style.top=(top>tip.offsetHeight+14?top-tip.offsetHeight-14:top+18)+"px";
 });
 
 boot();

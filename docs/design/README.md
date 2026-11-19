@@ -20,7 +20,7 @@
 
 ## Where the look lives
 
-**Now:** Base styles are one `<style>` block at the top of `tools/tracker/index.html`. The build adds `tools/hq-dashboard/hosted/hosted.css` and `pc.css`; Search and Documents markup is in `hosted/views.html`. There is no CSS framework or external font; the base system font is 14px.
+**Now:** Base styles are one `<style>` block at the top of `tools/tracker/index.html`. The build adds `tools/hq-dashboard/hosted/hosted.css` and `pc.css`; Search and Documents markup is in `hosted/views.html`. The page uses a 14px system font stack with no external fonts or CSS framework.
 
 **Now:** CSS custom properties on `:root` include `--bg`, `--card`, `--ink`, `--ink2`, `--mute`, `--line`, `--soft`, `--hover`; `--blue`, `--green`, `--amber`, `--red` with `-ink` and `-soft` variants; `--r` (16px), `--r-sm` (10px), `--shadow`, `--shadow-lg`. Stage colours use `--tc-<stage>` for tiles and `--conn-<stage>` for chart lines. Change tokens rather than individual colour rules. Keep matching tokens consistent across the four blocks: light, system dark, default dark and forced light. The builder also copies the system-dark block.
 
@@ -41,4 +41,4 @@
 
 - **Coming:** Several local profiles on one install, a profile picker and the person's name in the header. No email sign-up or register screen. **Now:** Sign-in uses one shared local password, not separate profile accounts.
 - **Now / Coming:** Preserve records: use Skipped for a decision not to apply and archive for old jobs. No delete route exists; do not add deletion controls.
-- **Now:** Overview keeps the Sankey as its main chart. **Coming:** An activity-over-time chart from stored stage history sits beside it later. Sankey first.
+- **Now:** Overview shows the Sankey and an activity-over-time chart (drawn only from recorded stage history) in one carousel, Sankey first. The board scrolls sideways across all stage columns.
