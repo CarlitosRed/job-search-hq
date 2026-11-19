@@ -606,5 +606,29 @@ class LinkStatus(unittest.TestCase):
         self.assertEqual(len(calls), 2)
 
 
+class WorkdayCoverage(Base):
+    def test_search_complete_with_partial_coverage_never_counts_as_missing(self):
+        workday_link = 'https://bigex.wd1.myworkdayjobs.com/Careers/job/Remote/Partner-Lead_R100'
+        links = Links({workday_link: ('gone', 'Gone.')})
+        reason = 'Workday resumed at page 2. HTTP status unavailable. 1 row read.'
+        for day in (DAY1, DAY2):
+            partial = board([read('R99')], company='Big Example', provider='workday', reason=reason)
+            self.run_check(day, [dict(partial, full_read=False)], links=links)
+        self.assertNotIn(workday_link, links.calls)
+        self.assertEqual(self.state('Partner Lead'), 'open')
+        self.assertEqual([tuple(row) for row in self.storage.db.execute(
+            "SELECT read,reason FROM board_reads WHERE provider='workday' ORDER BY date")],
+            [('partial', reason), ('partial', reason)])
+
+    def test_partial_workday_reason_is_saved_without_a_miss(self):
+        reason = 'Workday asked us to slow down after page 1 of 3. HTTP 429. 20 rows read.'
+        partial = board([], read_state='partial', company='Big Example', provider='workday', reason=reason)
+        for day in (DAY1, DAY2):
+            self.run_check(day, [partial])
+        self.assertEqual(self.state('Partner Lead'), 'open')
+        self.assertEqual([row[0] for row in self.storage.db.execute(
+            "SELECT reason FROM board_reads WHERE provider='workday' ORDER BY date")], [reason, reason])
+
+
 if __name__ == '__main__':
     unittest.main()

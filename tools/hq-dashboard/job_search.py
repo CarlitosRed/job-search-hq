@@ -9,8 +9,10 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 import hashlib
 import html
+from http.client import HTTPException
 import importlib.util
 import json
 from pathlib import Path
@@ -19,6 +21,7 @@ import sqlite3
 import threading
 import time
 import uuid
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -42,6 +45,9 @@ MAX_POSTINGS = 5000
 TIMEOUT = 12
 _HOST_LOCK = threading.Lock()
 _HOST_SLOTS = {}
+_WORKDAY_SLOT = threading.Lock()
+WORKDAY_PAGE_SIZE = 20
+SEARCH_WINDOW_DAYS = 45
 STOP_WORDS = {'the', 'and', 'or', 'for', 'with', 'jobs', 'job', 'roles', 'role', 'to', 'in', 'a', 'an'}
 
 
@@ -105,7 +111,9 @@ def keywords(query):
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise ValueError('The public job-board endpoint redirected. Review this source configuration.')
+        if fp is not None:
+            fp.close()
+        raise BoardReadError('redirected away from its configured endpoint', code)
 
 
 def source_url(source):
@@ -126,7 +134,7 @@ def source_url(source):
     raise ValueError('Only Greenhouse, Lever, Ashby and Workday public job boards are supported.')
 
 
-def fetch_json(method, url, body=None):
+def fetch_json(method, url, body=None, *, deadline=None):
     """Bounded, paced HTTP transport for the fixed public board endpoints."""
     parsed = urlsplit(url)
     host = parsed.hostname or ''
@@ -138,21 +146,99 @@ def fetch_json(method, url, body=None):
     request = Request(url, data=data, method=method, headers={'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'JobSearchHQ/1.0 (public job-board reader)'})
     with _HOST_LOCK:
         slot = _HOST_SLOTS.setdefault(host, threading.BoundedSemaphore(2))
-    with slot:
-        with build_opener(NoRedirect).open(request, timeout=TIMEOUT) as response:
-            data = response.read(MAX_BOARD_BYTES + 1)
+    timeout = TIMEOUT if deadline is None else min(TIMEOUT, deadline - time.monotonic())
+    if timeout <= 0 or not slot.acquire(timeout=timeout):
+        raise TimeoutError('The job board request timed out.')
+    try:
+        if deadline is not None:
+            timeout = min(TIMEOUT, deadline - time.monotonic())
+            if timeout <= 0:
+                raise TimeoutError('The job board request timed out.')
+        with build_opener(NoRedirect).open(request, timeout=timeout) as response:
+            if deadline is None:
+                data = response.read(MAX_BOARD_BYTES + 1)
+            else:
+                data = bytearray()
+                while len(data) <= MAX_BOARD_BYTES:
+                    if time.monotonic() >= deadline:
+                        raise BoardReadError('timed out reading its response', response.status)
+                    chunk = response.read1(min(65536, MAX_BOARD_BYTES + 1 - len(data)))
+                    if not chunk:
+                        break
+                    data.extend(chunk)
+    finally:
+        slot.release()
     if len(data) > MAX_BOARD_BYTES:
-        raise ValueError('Job board response exceeded the size limit.')
-    return json.loads(data)
+        raise BoardReadError('returned a response above the size limit', 200)
+    try:
+        return json.loads(data)
+    except ValueError:
+        raise BoardReadError('returned invalid JSON', 200) from None
 
 
 # Card 06-1d: home-country reads first, place from the job page
 class BoardRows(list):
-    # Card 03: closing and re-check.
     reason = ''
 
 
-def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_first=None):
+class BoardReadError(ValueError):
+    def __init__(self, explanation, status=None):
+        self.explanation = explanation
+        self.status = status
+        super().__init__(explanation)
+
+
+def board_failure(error):
+    if isinstance(error, BoardReadError):
+        return error
+    if isinstance(error, HTTPError):
+        status = error.code
+        error.close()
+        return BoardReadError({429: 'asked us to slow down', 503: 'was temporarily unavailable'}.get(
+            status, 'returned an HTTP error'), status)
+    if isinstance(error, UnicodeError):
+        return BoardReadError('returned unreadable text', 200)
+    if isinstance(error, TimeoutError) or isinstance(error, URLError) and isinstance(error.reason, TimeoutError):
+        return BoardReadError('timed out')
+    if isinstance(error, (OSError, HTTPException)):
+        return BoardReadError('could not be reached')
+    if isinstance(error, ValueError):
+        return BoardReadError('returned an invalid or unsupported response')
+    return BoardReadError('could not be read because of an unexpected error')
+
+
+def read_reason(provider, explanation, status, page, total_pages, count):
+    pages = f' of {total_pages}' if total_pages is not None else ''
+    http = f'HTTP {status}' if status is not None else 'HTTP status unavailable'
+    return f'{provider} {explanation} after page {page}{pages}. {http}. {count} rows read.'
+
+
+def retry_after(value):
+    if value is None:
+        return None
+    value = value.strip()
+    if re.fullmatch(r'[0-9]+', value):
+        return float(value)
+    try:
+        stamp = parsedate_to_datetime(value)
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        return max(0, stamp.timestamp() - time.time())
+    except (ValueError, TypeError, OverflowError, OSError):
+        return None
+
+
+def workday_date(value, today):
+    posted = clean_text(value, 100).casefold()
+    days = re.fullmatch(r'posted (\d+) days? ago', posted)
+    count = int(days[1]) if days else {'posted today': 0, 'posted yesterday': 1}.get(posted)
+    if count is None or not 0 <= count < min(36501, today.toordinal()):
+        return ''
+    return (today - timedelta(days=count)).isoformat()
+
+
+def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_first=None, *,
+               start_offset=0, page_pause=None, board_budget=None, run_deadline=None):
     """Shared board adapters; detail_match gates the bounded Workday detail reads."""
     url = source_url(source)
     provider = source['provider']
@@ -162,37 +248,113 @@ def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_fir
         data = fetch('GET', url)
         rows = data.get('jobs') if provider in ('greenhouse', 'ashby') and isinstance(data, dict) else data
         if not isinstance(rows, list) or len(rows) > MAX_POSTINGS:
-            raise ValueError('Unexpected or oversized job-board response.')
+            raise BoardReadError('returned an invalid or oversized posting list', 200)
         return rows
-    # Card 03: closing and re-check.
-    rows, offset, first_total = BoardRows(), 0, None
+    if page_pause is None or board_budget is None:
+        defaults = load_component('search_profile').WORKDAY_DEFAULTS
+        if page_pause is None:
+            page_pause = defaults['workday_page_pause_seconds']
+        if board_budget is None:
+            board_budget = defaults['workday_board_budget_seconds']
+    with _WORKDAY_SLOT:
+        return workday_rows(source, url, fetch, detail_match, today, home_first,
+                            start_offset, page_pause, board_budget, run_deadline)
+
+
+def workday_rows(source, url, fetch, detail_match, today, home_first,
+                 start_offset, page_pause, board_budget, run_deadline):
+    rows, offset, total = BoardRows(), start_offset, None
     today = today or date.today()
+    cutoff = (today - timedelta(days=SEARCH_WINDOW_DAYS)).isoformat()
+    started = time.monotonic()
+    deadline = started + board_budget
+    budget = 'board'
+    if run_deadline is not None and run_deadline <= deadline:
+        deadline, budget = run_deadline, 'run'
+    rows.attempted = False
+    rows.pages_read = rows.rows_read = 0
+    rows.page = start_offset // WORKDAY_PAGE_SIZE
+    problem = None
+    date_limited = False
+    ordered = source.get('newest_first', False) and not start_offset
+    last_date = None
+
+    def budget_error(status=None):
+        return BoardReadError(f'reached the {budget} time budget', status)
+
+    def pause(seconds, status=None):
+        if time.monotonic() + seconds >= deadline:
+            raise budget_error(status)
+        if seconds:
+            time.sleep(seconds)
+
+    def request(method, target, body=None):
+        for delay in (5, 15, 45, None):
+            pause(0)
+            rows.attempted = True
+            try:
+                if fetch is fetch_json:
+                    data = fetch(method, target, body, deadline=deadline)
+                else:
+                    data = fetch(method, target, body)
+            except HTTPError as error:
+                status = error.code
+                seconds = retry_after(error.headers.get('Retry-After')) if error.headers is not None else None
+                failure = board_failure(error)
+                if status not in (429, 503) or delay is None:
+                    raise failure from None
+                pause(delay if seconds is None else seconds, status)
+            except (OSError, HTTPException, ValueError) as error:
+                if time.monotonic() >= deadline:
+                    raise budget_error(getattr(error, 'status', None)) from None
+                raise board_failure(error) from None
+            else:
+                if time.monotonic() >= deadline:
+                    raise budget_error(200)
+                return data
+
     while True:
-        data = fetch('POST', url, {'appliedFacets': {}, 'limit': 20, 'offset': offset, 'searchText': ''})
-        if not isinstance(data, dict) or not isinstance(data.get('jobPostings'), list):
-            raise ValueError('Unexpected Workday response.')
-        total, page = data.get('total'), data['jobPostings']
-        if type(total) is not int or not 0 <= total <= MAX_POSTINGS or len(page) > 20 or len(rows) + len(page) > MAX_POSTINGS:
-            raise ValueError('Unexpected or oversized Workday response.')
-        if first_total is None:
-            first_total = total
+        try:
+            if rows.rows_read >= MAX_POSTINGS:
+                raise BoardReadError('reached the posting limit for this read', 200)
+            if rows.pages_read:
+                pause(page_pause)
+            data = request('POST', url, {'appliedFacets': {}, 'limit': WORKDAY_PAGE_SIZE,
+                                         'offset': offset, 'searchText': ''})
+            if not isinstance(data, dict) or not isinstance(data.get('jobPostings'), list):
+                raise BoardReadError('returned an invalid posting list', 200)
+            reported, page = data.get('total'), data['jobPostings']
+            if type(reported) is not int or reported < 0 or len(page) > WORKDAY_PAGE_SIZE:
+                raise BoardReadError('returned an invalid posting count', 200)
+            total = reported if total is None else max(total, reported)
+            if rows.rows_read + len(page) > MAX_POSTINGS:
+                raise BoardReadError('reached the posting limit for this read', 200)
+            if not page and offset < total:
+                raise BoardReadError('returned an empty page before the end', 200)
+        except BoardReadError as error:
+            problem = error
+            break
+        rows.pages_read += 1
+        rows.page = offset // WORKDAY_PAGE_SIZE + 1
+        rows.rows_read += len(page)
         for listing in page:
             if not isinstance(listing, dict):
-                rows.reason = 'A returned Workday row could not be identified.'
+                ordered = False
+                problem = BoardReadError('returned a row that could not be identified', 200)
                 continue
             raw = dict(listing)
+            raw['title'] = clean_text(raw.get('title'), 200)
             path = raw.get('externalPath', '')
             if not isinstance(path, str) or not re.fullmatch(r'/job/[A-Za-z0-9_/%.-]+', path) or '..' in path or '%' in path:
-                rows.reason = 'A returned Workday posting path was rejected.'
+                ordered = False
+                problem = BoardReadError('returned a posting path that could not be used', 200)
                 continue
             raw['_link'] = f"https://{source['host']}/{source['site']}" + path
-            raw['_posted'], raw['_date_source'] = '', ''
-            posted = clean_text(raw.get('postedOn'), 100).casefold()
-            days = re.fullmatch(r'posted (\d+) days? ago', posted)
-            count = int(days[1]) if days else 0 if posted == 'posted today' else 1 if posted == 'posted yesterday' else None
-            if count is not None and count <= 36500:
-                raw['_posted'] = (today - timedelta(days=count)).isoformat()
-                raw['_date_source'] = 'workday-about'
+            raw['_posted'] = posted = workday_date(raw.get('postedOn'), today)
+            raw['_date_source'] = 'workday-about' if posted else ''
+            if not posted or last_date and posted > last_date:
+                ordered = False
+            last_date = posted
             listing_text = clean_text(' '.join(
                 ' '.join(str(part) for part in value) if isinstance(value, list) else str(value)
                 for key, value in listing.items() if key not in ('externalPath', 'postedOn')
@@ -200,10 +362,13 @@ def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_fir
             raw['description'] = listing_text
             rows.append(raw)
         offset += len(page)
-        if offset >= first_total:
+        if offset >= total:
             break
-        if not page:
-            raise ValueError('Workday paging stopped before all postings were read.')
+        if ordered and last_date < cutoff:
+            date_limited = True
+            break
+
+    paging_incomplete = total is None or offset < total and not date_limited
 
     def priority(raw):
         place = raw.get('locationsText', '')
@@ -211,12 +376,19 @@ def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_fir
             return 0
         return 1 if isinstance(place, str) and re.fullmatch(r'\d+ Locations?', place, re.IGNORECASE) else 2
 
-    matches = [raw for raw in rows if detail_match and detail_match(raw.get('title', ''), raw['description'])]
+    matches = [raw for raw in rows if not problem and detail_match and
+               (not raw['_posted'] or raw['_posted'] >= cutoff or not source.get('newest_first')) and
+               detail_match(raw.get('title', ''), raw['description'])]
     for raw in sorted(matches, key=priority)[:40]:
-        detail = fetch('GET', url.rsplit('/', 1)[0] + raw['externalPath'])
-        info = detail.get('jobPostingInfo') if isinstance(detail, dict) else None
-        if not isinstance(info, dict):
-            raise ValueError('Unexpected Workday job details.')
+        try:
+            pause(page_pause)
+            detail = request('GET', url.rsplit('/', 1)[0] + raw['externalPath'])
+            info = detail.get('jobPostingInfo') if isinstance(detail, dict) else None
+            if not isinstance(info, dict):
+                raise BoardReadError('returned invalid job details', 200)
+        except BoardReadError as error:
+            problem = error
+            break
         raw['description'] += ' ' + str(info.get('jobDescription') or '')
         raw['posting_id'] = info.get('jobReqId')
         exact = iso_day(info.get('startDate'))
@@ -234,11 +406,25 @@ def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_fir
         if isinstance(remote, str) and 'remote' in remote.casefold() and 'remote' not in str(place).casefold():
             place = clean_text(place, 291) + ' · Remote'
         raw['locationsText'] = place
+    rows.full_read = not (problem or start_offset or date_limited)
+    rows.next_offset = offset if paging_incomplete else 0
+    rows.elapsed_seconds = round(time.monotonic() - started, 3)
+    rows.http_status = problem.status if problem else 200
+    if problem:
+        rows.reason = read_reason('Workday', problem.explanation, problem.status, rows.page,
+                                  None if total is None else (total + WORKDAY_PAGE_SIZE - 1) // WORKDAY_PAGE_SIZE,
+                                  rows.rows_read)
+    elif not rows.full_read:
+        explanation = ('finished this search window' if date_limited else
+                       f'finished a resumed read starting at offset {start_offset}')
+        rows.reason = read_reason('Workday', explanation, 200, rows.page,
+                                  (total + WORKDAY_PAGE_SIZE - 1) // WORKDAY_PAGE_SIZE, rows.rows_read)
+    rows.read = ('partial' if rows.rows_read else 'failed') if problem else 'complete'
     return rows
 
 
-def fetch_source(source, detail_match=None):
-    rows = board_rows(source, detail_match=detail_match)
+def fetch_source(source, detail_match=None, **options):
+    rows = board_rows(source, detail_match=detail_match, **options)
     return rows if source['provider'] == 'lever' else {'jobs': rows}
 
 
@@ -313,7 +499,8 @@ def normalize(source, raw, checked):
     key = hashlib.sha256((source.get('id', source['label']) + '\n' + link).encode()).hexdigest()[:24]
     posting_id = raw.get('posting_id') or raw.get('id')
     if posting_id is None and source['provider'] == 'workday':
-        posting_id = (raw.get('bulletFields') or [None])[0]
+        fields = raw.get('bulletFields')
+        posting_id = fields[0] if isinstance(fields, list) and fields else None
     description = raw.get('content') if source['provider'] == 'greenhouse' else raw.get('descriptionPlain') if source['provider'] in ('lever', 'ashby') else raw.get('description')
     return {'id': key, 'company': source['label'], 'role': role, 'location': location or 'Not specified',
             'provider': source['provider'], 'posting_id': str(posting_id) if posting_id is not None else link,
@@ -344,10 +531,16 @@ def discover(query, fetcher=fetch_source, sources=None, progress=None):
     if not 1 <= len(sources) <= 300:
         raise ValueError('Choose between one and 300 job-board sources.')
     profile = None
+    workday_options = {}
     if fetcher is fetch_source:
-        path = load_component('search_profile').default_path()
+        profiles = load_component('search_profile')
+        path = profiles.default_path()
         if path.exists():
-            profile = load_component('search_profile').load(path)
+            profile = profiles.load(path)
+        policy = profile['search'] if profile else profiles.WORKDAY_DEFAULTS
+        workday_options = dict(page_pause=policy['workday_page_pause_seconds'],
+                               board_budget=policy['workday_board_budget_seconds'],
+                               run_deadline=time.monotonic() + policy['workday_run_budget_seconds'])
 
     def detail_match(title, text):
         if profile is not None:
@@ -361,9 +554,11 @@ def discover(query, fetcher=fetch_source, sources=None, progress=None):
     with ThreadPoolExecutor(max_workers=4, thread_name_prefix='hq-job-board') as pool:
         def read(source):
             if fetcher is fetch_source:
-                return fetch_source(source, detail_match)
+                options = workday_options if source['provider'] == 'workday' else {}
+                return fetch_source(source, detail_match, **options)
             return fetcher(source)
-        pending = {pool.submit(read, source): index for index, source in enumerate(sources)}
+        ordered_sources = sorted(enumerate(sources), key=lambda item: item[1]['provider'] == 'workday')
+        pending = {pool.submit(read, source): index for index, source in ordered_sources}
         for future in as_completed(pending):
             index = pending[future]
             source = sources[index]
@@ -372,6 +567,8 @@ def discover(query, fetcher=fetch_source, sources=None, progress=None):
                 rows = data.get('jobs') if source['provider'] != 'lever' and isinstance(data, dict) else data
                 if not isinstance(rows, list) or len(rows) > MAX_POSTINGS:
                     raise ValueError('Unexpected or oversized job-board response.')
+                if isinstance(rows, BoardRows) and rows.read != 'complete':
+                    errors.append({'source': source['label'], 'message': rows.reason})
                 found = []
                 for raw in rows:
                     result = normalize(source, raw, checked)

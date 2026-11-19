@@ -1,4 +1,8 @@
-"""Read and check the portable, version-one search profile."""
+"""Read and check the portable, version-one search profile.
+
+Set newest_first on a Workday company only after verifying that its public
+listing endpoint returns postings in descending posting-date order.
+"""
 from datetime import date
 import importlib.util
 import json
@@ -8,6 +12,9 @@ import re
 
 DEFAULTS = {'daily_land_limit': 30, 'judge_budget': 20,
             'max_per_company': 3, 'wild_cards': 3}
+WORKDAY_DEFAULTS = {'workday_page_pause_seconds': 1.5,
+                    'workday_board_budget_seconds': 360,
+                    'workday_run_budget_seconds': 1500}
 PROVIDERS = ('greenhouse', 'lever', 'ashby', 'workday')
 
 
@@ -123,6 +130,8 @@ def load(path):
                 problems.append(name + '.host must be a public Workday jobs host.')
             if not isinstance(site, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', site):
                 problems.append(name + '.site must be a public Workday site token.')
+            if not isinstance(company.get('newest_first', False), bool):
+                problems.append(name + '.newest_first must be true or false.')
     for key, field in (('exclude_titles', 'pattern'), ('exclude_companies', 'name')):
         for index, value in enumerate(items(search.get(key), 'search.' + key)):
             name = f'search.{key}[{index}]'
@@ -136,6 +145,11 @@ def load(path):
             problems.append('search.' + key + f' must be a whole number of at least {minimum}.')
     if type(search.get('wild_cards')) is int and type(search.get('daily_land_limit')) is int and search['wild_cards'] > search['daily_land_limit']:
         problems.append('search.wild_cards cannot exceed daily_land_limit.')
+    for key, default in WORKDAY_DEFAULTS.items():
+        value = search.setdefault(key, default)
+        minimum = 0 if key == 'workday_page_pause_seconds' else 0.001
+        if type(value) not in (int, float) or not minimum <= value <= 86400:
+            problems.append(f'search.{key} must be a number from {minimum} to 86400 seconds.')
     review = obj(profile.get('review'), 'review')
     text(review.get('reviewed_by'), 'review.reviewed_by')
     day(review.get('reviewed_on'), 'review.reviewed_on')

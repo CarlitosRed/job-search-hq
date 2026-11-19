@@ -185,8 +185,7 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
             saved = json.loads(snapshot.read_text(encoding='utf-8'))
             if not isinstance(saved, dict) or not isinstance(saved.get('source_errors'), list):
                 saved = None
-            elif saved['source_errors'] and len(saved['source_errors']) == len(
-                    daily_search.profiles.load(root / 'profile.json')['search']['companies']):
+            elif saved['source_errors'] and not daily_search.boards_read(saved):
                 saved = None
         except (OSError, ValueError):
             saved = None
@@ -242,8 +241,20 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                 temp.replace(snapshot)
             total = len(profile['search']['companies'])
             failed = len(result['source_errors'])
-            detail = f'{total - failed} of {total} job boards read; {failed} could not be checked.'
-            return ('failed' if failed == total else 'partial' if failed else 'done'), detail
+            detail = f'{total - failed} of {total} job boards read; {failed} could not be checked completely.'
+            workday = result['metadata'].get('workday', {})
+            if workday.get('total'):
+                detail += (f" Workday: {workday['read']} of {workday['total']} boards read; "
+                           f"{workday['continue_tomorrow']} continue tomorrow.")
+            if not daily_search.boards_read(result):
+                # An outage skips closing, but its readings are still useful.
+                tracker = work / 'applications-tracker.sqlite3'
+                if config['recheck'] == 'on' and tracker.is_file():
+                    with closing(land_search.store.Store(tracker)) as storage, storage.db:
+                        recheck.record_board_reads(storage.db, run_id, slot.isoformat(),
+                                                   result['metadata']['read_at'], result['boards'])
+                return 'failed', detail
+            return ('partial' if failed else 'done'), detail
 
         def land():
             report = land_search.land(work / 'applications-tracker.xlsx', snapshot, backlog,
