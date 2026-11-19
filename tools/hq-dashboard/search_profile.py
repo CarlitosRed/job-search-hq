@@ -1,7 +1,7 @@
 """Read and check the portable, version-one search profile.
 
-Set newest_first on a Workday company only after verifying that its public
-listing endpoint returns postings in descending posting-date order.
+Workday boards are read newest first by default. Set newest_first to false
+on a Workday company to read its entire listing.
 """
 from datetime import date
 import importlib.util
@@ -130,7 +130,7 @@ def load(path):
                 problems.append(name + '.host must be a public Workday jobs host.')
             if not isinstance(site, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', site):
                 problems.append(name + '.site must be a public Workday site token.')
-            if not isinstance(company.get('newest_first', False), bool):
+            if 'newest_first' in company and not isinstance(company['newest_first'], bool):
                 problems.append(name + '.newest_first must be true or false.')
     for key, field in (('exclude_titles', 'pattern'), ('exclude_companies', 'name')):
         for index, value in enumerate(items(search.get(key), 'search.' + key)):

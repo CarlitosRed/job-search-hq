@@ -47,7 +47,9 @@ _HOST_LOCK = threading.Lock()
 _HOST_SLOTS = {}
 _WORKDAY_SLOT = threading.Lock()
 WORKDAY_PAGE_SIZE = 20
+WORKDAY_DETAIL_LIMIT = 40
 SEARCH_WINDOW_DAYS = 45
+WORKDAY_ORDER_MARGIN_DAYS = 7
 STOP_WORDS = {'the', 'and', 'or', 'for', 'with', 'jobs', 'job', 'roles', 'role', 'to', 'in', 'a', 'an'}
 
 
@@ -169,11 +171,11 @@ def fetch_json(method, url, body=None, *, deadline=None):
     finally:
         slot.release()
     if len(data) > MAX_BOARD_BYTES:
-        raise BoardReadError('returned a response above the size limit', 200)
+        raise InvalidBoardResponse('returned a response above the size limit', 200)
     try:
         return json.loads(data)
     except ValueError:
-        raise BoardReadError('returned invalid JSON', 200) from None
+        raise InvalidBoardResponse('returned invalid JSON', 200) from None
 
 
 # Card 06-1d: home-country reads first, place from the job page
@@ -186,6 +188,18 @@ class BoardReadError(ValueError):
         self.explanation = explanation
         self.status = status
         super().__init__(explanation)
+
+
+class WorkdayPostingError(BoardReadError):
+    """A detail error that does not stop the rest of the board."""
+
+
+class WorkdayReadLimit(BoardReadError):
+    """A local time or posting limit that can be planned around on resume."""
+
+
+class InvalidBoardResponse(BoardReadError):
+    """A response with an unreadable or oversized body."""
 
 
 def board_failure(error):
@@ -238,7 +252,8 @@ def workday_date(value, today):
 
 
 def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_first=None, *,
-               start_offset=0, page_pause=None, board_budget=None, run_deadline=None):
+               start_offset=0, page_pause=None, board_budget=None, run_deadline=None, known_links=None,
+               detail_first=False, failed_details=None):
     """Shared board adapters; detail_match gates the bounded Workday detail reads."""
     url = source_url(source)
     provider = source['provider']
@@ -258,29 +273,38 @@ def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_fir
             board_budget = defaults['workday_board_budget_seconds']
     with _WORKDAY_SLOT:
         return workday_rows(source, url, fetch, detail_match, today, home_first,
-                            start_offset, page_pause, board_budget, run_deadline)
+                            start_offset, page_pause, board_budget, run_deadline, known_links,
+                            detail_first, failed_details)
 
 
 def workday_rows(source, url, fetch, detail_match, today, home_first,
-                 start_offset, page_pause, board_budget, run_deadline):
+                 start_offset, page_pause, board_budget, run_deadline, known_links=None,
+                 detail_first=False, failed_details=None):
     rows, offset, total = BoardRows(), start_offset, None
+    known_links = known_links or {}
     today = today or date.today()
     cutoff = (today - timedelta(days=SEARCH_WINDOW_DAYS)).isoformat()
+    stop_before = (today - timedelta(days=SEARCH_WINDOW_DAYS + WORKDAY_ORDER_MARGIN_DAYS)).isoformat()
     started = time.monotonic()
     deadline = started + board_budget
     budget = 'board'
     if run_deadline is not None and run_deadline <= deadline:
         deadline, budget = run_deadline, 'run'
     rows.attempted = False
-    rows.pages_read = rows.rows_read = 0
+    rows.pages_read = rows.rows_read = rows.skipped_rows = 0
+    rows.skipped_details = 0
+    rows.failed_details = {link: day for link, day in (failed_details or {}).items() if day >= cutoff}
     rows.page = start_offset // WORKDAY_PAGE_SIZE
     problem = None
     date_limited = False
-    ordered = source.get('newest_first', False) and not start_offset
-    last_date = None
+    newest_first = source.get('newest_first', True)
+    probed_details = {}
+    matches = []
+    detail_problem = None
+    detail_slots = details_read = 0
 
     def budget_error(status=None):
-        return BoardReadError(f'reached the {budget} time budget', status)
+        return WorkdayReadLimit(f'reached the {budget} time budget', status)
 
     def pause(seconds, status=None):
         if time.monotonic() + seconds >= deadline:
@@ -288,7 +312,7 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
         if seconds:
             time.sleep(seconds)
 
-    def request(method, target, body=None):
+    def request(method, target, body=None, *, posting_detail=False):
         for delay in (5, 15, 45, None):
             pause(0)
             rows.attempted = True
@@ -301,74 +325,44 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
                 status = error.code
                 seconds = retry_after(error.headers.get('Retry-After')) if error.headers is not None else None
                 failure = board_failure(error)
+                if posting_detail and 300 <= status < 500 and status not in (408, 429):
+                    raise WorkdayPostingError(failure.explanation, status) from None
                 if status not in (429, 503) or delay is None:
                     raise failure from None
                 pause(delay if seconds is None else seconds, status)
             except (OSError, HTTPException, ValueError) as error:
                 if time.monotonic() >= deadline:
                     raise budget_error(getattr(error, 'status', None)) from None
+                if posting_detail and (isinstance(error, InvalidBoardResponse)
+                                       or isinstance(error, BoardReadError) and 300 <= (error.status or 0) < 400):
+                    raise WorkdayPostingError(error.explanation, error.status) from None
                 raise board_failure(error) from None
             else:
                 if time.monotonic() >= deadline:
                     raise budget_error(200)
                 return data
 
-    while True:
-        try:
-            if rows.rows_read >= MAX_POSTINGS:
-                raise BoardReadError('reached the posting limit for this read', 200)
-            if rows.pages_read:
-                pause(page_pause)
-            data = request('POST', url, {'appliedFacets': {}, 'limit': WORKDAY_PAGE_SIZE,
-                                         'offset': offset, 'searchText': ''})
-            if not isinstance(data, dict) or not isinstance(data.get('jobPostings'), list):
-                raise BoardReadError('returned an invalid posting list', 200)
-            reported, page = data.get('total'), data['jobPostings']
-            if type(reported) is not int or reported < 0 or len(page) > WORKDAY_PAGE_SIZE:
-                raise BoardReadError('returned an invalid posting count', 200)
-            total = reported if total is None else max(total, reported)
-            if rows.rows_read + len(page) > MAX_POSTINGS:
-                raise BoardReadError('reached the posting limit for this read', 200)
-            if not page and offset < total:
-                raise BoardReadError('returned an empty page before the end', 200)
-        except BoardReadError as error:
-            problem = error
-            break
-        rows.pages_read += 1
-        rows.page = offset // WORKDAY_PAGE_SIZE + 1
-        rows.rows_read += len(page)
-        for listing in page:
-            if not isinstance(listing, dict):
-                ordered = False
-                problem = BoardReadError('returned a row that could not be identified', 200)
-                continue
-            raw = dict(listing)
-            raw['title'] = clean_text(raw.get('title'), 200)
-            path = raw.get('externalPath', '')
-            if not isinstance(path, str) or not re.fullmatch(r'/job/[A-Za-z0-9_/%.-]+', path) or '..' in path or '%' in path:
-                ordered = False
-                problem = BoardReadError('returned a posting path that could not be used', 200)
-                continue
-            raw['_link'] = f"https://{source['host']}/{source['site']}" + path
-            raw['_posted'] = posted = workday_date(raw.get('postedOn'), today)
-            raw['_date_source'] = 'workday-about' if posted else ''
-            if not posted or last_date and posted > last_date:
-                ordered = False
-            last_date = posted
-            listing_text = clean_text(' '.join(
-                ' '.join(str(part) for part in value) if isinstance(value, list) else str(value)
-                for key, value in listing.items() if key not in ('externalPath', 'postedOn')
-            ), 20000)
-            raw['description'] = listing_text
-            rows.append(raw)
-        offset += len(page)
-        if offset >= total:
-            break
-        if ordered and last_date < cutoff:
-            date_limited = True
-            break
+    def read_detail(raw):
+        pause(page_pause)
+        detail = request('GET', url.rsplit('/', 1)[0] + raw['externalPath'], posting_detail=True)
+        info = detail.get('jobPostingInfo') if isinstance(detail, dict) else None
+        if not isinstance(info, dict):
+            raise WorkdayPostingError('returned invalid job details', 200)
+        return info
 
-    paging_incomplete = total is None or offset < total and not date_limited
+    def collect_match(raw):
+        if (not detail_match or not raw['title']
+                or newest_first and raw['_posted'] and raw['_posted'] < cutoff
+                or not detail_match(raw['title'], raw['description'])):
+            return
+        # Relative dates change over time without changing the listing itself.
+        fingerprint = hashlib.sha256(json.dumps([raw['title'], raw['description']]).encode()).hexdigest()
+        raw['_list_fingerprint'] = fingerprint
+        if known_links.get(raw['_link']) == fingerprint:
+            raw['_details_cached'] = True
+        else:
+            raw['_details_pending'] = True
+            matches.append(raw)
 
     def priority(raw):
         place = raw.get('locationsText', '')
@@ -376,19 +370,20 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
             return 0
         return 1 if isinstance(place, str) and re.fullmatch(r'\d+ Locations?', place, re.IGNORECASE) else 2
 
-    matches = [raw for raw in rows if not problem and detail_match and
-               (not raw['_posted'] or raw['_posted'] >= cutoff or not source.get('newest_first')) and
-               detail_match(raw.get('title', ''), raw['description'])]
-    for raw in sorted(matches, key=priority)[:40]:
-        try:
-            pause(page_pause)
-            detail = request('GET', url.rsplit('/', 1)[0] + raw['externalPath'])
-            info = detail.get('jobPostingInfo') if isinstance(detail, dict) else None
-            if not isinstance(info, dict):
-                raise BoardReadError('returned invalid job details', 200)
-        except BoardReadError as error:
-            problem = error
-            break
+    def record_failure(raw):
+        raw.pop('_details_pending', None)
+        raw.pop('_details_cached', None)
+        raw['_details_failed'] = True
+        rows.failed_details[raw['_link']] = today.isoformat()
+        rows.skipped_details += 1
+
+    def apply_detail(raw, info):
+        nonlocal details_read
+        raw.pop('_details_pending', None)
+        raw.pop('_details_cached', None)
+        raw['_details_read'] = True
+        rows.failed_details.pop(raw['_link'], None)
+        details_read += 1
         raw['description'] += ' ' + str(info.get('jobDescription') or '')
         raw['posting_id'] = info.get('jobReqId')
         exact = iso_day(info.get('startDate'))
@@ -406,19 +401,165 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
         if isinstance(remote, str) and 'remote' in remote.casefold() and 'remote' not in str(place).casefold():
             place = clean_text(place, 291) + ' · Remote'
         raw['locationsText'] = place
+
+    def enrich(pending):
+        nonlocal detail_slots, detail_problem
+        ordered = sorted(pending, key=lambda raw: (rows.failed_details.get(raw['_link'], ''),
+                                                   raw['_link'] in known_links, priority(raw)))
+        for raw in ordered[:WORKDAY_DETAIL_LIMIT - detail_slots]:
+            link = raw['_link']
+            detail_slots += 1
+            try:
+                if link not in probed_details:
+                    probed_details[link] = read_detail(raw)
+            except WorkdayPostingError:
+                record_failure(raw)
+                continue
+            except BoardReadError as error:
+                detail_problem = error
+                break
+            apply_detail(raw, probed_details[link])
+
+    while True:
+        try:
+            if rows.rows_read >= MAX_POSTINGS:
+                raise WorkdayReadLimit('reached the posting limit for this read', 200)
+            if rows.pages_read:
+                pause(page_pause)
+            data = request('POST', url, {'appliedFacets': {}, 'limit': WORKDAY_PAGE_SIZE,
+                                         'offset': offset, 'searchText': ''})
+            if not isinstance(data, dict) or not isinstance(data.get('jobPostings'), list):
+                raise BoardReadError('returned an invalid posting list', 200)
+            reported, page = data.get('total'), data['jobPostings']
+            if type(reported) is not int or reported < 0 or len(page) > WORKDAY_PAGE_SIZE:
+                raise BoardReadError('returned an invalid posting count', 200)
+            total = reported if total is None else max(total, reported)
+            if rows.rows_read + len(page) > MAX_POSTINGS:
+                raise WorkdayReadLimit('reached the posting limit for this read', 200)
+            if not page and offset < total:
+                raise BoardReadError('returned an empty page before the end', 200)
+        except BoardReadError as error:
+            problem = error
+            break
+        rows.pages_read += 1
+        rows.page = offset // WORKDAY_PAGE_SIZE + 1
+        rows.rows_read += len(page)
+        page_start = len(rows)
+        for listing in page:
+            if not isinstance(listing, dict):
+                rows.skipped_rows += 1
+                continue
+            raw = dict(listing)
+            raw['title'] = clean_text(raw.get('title'), 200)
+            path = raw.get('externalPath', '')
+            if not isinstance(path, str) or not re.fullmatch(r'/job/[A-Za-z0-9_/%.-]+', path) or '..' in path or '%' in path:
+                rows.skipped_rows += 1
+                continue
+            raw['_link'] = safe_link(f"https://{source['host']}/{source['site']}" + path)
+            if not raw['_link']:
+                rows.skipped_rows += 1
+                continue
+            raw['_page_offset'] = offset
+            raw['_posted'] = posted = workday_date(raw.get('postedOn'), today)
+            raw['_date_source'] = 'workday-about' if posted else ''
+            listing_text = clean_text(' '.join(
+                ' '.join(str(part) for part in value) if isinstance(value, list) else str(value)
+                for key, value in listing.items() if key not in ('externalPath', 'postedOn')
+            ), 20000)
+            raw['description'] = listing_text
+            rows.append(raw)
+            collect_match(raw)
+        offset += len(page)
+        if detail_first and rows.pages_read == 1:
+            # Enrich the replayed page before paging consumes the day's budget.
+            # Previously failed postings wait for untried matches on later pages.
+            enrich([raw for raw in matches if raw['_link'] not in rows.failed_details])
+            if detail_problem:
+                if offset < total:
+                    problem = detail_problem
+                break
+        if offset >= total:
+            break
+        # A skipped row leaves the page's newest date uncertain.
+        if newest_first and len(rows) - page_start == len(page):
+            page_rows = rows[page_start:]
+            dates = [raw['_posted'] for raw in page_rows]
+            newest = max(dates) if all(dates) else ''
+            if all(clean_text(raw.get('postedOn'), 100).casefold() == 'posted 30+ days ago' for raw in page_rows):
+                last = page_rows[-1]
+                try:
+                    if last.get('_details_failed'):
+                        continue
+                    info = probed_details.get(last['_link'])
+                    if info is None:
+                        info = read_detail(last)
+                except WorkdayPostingError:
+                    record_failure(last)
+                    continue
+                except BoardReadError as error:
+                    problem = error
+                    break
+                probed_details[last['_link']] = info
+                newest = iso_day(info.get('startDate'))
+            # Small reversals across a page boundary can still hide an in-window row.
+            if newest and newest < stop_before:
+                date_limited = True
+                break
+
+    if not detail_problem:
+        pending_matches = [raw for raw in matches if raw.get('_details_pending')]
+        if problem and not (isinstance(problem, WorkdayReadLimit) and problem.status in (None, 200)):
+            # A board-wide error stops further requests. Already-read probes are usable.
+            pending_matches = [raw for raw in pending_matches if raw['_link'] in probed_details]
+        enrich(pending_matches)
+    # A cutoff probe may already have a newer answer for a cached or deferred match.
+    for raw in rows:
+        if ((raw.get('_details_pending') or raw.get('_details_cached'))
+                and raw['_link'] in probed_details):
+            if raw.get('_details_cached'):
+                matches.append(raw)
+            apply_detail(raw, probed_details[raw['_link']])
+    pending_offsets = [raw['_page_offset'] for raw in matches if raw.get('_details_pending')]
+    pending = len(pending_offsets)
+    limited = isinstance(problem or detail_problem, WorkdayReadLimit)
     rows.full_read = not (problem or start_offset or date_limited)
-    rows.next_offset = offset if paging_incomplete else 0
+    rows.next_offset = min(pending_offsets, default=offset) if problem else 0
+    rows.detail_first = detail_first and not rows.pages_read
+    if limited:
+        if detail_first and rows.rows_read:
+            # Alternate a detail-first replay with forward paging so a tight budget
+            # can neither pin the cursor nor spend every morning on list requests.
+            rows.next_offset = 0 if date_limited or offset >= total else offset
+        elif pending:
+            rows.next_offset = min(pending_offsets)
+            rows.detail_first = True
     rows.elapsed_seconds = round(time.monotonic() - started, 3)
-    rows.http_status = problem.status if problem else 200
+    failure = problem or detail_problem
+    rows.http_status = failure.status if failure else 200
+    total_pages = None if total is None else (total + WORKDAY_PAGE_SIZE - 1) // WORKDAY_PAGE_SIZE
+    reasons = []
     if problem:
-        rows.reason = read_reason('Workday', problem.explanation, problem.status, rows.page,
-                                  None if total is None else (total + WORKDAY_PAGE_SIZE - 1) // WORKDAY_PAGE_SIZE,
-                                  rows.rows_read)
-    elif not rows.full_read:
-        explanation = ('finished this search window' if date_limited else
-                       f'finished a resumed read starting at offset {start_offset}')
-        rows.reason = read_reason('Workday', explanation, 200, rows.page,
-                                  (total + WORKDAY_PAGE_SIZE - 1) // WORKDAY_PAGE_SIZE, rows.rows_read)
+        reasons.append(read_reason('Workday', problem.explanation, problem.status, rows.page, total_pages, rows.rows_read))
+    elif date_limited:
+        reasons.append(f'Workday: finished postings from the last {SEARCH_WINDOW_DAYS} days after page {rows.page} of {total_pages}.')
+    elif start_offset and not pending:
+        reasons.append(read_reason('Workday', 'finished a resumed read', 200, rows.page, total_pages, rows.rows_read))
+    if pending and problem:
+        resume = 'continue paging on the next read' if limited and detail_first else 'resume at the earliest pending page'
+        reasons.append(f'{pending} job details deferred; {resume}.')
+    elif pending:
+        explanation = 'reached the detail limit'
+        if detail_problem:
+            explanation = {429: 'asked us to slow down', 503: 'was temporarily unavailable'}.get(
+                detail_problem.status, detail_problem.explanation)
+        continues = 'continues' if pending == 1 else 'continue'
+        reasons.append(f'Workday finished the list (page {rows.page} of {total_pages}); job details stopped '
+                       f'after {details_read} of {len(matches)} ({explanation}). {pending} {continues} tomorrow.')
+    if rows.skipped_rows:
+        reasons.append(f'{rows.skipped_rows} rows skipped (no usable posting path)')
+    if rows.skipped_details:
+        reasons.append(f'{rows.skipped_details} posting detail requests skipped (posting-specific error).')
+    rows.reason = ' '.join(reasons)
     rows.read = ('partial' if rows.rows_read else 'failed') if problem else 'complete'
     return rows
 
@@ -571,6 +712,8 @@ def discover(query, fetcher=fetch_source, sources=None, progress=None):
                     errors.append({'source': source['label'], 'message': rows.reason})
                 found = []
                 for raw in rows:
+                    if isinstance(raw, dict) and raw.get('_details_failed'):
+                        continue
                     result = normalize(source, raw, checked)
                     if result and matches(result, query):
                         found.append(result)

@@ -161,7 +161,8 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
     for source in snapshot.get('boards', []):
         key = (source['provider'], source['board'])
         source = dict(source)
-        if source['provider'] == 'workday' and source['read'] == 'complete' and source.get('full_read') is False:
+        if (source['provider'] == 'workday' and source['read'] == 'complete'
+                and (source.get('full_read') is False or source.get('skipped_rows', 0))):
             source.update(read='partial', reason=source.get('reason') or 'Workday coverage was incomplete.')
         if key not in boards:
             boards[key] = dict(source, seen=list(source['seen']))

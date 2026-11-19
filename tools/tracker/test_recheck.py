@@ -607,6 +607,15 @@ class LinkStatus(unittest.TestCase):
 
 
 class WorkdayCoverage(Base):
+    def test_unidentifiable_workday_rows_cannot_close_an_absent_posting(self):
+        link = 'https://bigex.wd1.myworkdayjobs.com/Careers/job/Remote/Partner-Lead_R100'
+        links = Links({link: ('gone', 'Gone.')})
+        for day in (DAY1, DAY2):
+            read_result = board([read('R99')], company='Big Example', provider='workday')
+            self.run_check(day, [dict(read_result, full_read=True, skipped_rows=1)], links=links)
+        self.assertNotIn(link, links.calls)
+        self.assertEqual(self.state('Partner Lead'), 'open')
+
     def test_search_complete_with_partial_coverage_never_counts_as_missing(self):
         workday_link = 'https://bigex.wd1.myworkdayjobs.com/Careers/job/Remote/Partner-Lead_R100'
         links = Links({workday_link: ('gone', 'Gone.')})
