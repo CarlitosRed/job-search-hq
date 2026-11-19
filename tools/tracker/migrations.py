@@ -74,7 +74,7 @@ JUDGE_TABLES = '''
         complete INTEGER, created TEXT, day TEXT, run_id TEXT, error TEXT, current INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS judgements_by_job ON judgements (job_id, pass, current);
     CREATE TABLE IF NOT EXISTS choice_signals (id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL,
-        kind TEXT NOT NULL, value TEXT, at TEXT, origin TEXT, active INTEGER NOT NULL DEFAULT 1,
+        kind TEXT NOT NULL, value TEXT, at TEXT, origin TEXT, owner TEXT, active INTEGER NOT NULL DEFAULT 1,
         supersedes INTEGER, reason TEXT, idempotency_key TEXT UNIQUE);
 '''
 
@@ -91,8 +91,25 @@ def judge(db):
             db.execute(f'ALTER TABLE {table} ADD COLUMN starred INTEGER DEFAULT 0')
 
 
+def choice_owner(db):
+    if 'owner' not in columns(db, 'choice_signals'):
+        db.execute('ALTER TABLE choice_signals ADD COLUMN owner TEXT')
+
+
+def current_fit(db):
+    # Judgements from 4a-1 were saved before the stable row switched to the judge's Fit.
+    for table, ref in (('jobs', 'id'), ('old_jobs', 'original_job_id')):
+        if 'fit' not in columns(db, table):
+            continue
+        db.execute(f"""UPDATE {table} SET fit=(
+            SELECT fit FROM judgements WHERE job_id={table}.{ref}
+                AND pass='qualification' AND current=1 ORDER BY id DESC LIMIT 1)
+            WHERE {ref} IN (SELECT job_id FROM judgements WHERE pass='qualification' AND current=1)""")
+
+
 STEPS = [(1, 'baseline', baseline), (2, 'document job numbers', document_refs),
-         (3, 'posting links', postings), (4, 'posting checks', posting_checks), (5, 'judge', judge)]
+         (3, 'posting links', postings), (4, 'posting checks', posting_checks), (5, 'judge', judge),
+         (6, 'owner choices', choice_owner), (7, 'current fit', current_fit)]
 
 
 def __getattr__(name):
@@ -121,6 +138,8 @@ def upgrade(db, db_file):
                          or any(columns(db, table) and 'starred' not in columns(db, table)
                                 for table in ('jobs', 'old_jobs'))):
         version = 4
+    if version >= 6 and 'owner' not in columns(db, 'choice_signals'):
+        version = 5
     pending = [step for step in STEPS if step[0] > version]
     if not pending:
         return

@@ -149,6 +149,9 @@ On Windows, continue to step 4 to open the protected page. On macOS / Linux, pre
 python -I tools/tracker/server.py --no-browser
 ```
 
+The plain tracker shows **Fit pending** on judged jobs and disables the star.
+The Windows PC dashboard in step 4 shows saved Fit judgements and supports stars.
+
 Leave it running. On macOS, open a second terminal:
 
 ```bash

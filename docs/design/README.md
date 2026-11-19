@@ -12,7 +12,7 @@
 
 **Now:** Own the look, layout, colours, wording, motion, phone fit and accessibility. Keep routes, data shapes, stage names, counting rules and save behavior intact. The separate prototype will not be ported. Take one idea from it at a time and rebuild it on the real page in small public PRs, using fictional data only.
 
-**Now:** Edit [the tracker page](../../tools/tracker/index.html) and [hosted page pieces](../../tools/hq-dashboard/hosted/). After every edit run `python -I tools/hq-dashboard/port_tracker.py --backend pc`. Never hand-edit generated `pc-index.html`. The builder makes exact-text replacements and stops if an anchor changes, for example `port: expected 1 match(es), found 0`. Undo the edit or report the quoted anchor to the owner; do not change `port_tracker.py`. Everything between the `data` and `writes` comment markers is replaced by the build.
+**Now:** Edit [the tracker page](../../tools/tracker/index.html) and [hosted page pieces](../../tools/hq-dashboard/hosted/). After every edit run `python -I tools/hq-dashboard/port_tracker.py --backend pc`. Never hand-edit generated `pc-index.html`. The builder makes exact-text replacements and stops if an anchor changes, for example `port: expected 1 match(es), found 0`. Update the matching anchor in `port_tracker.py` whenever intentional changes affect an exact-text replacement. Everything between the `data` and `writes` comment markers is replaced by the build.
 
 **Now:** Start with [contributing](../../CONTRIBUTING.md) and [architecture](../ARCHITECTURE.md); use [screens](screens.md), [API](api.md), [rules](stages-and-rules.md) and [try it](try-it.md) for this brief.
 
@@ -42,3 +42,4 @@
 - **Coming:** Several local profiles on one install, a profile picker and the person's name in the header. No email sign-up or register screen. **Now:** Sign-in uses one shared local password, not separate profile accounts.
 - **Now / Coming:** Preserve records: use Skipped for a decision not to apply and archive for old jobs. No delete route exists; do not add deletion controls.
 - **Now:** Overview shows the Sankey and an activity-over-time chart (drawn only from recorded stage history) in one carousel, Sankey first. The board scrolls sideways across all stage columns.
+- **Now:** List, Board and Top opportunities show the current Fit band. The job drawer puts Fit and the star together above the suggestion and why. Requirements start folded and show states and evidence titles when opened.

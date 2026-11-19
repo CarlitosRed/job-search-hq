@@ -133,7 +133,7 @@ def normalize_importance(value):
     raise ValueError('Each requirement needs its original clause and scope rationale: invalid importance')
 
 
-def rank_result(out, key, employer, now=None, context=None, want=None, return_lead=False):
+def rank_result(out, key, employer, now=None, context=None, want=None, return_lead=False, review_only=False):
     if out.get('rubric_version') != RUBRIC_VERSION:
         raise ValueError('Rubric version mismatch: expected v3.2; nothing scored or written')
     now = now or datetime.now(timezone.utc)
@@ -185,6 +185,9 @@ def rank_result(out, key, employer, now=None, context=None, want=None, return_le
         raise ValueError('Invalid private Want record')
     lead = ranker.Lead(key=key, employer=employer, groups=tuple(groups), **data, **context,
                        want=private.get('want',''), want_actor=private.get('actor',''), want_at=instant(private.get('at')))
+    if review_only:
+        # Posting reviews keep their extraction and evidence checks. The tracker judge supplies Fit.
+        return dict(rubric_version=RUBRIC_VERSION, want=ranker.want_label(lead))
     item = ranker.assess(lead, now)
     value = lambda v: None if v is None else str(v)
     state = item.verify_state

@@ -149,6 +149,31 @@ class Store:
     def close(self):
         self.db.close()
 
+    def record_site_choice(self, job_id, key, kind, value, *, reason=None):
+        """Record a confirmed decision inside the tracker's current write transaction."""
+        old = self.db.execute('SELECT * FROM choice_signals WHERE idempotency_key=?', (key,)).fetchone()
+        if old is not None:
+            if tuple(old[field] for field in ('job_id', 'kind', 'value', 'reason')) != (job_id, kind, value, reason):
+                raise ValueError('This choice key already belongs to a different decision.')
+            return old['id']
+
+        supersedes = None
+        if kind == 'star':
+            current = self.db.execute('SELECT starred FROM jobs WHERE id=?', (job_id,)).fetchone()[0]
+            if bool(current) == (value == '1'):
+                return None
+            latest = self.db.execute("""SELECT id FROM choice_signals
+                WHERE job_id=? AND kind='star' AND owner='owner' AND active=1 ORDER BY id DESC LIMIT 1""",
+                                     (job_id,)).fetchone()
+            if latest is not None:
+                supersedes = latest['id']
+                self.db.execute('UPDATE choice_signals SET active=0 WHERE id=?', (supersedes,))
+            self.db.execute('UPDATE jobs SET starred=? WHERE id=?', (int(value), job_id))
+        return self.db.execute("""INSERT INTO choice_signals
+            (job_id, kind, value, at, origin, owner, active, supersedes, reason, idempotency_key)
+            VALUES (?, ?, ?, ?, 'site', 'owner', 1, ?, ?, ?)""",
+            (job_id, kind, value, datetime.now(timezone.utc).isoformat(), supersedes, reason, key)).lastrowid
+
     def rounds(self):
         result = {}
         for row in self.db.execute('SELECT * FROM interview_rounds ORDER BY job_id, round'):
@@ -235,9 +260,15 @@ class Store:
         named = [row.get(h) for h in NAMED.values()]
         named = [v.isoformat() if isinstance(v, (date, datetime)) else v for v in named]
         if previous:
-            assignments = ', '.join(f'{key}=?' for key in NAMED)
+            updates = dict(zip(NAMED, named))
+            if table == 'jobs' and migrations.columns(self.db, 'judgements') and self.db.execute(
+                    """SELECT 1 FROM judgements WHERE job_id=? AND pass='qualification' AND current=1""",
+                    (previous['id'],)).fetchone():
+                # The workbook Verdict is legacy data. The current judgement owns jobs.fit.
+                del updates['fit']
+            assignments = ', '.join(f'{key}=?' for key in updates)
             self.db.execute(f'UPDATE {table} SET {assignments}, fields=? WHERE id=?',
-                            (*named, fields, previous['id']))
+                            (*updates.values(), fields, previous['id']))
             if table in ('jobs', 'old_jobs') and previous['posted'] != named[-1]:
                 self.db.execute(f'UPDATE {table} SET posted_on=?, date_source=? WHERE id=?',
                                 (*freshness.parse_posted(row.get('Posted')), previous['id']))
@@ -359,7 +390,7 @@ class Store:
         return wb
 
     @contextmanager
-    def edit(self):
+    def edit(self, after_rows=None):
         """Keep validation, row edits, history and revision in one transaction."""
         wb = None
         try:
@@ -388,6 +419,8 @@ class Store:
                             self.put_row(table, ws.title, number, head, values, history=True)
                     self.db.execute("UPDATE layouts SET max_row=? WHERE source='main' AND sheet=?",
                                     (ws.max_row, ws.title))
+                if after_rows is not None:
+                    after_rows(self)
                 self.set_meta('revision', int(self.meta('revision')) + 1)
                 self.set_meta('mirror_stale', 1)
         finally:

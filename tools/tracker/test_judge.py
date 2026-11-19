@@ -262,14 +262,40 @@ class Storage(Base):
             self.assertTrue(migrations.columns(db, table), table)
         self.assertIn('starred', migrations.columns(db, 'jobs'))
 
-    def test_judging_writes_the_judgement_and_keeps_old_fit_values(self):
+    def test_judging_writes_current_fit_and_keeps_it_on_row_edits(self):
         report = self.run_judge()
         self.assertEqual(report['judged'], 3)
         current = self.current('Example Co')
         self.assertEqual(current['fit'], 'Strong')
         self.assertEqual(json.loads(current['requirements'])[0]['text'], 'SQL')
-        # 4a-1 leaves the old Verdict column alone; the site switches in 4a-2.
+        # 00c-data-contract.md: "Write assessment and current jobs.fit atomically; reject a result if inputs changed during its call."
+        self.assertEqual(self.fit('Example Co'), current['fit'])
+        with self.storage.edit() as wb:
+            jobs = wb['Jobs']
+            jobs.cell(2, HEAD.index('Notes') + 1).value = 'Updated owner note'
+            self.assertEqual(jobs.cell(2, HEAD.index('Verdict') + 1).value, 'APPLY')
+        self.assertEqual(self.fit('Example Co'), current['fit'])
+
+    def test_failed_fit_write_rolls_back_the_judgement(self):
+        db = self.storage.db
+        db.execute("""CREATE TRIGGER fail_fit BEFORE UPDATE OF fit ON jobs
+                      BEGIN SELECT RAISE(ABORT, 'fixture fit write failed'); END""")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, 'fixture fit write failed'):
+            self.run_judge()
+        self.assertIsNone(self.current('Example Co'))
         self.assertEqual(self.fit('Example Co'), 'APPLY')
+
+    def test_upgrade_copies_existing_current_fit_without_a_new_judgement(self):
+        db = self.storage.db
+        job_id = self.ids['Example Co']
+        with db:
+            self.storage.set_meta('schema_version', 6)
+            db.execute("INSERT INTO judgements(job_id, current, fit) VALUES (?, 1, 'Good')", (job_id,))
+            db.execute("INSERT INTO judgements(job_id, current, fit) VALUES (?, 0, 'Strong')", (job_id,))
+        migrations.upgrade(db, self.db_file)
+        self.assertEqual(self.fit('Example Co'), 'Good')
+        self.assertEqual(self.fit('Sample Labs'), 'APPLY')
+        self.assertEqual(db.execute('SELECT COUNT(*) FROM judgements').fetchone()[0], 2)
 
     def test_stage_and_notes_never_change(self):
         before = self.storage.db.execute('SELECT status, notes FROM jobs ORDER BY id').fetchall()

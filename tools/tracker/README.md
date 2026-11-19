@@ -7,6 +7,9 @@ or its neighboring SQLite store after migration.
 Keep personal lead and contact data out of version control.
 
 - From the repository root, run `tools\tracker\open-tracker.bat` or `python -I tools/tracker/server.py`. The default address is http://127.0.0.1:8765.
+  The plain tracker shows **Fit pending** even on judged jobs, and the star is disabled.
+  For saved Fit judgements and stars, use the [PC dashboard setup](../../SETUP.md),
+  then launch it with `python -I tools/hq-dashboard/server.py`.
 - Override the workbook with `TRACKER_XLSX` and the port with `TRACKER_PORT`. For testing, select a disposable fictional workbook.
 - The page records progress. A person submits applications and sends messages.
 - Follow [selftest.md](selftest.md) to check counts, flow and percentages.
@@ -174,8 +177,8 @@ A Gap whose note only says the evidence is missing, and an uncited core, licence
 or language Gap, also become Unknown. File and folder paths are removed from
 evidence text before it is sent. Only jobs in Tracked, Review and Apply are
 judged. Results are saved as versioned rows in `judgements` (tracker migration
-5, backed up first). In this piece the Verdict column, stages and notes stay as
-they are, and nothing creates a CV or letter.
+5, backed up first). The protected page reads those rows for its Fit chips and
+drawer. The judge does not change stages, edit notes or create a CV or letter.
 
 An unchanged posting, place result, profile revision and evidence set reuse the
 saved judgement without a call; when one of them changes the job is judged

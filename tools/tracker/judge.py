@@ -473,6 +473,8 @@ def _save(db, record):
         db.execute('UPDATE judgements SET current=0 WHERE job_id=? AND pass=? AND current=1', (record['job_id'], PASS))
     names = ', '.join(record)
     db.execute(f"INSERT INTO judgements ({names}) VALUES ({','.join('?' for _ in record)})", tuple(record.values()))
+    if record['current']:
+        db.execute('UPDATE jobs SET fit=? WHERE id=?', (record['fit'], record['job_id']))
 
 
 def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dry_run=False, postings=None,
@@ -668,7 +670,6 @@ def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dr
                       suggestion=said['suggestion'], why=json.dumps(said['why'], ensure_ascii=False),
                       notes=json.dumps(notes, ensure_ascii=False), place_sentence=sentence, complete=int(whole),
                       current=1)
-        # 4a-1 leaves jobs.fit alone; the site switches to these bands in 4a-2.
         apply(lambda record=record: _save(db, record))
         report['judged'] += 1
         if current is not None:

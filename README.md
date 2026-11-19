@@ -3,8 +3,8 @@
 [![tests](https://github.com/CarlitosRed/job-search-hq/actions/workflows/tests.yml/badge.svg)](https://github.com/CarlitosRed/job-search-hq/actions/workflows/tests.yml) [![release](https://img.shields.io/github/v/release/CarlitosRed/job-search-hq)](https://github.com/CarlitosRed/job-search-hq/releases) [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A private, password-protected job-search desk that runs on your Windows PC and opens on your phone through optional HTTPS hosting.
-It keeps your leads in SQLite after migration, with an automatic Excel copy. Without a database, it uses Excel directly. It can ask an AI assistant to score a posting
-against **your own evidence** and draft a one-page CV or cover letter. Every draft stays a draft until you check it.
+It keeps your leads in SQLite after migration, with an automatic Excel copy. Without a database, it uses Excel directly.
+The qualification judge uses **your own evidence** to assess saved postings. You can also ask an AI assistant to draft a one-page CV or cover letter for you to review.
 
 > Built by directing AI agents (Claude and Codex) with a human owner who set the goals and approved
 > every change. The code is small on purpose and it ships with offline tests that use only fictional data.
@@ -13,7 +13,8 @@ against **your own evidence** and draft a one-page CV or cover letter. Every dra
 
 - **Board, list, overview and contacts** over your tracker, with durable saves. Edits queue and conflicts are shown instead of overwritten. In Excel mode, edits wait while the workbook is open.
 - **Search**: the Search tab reads public Greenhouse, Lever, Ashby and Workday boards. A profile can supply the boards. `daily_search.py` uses a profile to rank results in a SQLite backlog and save a new JSON landing set. It does not schedule itself or import results into the tracker.
-- **Review a posting**: paste text or add photos, get a fit score and an honest gaps list, then ask for a CV or letter.
+- **Fit and stars.** List, Board and Top opportunities show Strong, Good, Stretch, Long shot or Fit pending. Open a job to see the suggestion, reasons and requirements with evidence titles. Best fit first sorts by band, then star, then newest date. With SQLite you can star or unstar a job.
+- **Review a posting.** Paste text or add photos, review requirements and gaps, then ask for a CV or letter.
 - **Evidence first**: the model is asked to use entries in `evidence/` that are marked `verified` or `stated`, `public-safe: yes`
   and have CV-ready wording, and to list each factual claim with its evidence IDs. The app checks that cited IDs are eligible
   and each listed claim string appears in the document. It does not check that every factual sentence is listed or that the
