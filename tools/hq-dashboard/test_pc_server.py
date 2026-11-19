@@ -1609,7 +1609,10 @@ class IntegrationSQLite(Integration):
                     entry.press('Enter')
                     expect(drawer).to_be_in_viewport()
                     expect(drawer.locator('.detail')).to_contain_text('Example Company')
+                    # A tracker refresh replaces the original activity button.
+                    page.evaluate('() => render()')
                     close.tap()
+                    expect(drawer).to_be_hidden()
                     expect(entry).to_be_focused()
                 page.click('.seg [data-v="list"]')
                 page.locator('.jobviews [data-jv="all"]').click()

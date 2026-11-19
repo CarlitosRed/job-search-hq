@@ -1236,7 +1236,7 @@ function warnFor(j,compact){const st=stageOf(j).id;if(["skipped","rejected"].inc
 function locLine(j){return`<div class="loc">${flag(j._reg)}<span>${esc(j.Where||"Location not listed")}</span></div>`}
 const jobScore=(j,opts)=>ring(j._sc,opts.list?40:36);
 function jobCard(j,opts={}){const st=stageOf(j);const dim=closedStage(st)||j._open==="closed";
- return`<article class="card ${opts.list?"lcard":""} ${dim?"dim":""} ${S.sel===key(j)&&opts.list?"sel":""}" tabindex="0" ${opts.drag?'draggable="true"':""} data-k="${esc(key(j))}" aria-label="${esc(jname(j))}, ${esc(j.Role)}, ${esc(sl(j["My status"]))}">
+ return`<article class="card ${opts.list?"lcard":""} ${dim?"dim":""} ${S.sel===key(j)&&opts.list?"sel":""}" tabindex="0" ${opts.drag?'draggable="true"':""} data-k="${esc(key(j))}" data-drawer-trigger="list:${esc(key(j))}" aria-label="${esc(jname(j))}, ${esc(j.Role)}, ${esc(sl(j["My status"]))}">
  <div class="card-top">${av(j.Company,"sm")}<div class="t"><div class="co">${esc(j.Company)} <span class="pl">· ${flag(j._reg)}${esc(place(j))}</span></div><div class="ro">${esc(j.Role)}</div></div>${jobScore(j,opts)}</div>
  ${postedAge(j)}
  <div class="card-foot"><div class="chips">${vchip(j._v)}${j.posting?.state==="closed"?`<span class="chip">Closed</span>`:""}${opts.list?`<span class="chip st"><i class="dot" style="color:${st.c}"></i>${esc(sl(j["My status"]))}</span>`:""}${j._sib.length?`<span class="chip" title="Also: ${esc(j._sib.map(x=>place(x)+" ("+sheetShort(x._sheet)+")").join("; "))}">Also in ${j._sib.length} place${j._sib.length>1?"s":""}</span>`:""}</div></div>
@@ -1483,12 +1483,16 @@ function recentActivity(js){
  const jobs=new Map(js.map(j=>[key(j),j]));
  const events=(D.activity||[]).filter(event=>jobs.has(event.key)).slice(0,4);
  if(!events.length)return '<p class="ov-empty-msg">No recent actions recorded yet.</p>';
+ const occurrences=new Map();
  return '<ul class="ov-activity-feed">'+events.map(event=>{
   const job=jobs.get(event.key), moved="status" in event;
+  const eventKey=JSON.stringify([event.key,event.date,moved?event.status:null]);
+  const occurrence=(occurrences.get(eventKey)||0)+1;
+  occurrences.set(eventKey,occurrence);
   const company="<b>"+esc(job.Company)+"</b>";
   const title=moved?company+" moved to "+esc(sl(event.status)||"Other status"):"Added "+company+" ("+esc(job.Role)+")";
   const color=moved?OVERVIEW_COLORS[stageOf({"My status":event.status}).id]:"var(--mute)";
-  return `<li><button type="button" class="ov-activity-item" data-open="${esc(event.key)}"><span class="ov-activity-icon" aria-hidden="true" style="color:${color}">${moved?"&#10003;":"+"}</span>
+  return `<li><button type="button" class="ov-activity-item" data-open="${esc(event.key)}" data-drawer-trigger="activity:${esc(eventKey)}:${occurrence}"><span class="ov-activity-icon" aria-hidden="true" style="color:${color}">${moved?"&#10003;":"+"}</span>
    <span class="ov-activity-text">${title}</span><time class="ov-activity-time" datetime="${esc(event.date)}">${esc(event.date)}</time></button></li>`;
  }).join("")+'</ul>';
 }
@@ -1580,7 +1584,7 @@ function overview(js){const C=counts(js);
    </div>
    ${listJobs.length ? `<ul class="ov-job-list">${listJobs.map(j => {
      const st = stageOf(j);
-     return `<li><button data-open="${esc(key(j))}">
+     return `<li><button data-open="${esc(key(j))}" data-drawer-trigger="opportunity:${esc(key(j))}">
       ${av(j.Company,"sm")}
       <span class="t">
        <b>${esc(j.Company)}</b>
@@ -1601,7 +1605,7 @@ function overview(js){const C=counts(js);
     </div>
     <button class="ov-arrow-btn" data-act="attn-list" title="Show all attention jobs" aria-label="Show all attention jobs">→</button>
    </div>
-   ${att.length?`<ul class="ov-attention-list">${att.slice(0,4).map(j=>`<li><button data-open="${esc(key(j))}">${av(j.Company,"sm")}<span class="t"><b>${esc(j.Company)} <span class="ov-co-sub">· ${esc(place(j))}</span></b><small style="color:var(--mute)">${esc(why(j))}</small></span><span class="ov-item-arrow">→</span></button></li>`).join("")}</ul>`:`<p class="ov-empty-msg">All clear: nothing closed, drafted or waiting on you.</p>`}
+   ${att.length?`<ul class="ov-attention-list">${att.slice(0,4).map(j=>`<li><button data-open="${esc(key(j))}" data-drawer-trigger="attention:${esc(key(j))}">${av(j.Company,"sm")}<span class="t"><b>${esc(j.Company)} <span class="ov-co-sub">· ${esc(place(j))}</span></b><small style="color:var(--mute)">${esc(why(j))}</small></span><span class="ov-item-arrow">→</span></button></li>`).join("")}</ul>`:`<p class="ov-empty-msg">All clear: nothing closed, drafted or waiting on you.</p>`}
   </section>
   <section class="panel ov-chart-card" aria-labelledby="rah">
    <div class="ov-panel-head">
@@ -1637,7 +1641,7 @@ function boardCard(j,s){
  const scLabel=sc?esc(fitText(sc,j._v)):"Not scored";
  const ct=contactFor(j);
  const realStatus=s.id==="other"?sl(j["My status"]):s.label;
- return`<article class="card bcard" tabindex="0" draggable="true" data-k="${esc(key(j))}" aria-label="${esc(j.Company)}, ${esc(j.Role)}, ${esc(realStatus)}" style="--bcard-notch:${col}">
+ return`<article class="card bcard" tabindex="0" draggable="true" data-k="${esc(key(j))}" data-drawer-trigger="board:${esc(key(j))}" aria-label="${esc(j.Company)}, ${esc(j.Role)}, ${esc(realStatus)}" style="--bcard-notch:${col}">
   <div class="bcard-top">
    ${av(j.Company,"sm")}
    <div class="bcard-info">
@@ -1726,7 +1730,7 @@ function listView(js){const so=sorter();js=js.slice().sort(so);
    </div>
   </div>
   <div class="pref-pills" role="toolbar" aria-label="Job filters">
-   <button class="pref-pill pref-main ${activeCount()?"has-filters":""}" data-act="openf">${IC.pref}<span>Filters</span>${activeCount()?`<span class="pref-badge">${activeCount()}</span>`:""}</button>
+   <button class="pref-pill pref-main ${activeCount()?"has-filters":""}" data-act="openf" data-drawer-trigger="list-filters">${IC.pref}<span>Filters</span>${activeCount()?`<span class="pref-badge">${activeCount()}</span>`:""}</button>
    ${activebar(true)}
   </div>
  </section>
@@ -1811,7 +1815,9 @@ function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
 /* ---------- render ---------- */
 function render(){const keep=$$("textarea[data-note][data-dirty='1']").map(t=>[t.closest("[data-k]").dataset.k,t.value,t===document.activeElement,t.selectionStart]);
  const rounds=$$(".round input[data-field]").filter(t=>t.value!==t.defaultValue||t===document.activeElement).map(t=>[t.closest("[data-k]").dataset.k,t.closest(".round").dataset.id,t.dataset.field,t.value,t===document.activeElement,t.selectionStart,t.selectionEnd,t.selectionDirection]);
+ const focused=document.activeElement;
  renderInner();
+ if(focused?.dataset.drawerTrigger&&!focused.isConnected&&document.activeElement===document.body)restoreDrawerTrigger(focused);
  keep.forEach(([k,v,f,pos])=>{$$(`[data-k="${CSS.escape(k)}"] textarea[data-note]`).forEach(t=>{t.value=v;noteState(t);if(f){t.focus();t.setSelectionRange(pos,pos)}})});
  rounds.forEach(([k,id,field,v,f,start,end,direction])=>{$$(`[data-k="${CSS.escape(k)}"] .round[data-id="${CSS.escape(id)}"] input[data-field="${CSS.escape(field)}"]`).forEach(t=>{t.value=v;if(f){t.focus();if(start!==null)t.setSelectionRange(start,end,direction)}})})}
 function renderInner(){const js=filtered();$$(".seg button").forEach(b=>b.setAttribute("aria-selected",b.dataset.v===S.view));
@@ -1843,15 +1849,37 @@ function activebar(inline=false){const ch=[];const add=(t,f,v)=>ch.push(`<button
 
 /* ---------- drawers ---------- */
 let lastFocus=null;
+let drawerFocusFrame=0;
+let drawerFocusTimer=0;
 const wide=()=>matchMedia("(min-width:901px)").matches;
+function restoreDrawerTrigger(trigger){
+ const id=trigger?.dataset.drawerTrigger;
+ const target=id?$(`[data-drawer-trigger="${CSS.escape(id)}"]`):trigger;
+ if(target?.isConnected)target.focus({preventScroll:true});
+}
+function showDrawer(drawer,trigger,initialFocus){
+ cancelAnimationFrame(drawerFocusFrame);
+ clearTimeout(drawerFocusTimer);
+ if(!trigger?.closest(".drawer"))lastFocus=trigger;
+ drawer.classList.add("on");
+ $("#scrim").classList.add("on");
+ initialFocus?.focus();
+}
 function openJob(k){const j=byKey(k);if(!j)return;S.sel=k;
+ const trigger=arguments[1]??document.activeElement;
  if(S.view==="list"&&wide()){save();render();const c=$(`.lcard[data-k="${CSS.escape(k)}"]`);c&&c.focus({preventScroll:true});return}
- lastFocus=document.activeElement;fillDrawer(j);$("#drawer").classList.add("on");$("#scrim").classList.add("on");setTimeout(()=>$("#drawer .dr-close button")?.focus(),50)}
+ fillDrawer(j);showDrawer($("#drawer"),trigger);
+ drawerFocusTimer=setTimeout(()=>$("#drawer .dr-close button")?.focus(),50)}
 function fillDrawer(j){const dr=$("#drawer");const ta=dr.querySelector("textarea[data-dirty='1']");if(ta&&dr.dataset.k===key(j))return;
  dr.dataset.k=key(j);dr.innerHTML=`<div class="dr-close"><button class="btn ghost" data-act="add">${IC.plus}Add lead</button><button class="btn ghost icon" data-act="close" aria-label="Close details">${IC.close}</button></div>${detail(j)}`}
-function openFilters(){lastFocus=document.activeElement;$("#fdrawer").innerHTML=sidebar(true);$("#fdrawer").classList.add("on");$("#scrim").classList.add("on");setTimeout(()=>$("#fdrawer input")?.focus(),50)}
+function openFilters(trigger){$("#fdrawer").innerHTML=sidebar(true);showDrawer($("#fdrawer"),trigger,$("#fdrawer input"))}
 function closeDrawers(){const dirty=$("#drawer textarea[data-dirty='1']");if(dirty&&!confirm("Discard unsaved notes?"))return false;
- ["#drawer","#fdrawer"].forEach(s=>$(s).classList.remove("on"));$("#drawer").dataset.k="";$("#scrim").classList.remove("on");lastFocus&&lastFocus.focus&&lastFocus.focus();return true}
+ clearTimeout(drawerFocusTimer);
+ ["#drawer","#fdrawer"].forEach(s=>$(s).classList.remove("on"));$("#drawer").dataset.k="";$("#scrim").classList.remove("on");
+ const trigger=lastFocus;lastFocus=null;
+ // Visibility is removed immediately. Resolve the trigger after the close event and any redraw it caused.
+ if(trigger)drawerFocusFrame=requestAnimationFrame(()=>restoreDrawerTrigger(trigger));
+ return true}
 
 /* ---------- events ---------- */
 $$(".seg button").forEach(b=>b.onclick=()=>{S.view=b.dataset.v;render()});
@@ -1860,7 +1888,7 @@ let qT;const onQ=e=>{clearTimeout(qT);const v=e.target.value;if(!v.trim()){S.q="
 ["input","search","change"].forEach(ev=>$("#q").addEventListener(ev,onQ));
 $("#themeBtn").onclick=toggleTheme;
 $("#refresh").onclick=()=>load().then(()=>toast("Reloaded from the spreadsheet"));
-$("#fbtn").onclick=openFilters;
+$("#fbtn").onclick=e=>openFilters(e.currentTarget);
 $("#addbtn").onclick=()=>openAdd();
 $("#undoBtn").onclick=()=>{$("#toast").classList.remove("on");undoLast()};
 $("#scrim").onclick=closeDrawers;
@@ -1869,7 +1897,7 @@ document.addEventListener("click",async e=>{const t=e.target;
  const jv=t.closest("[data-jv]");if(jv){S.jobView=jv.dataset.jv;S.stages=[];render();return}
  const posted=t.closest("[data-posted]");if(posted){S.posted=posted.dataset.posted==="all"?null:Number(posted.dataset.posted);render();return}
  if(!t.closest(".bcard-move-wrap")){$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"))}
- const a=t.closest("[data-act]");if(a){const v=a.dataset.act;if(v==="clear")clearFilters();if(v==="close"||v==="closef")closeDrawers();if(v==="openf")openFilters();if(v==="add")openAdd();if(v==="attn"){S.attention=!S.attention;render()}
+ const a=t.closest("[data-act]");if(a){const v=a.dataset.act;if(v==="clear")clearFilters();if(v==="close"||v==="closef")closeDrawers();if(v==="openf")openFilters(a);if(v==="add")openAdd();if(v==="attn"){S.attention=!S.attention;render()}
   if(v==="attn-list"){S.attention=true;S.view="list";render();return}
   if(v==="view-list"){S.view="list";render();return}
   if(v==="view-activity"){S.view="list";S.sort="applied";render();return}
@@ -1885,7 +1913,7 @@ document.addEventListener("click",async e=>{const t=e.target;
    S.view="list";
    S.jobView="all";
   }
-  openJob(op.dataset.open);
+  openJob(op.dataset.open,op);
   return;
  }
  const step=t.closest("[data-step]");if(step){const j=byKey(step.closest("[data-k]").dataset.k);const s=STAGES.find(x=>x.id===step.dataset.step);
@@ -1893,7 +1921,7 @@ document.addEventListener("click",async e=>{const t=e.target;
  const cp=t.closest("[data-copy]");if(cp){try{await navigator.clipboard.writeText(cp.dataset.copy);toast("Link copied")}catch{toast("Couldn't copy",null,true)}return}
  const sv=t.closest("[data-savenote]");if(sv){const art=sv.closest("[data-k]"),ta=art.querySelector("[data-note]");const j=byKey(art.dataset.k);
   sv.disabled=true;sv.textContent="Saving…";if(await saveNote(j,ta.value)){noteState(ta)}else{sv.disabled=false;sv.textContent="Save notes"}return}
- const card=t.closest(".card[data-k]");if(card&&!t.closest("a,button,select,input,textarea,.drag-handle,.bcard-move-wrap")){openJob(card.dataset.k)}});
+ const card=t.closest(".card[data-k]");if(card&&!t.closest("a,button,select,input,textarea,.drag-handle,.bcard-move-wrap")){openJob(card.dataset.k,card)}});
 document.addEventListener("change",e=>{const t=e.target;
  if(t.dataset.f){const f=t.dataset.f;S[f]=t.checked?[...new Set([...S[f],t.value])]:S[f].filter(x=>x!==t.value);render();return}
  if(t.dataset.t){S[t.dataset.t]=t.checked;render();return}
@@ -1925,7 +1953,7 @@ document.addEventListener("keydown",e=>{const t=e.target,typing=/INPUT|TEXTAREA|
   return;
  }
  const card=t.closest&&t.closest(".card[data-k]");
- if(card&&t===card&&(e.key==="Enter"||e.key===" ")){e.preventDefault();openJob(card.dataset.k);return}
+ if(card&&t===card&&(e.key==="Enter"||e.key===" ")){e.preventDefault();openJob(card.dataset.k,card);return}
  if(card&&e.shiftKey&&(e.key==="ArrowRight"||e.key==="ArrowLeft")&&S.view==="board"){e.preventDefault();const j=byKey(card.dataset.k);const i=stageIdx(j)+(e.key==="ArrowRight"?1:-1);
   if(i<0||i>=STAGES.length-1||!boardMove(j,STAGES[i]))return;const k=card.dataset.k;setStatus(j,dropStatus(j,STAGES[i])).then(()=>{const moved=$(`.card[data-k="${CSS.escape(k)}"]`);if(moved)moved.focus();});return}
  if(S.view==="list"&&(e.key==="j"||e.key==="k"||e.key==="ArrowDown"||e.key==="ArrowUp")&&(card||t===document.body)){e.preventDefault();const cs=$$(".lcard");const i=cs.findIndex(c=>c.dataset.k===S.sel);
