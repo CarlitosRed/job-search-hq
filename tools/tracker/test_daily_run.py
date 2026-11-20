@@ -529,5 +529,32 @@ class JudgePhase(Base):
             self.dr.configuration(self.root)
 
 
+    # Card 04c: Claude as a judge option.
+    def test_judge_ai_setting_accepts_codex_and_claude_only(self):
+        for value in ('codex', 'claude'):
+            self.settings(judge_ai=value)
+            self.assertEqual(self.dr.configuration(self.root)['judge_ai'], value)
+        self.settings()
+        self.assertEqual(self.dr.configuration(self.root)['judge_ai'], 'codex')
+        self.settings(judge_ai='gemini')
+        with self.assertRaisesRegex(ValueError, 'judge AI'):
+            self.dr.configuration(self.root)
+
+    def test_claude_setting_asks_claude_and_saves_its_label(self):
+        self.settings(judge_ai='claude')
+        asked = []
+
+        def fake_claude(prompt, schema, timeout=600):
+            asked.append(1)
+            return judge_answer(prompt, schema)
+        with mock.patch.object(self.dr.judge.seam, 'run_claude_cli', fake_claude), \
+                mock.patch.object(self.dr.judge.seam, 'run_cli', side_effect=AssertionError('Codex was asked')):
+            out = self.run_daily(complete=None)
+        self.assertEqual(out['phases']['judge']['status'], 'done')
+        self.assertTrue(asked)
+        with closing(sqlite3.connect(self.db_file)) as db:
+            self.assertEqual({m for (m,) in db.execute('SELECT model FROM judgements')}, {'claude-cli'})
+
+
 if __name__ == '__main__':
     unittest.main()

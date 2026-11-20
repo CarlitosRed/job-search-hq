@@ -359,9 +359,9 @@ def posting_hash(posting):
     return _digest([str(posting.get(key) or '') for key in TEXT_FIELDS])
 
 
-def cache_key(posting, profile, evidence_revision):
+def cache_key(posting, profile, evidence_revision, model=MODEL):
     return _digest([posting_hash(posting), posting.get('place_status') or 'ok', profile['id'], profile['revision'],
-                    evidence_revision, MODEL, PROMPT_VERSION, SCHEMA_VERSION, RULE_VERSION, profile.get('work_history')])
+                    evidence_revision, model, PROMPT_VERSION, SCHEMA_VERSION, RULE_VERSION, profile.get('work_history')])
 
 
 def backlog_posting(storage, job_id, profile_id, backlog):
@@ -476,7 +476,7 @@ def _save(db, record, retire_id=None):
 
 
 def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dry_run=False, postings=None,
-                  jobs=None, deadline=None, backlog=None, usage=None, preview_cache=None):
+                  jobs=None, deadline=None, backlog=None, usage=None, preview_cache=None, model=MODEL):
     """Judge waiting jobs within today's budget and return a plain report.
 
     `postings` maps a job id to its posting text; without it the text comes from the search backlog.
@@ -484,6 +484,7 @@ def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dr
     A dry run reports the same results and saves no judgement, but its calls still count toward the day.
     `preview_cache` is a JSON file where dry runs keep their results and failures (beside the tracker by
     default), so a later preview does not call again and a failing job backs off there too.
+    `model` names the AI that answers (card 04c); it is saved and is part of the cache key.
     """
     db = storage.db
     run_day = date.fromisoformat(today) if isinstance(today, str) else today
@@ -534,7 +535,7 @@ def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dr
     def base(job, posting, key):
         return dict(job_id=job['id'], posting_row=posting.get('posting_row'), posting_hash=posting_hash(posting),
                     profile_id=profile_id, profile_revision=profile['revision'], evidence_revision=evidence_revision,
-                    model=MODEL, prompt_version=PROMPT_VERSION, schema_version=SCHEMA_VERSION,
+                    model=model, prompt_version=PROMPT_VERSION, schema_version=SCHEMA_VERSION,
                     rule_version=RULE_VERSION, cache_key=key,
                     created=datetime.now(timezone.utc).isoformat(timespec='seconds'), day=day, run_id=run_id,
                     current=0,
@@ -583,7 +584,7 @@ def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dr
             report['skipped'] += 1
             report['skipped_jobs'].append(named(job, NOT_ENOUGH))
             continue
-        key = cache_key(posting, profile, evidence_revision)
+        key = cache_key(posting, profile, evidence_revision, model)
         current = db.execute('SELECT * FROM judgements WHERE job_id=? AND pass=? AND current=1', (job_id, PASS)).fetchone()
         if current is not None and current['cache_key'] == key:
             report['cached'] += 1
@@ -736,7 +737,15 @@ def main():
         profile = profiles.load(root / 'profile.json')
     except ValueError as error:
         parser.error(str(error))
-    excluded = settings.load(root, defaults_root=settings.app_root())['excluded_evidence_ids']
+    values = settings.load(root, defaults_root=settings.app_root())
+    excluded = values['excluded_evidence_ids']
+    # Card 04c: the daily setting picks the AI here too.
+    daily = values['daily_run'] if isinstance(values['daily_run'], dict) else {}
+    engine = daily.get('judge_ai', 'codex')
+    try:
+        model = seam.model_label(engine)
+    except ValueError as error:
+        parser.error(str(error))
     evidence = judge_evidence(root, excluded)
     dry_run = not args.apply
     with closing(store.Store(':memory:' if dry_run else target)) as storage:
@@ -747,8 +756,9 @@ def main():
                 for _, _, step in store.migrations.STEPS:
                     step(storage.db)
         report = judge_pending(storage, profile, evidence, date.today(), 'manual-' + date.today().isoformat(),
-                               seam.complete, profile['search']['judge_budget'], dry_run=dry_run, jobs=[args.job],
-                               backlog=work / 'search-backlog.sqlite3', usage=work / 'ai-usage.sqlite3')
+                               lambda prompt, schema: seam.complete(prompt, schema, engine=engine),
+                               profile['search']['judge_budget'], dry_run=dry_run, jobs=[args.job],
+                               backlog=work / 'search-backlog.sqlite3', usage=work / 'ai-usage.sqlite3', model=model)
     print('Dry run: no judgement was saved.' if dry_run else 'Saved.')
     def evidence_names(item):
         return ', '.join(evidence[key]['title'] or 'Untitled evidence' for key in item['evidence'] if key in evidence)
