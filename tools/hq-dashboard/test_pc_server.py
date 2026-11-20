@@ -6,6 +6,7 @@ import http.client
 import importlib.util
 import json
 import os
+import re
 from contextlib import closing
 from pathlib import Path
 import secrets
@@ -865,7 +866,7 @@ try {
             browser.close()
 
     def test_board_stages_browser(self):
-        """Step 01a: eight stages in order, Rejected only after Applied, move and undo save, same page on the phone."""
+        """Step 01a: eight stages in order, Rejected only after Applied, moves save, same page on the phone."""
         from playwright.sync_api import sync_playwright, expect
         ids = ['tracked', 'review', 'apply', 'skipped', 'applied', 'interview', 'offer', 'rejected']
         wb = openpyxl.load_workbook(self.book)
@@ -927,7 +928,7 @@ try {
                     move('review', 'apply')
                     expect(page.locator('.col[data-stage="apply"]')).to_contain_text('Example Company')
                     wait_status('Example Company', 'Apply')
-                    page.click('#undoBtn')
+                    move('apply', 'review')
                     expect(page.locator('.col[data-stage="review"]')).to_contain_text('Example Company')
                     wait_status('Example Company', 'Review')
                     move('applied', 'rejected')
@@ -1396,6 +1397,16 @@ try {
         self.skipTest('Rounds need the database; the browser check runs in IntegrationSQLite.')
 
 
+class TrackerLauncherDocs(unittest.TestCase):
+    def test_plain_launcher_documents_fit_and_star_limitations(self):
+        readme = (HERE.parent / 'tracker' / 'README.md').read_text(encoding='utf-8')
+        launch = next(line for line in readme.splitlines() if 'open-tracker.bat' in line)
+        instructions = readme.split(launch, 1)[1].strip().split('\n- ', 1)[0]
+        self.assertIn('Not scored yet', instructions)
+        self.assertIn('star is disabled', instructions)
+        self.assertIn('tools/hq-dashboard/server.py', instructions)
+
+
 class IntegrationSQLite(Integration):
     """The same server checks once the tracker lives in SQLite (step 00b).
 
@@ -1465,11 +1476,348 @@ class IntegrationSQLite(Integration):
         self.assertEqual(data['store'], 'sqlite')
         self.assertEqual(data['version'], 'db-1')
         self.assertEqual(data['jobs'][0]['posting']['state'], 'unknown')
+        self.assertIsNone(data['jobs'][0]['judgement'])
+        self.assertFalse(data['jobs'][0]['starred'])
         self.assertEqual(data['stale_boards'], [])
         self.assertEqual([(day['date'], day['total']) for day in data['history']], [('2026-01-02', 1)])
         self.assertEqual(snapshot(), before)
 
-    def test_overview_charts_scores_and_dated_activity_browser(self):
+    def test_unscored_legacy_judgement_is_hidden_on_schema_seven(self):
+        path = self.app.tracker_db_path
+        with closing(sqlite3.connect(path)) as db, db:
+            if 'score' in {row[1] for row in db.execute('PRAGMA table_info(judgements)')}:
+                db.execute('ALTER TABLE judgements DROP COLUMN score')
+            db.execute("UPDATE meta SET value=7 WHERE key='schema_version'")
+            db.execute("INSERT INTO judgements(job_id, current, fit) SELECT id, 1, 'Good' FROM jobs")
+        before = path.read_bytes()
+        self.login()
+        self.assertIsNone(self.data()['jobs'][0]['judgement'])
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_score_page_data_uses_current_qualification_and_evidence_titles(self):
+        evidence = self.state / 'evidence'
+        evidence.mkdir()
+        (evidence / 'E-701-example.md').write_text(
+            '# E-701 — Example SQL reporting\n\n- level: verified\n', encoding='utf-8')
+        with closing(sqlite3.connect(self.app.tracker_db_path)) as db, db:
+            job_id = db.execute('SELECT id FROM jobs').fetchone()[0]
+            for pass_name, current, fit, score, error in (
+                ('qualification', 0, 'Skip', 3.1, None),
+                ('qualification', 1, 'Worth applying', 4.2, None),
+                ('want', 1, 'Apply now', 4.9, None),
+                ('qualification', 0, None, None, 'Temporary failure'),
+            ):
+                db.execute('''INSERT INTO judgements(job_id, pass, current, fit, score, error, why, requirements)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                           (job_id, pass_name, current, fit, score, error,
+                            json.dumps([dict(text='Relevant reporting', quote='Write reports.', evidence=['E-701']),
+                                        dict(text='Related analysis', quote='Analyze results.', evidence=['E-701'])]),
+                            json.dumps([dict(text='Write reports', state='supported', evidence=['E-701']),
+                                        dict(text='Use E-702', state='unknown', evidence=['E-702'])])))
+        self.enterContext(mock.patch.object(hq.hq_settings, 'data_root', return_value=self.state))
+        self.login()
+        data = self.data()
+        judge = data['jobs'][0]['judgement']
+        self.assertEqual((judge['score'], judge['action']), (4.2, 'Worth applying'))
+        self.assertEqual(judge['reasons'], [
+            dict(text='Relevant reporting', quote='Write reports.', evidenceTitles=['Example SQL reporting']),
+            dict(text='Related analysis', quote='Analyze results.', evidenceTitles=['Example SQL reporting']),
+        ])
+        self.assertEqual(judge['notes'], ['The latest check failed. Showing the last judgement.'])
+        self.assertEqual(judge['requirements'], [
+            dict(text='Write reports', state='supported', evidenceTitles=['Example SQL reporting']),
+            dict(text='Use evidence', state='unknown', evidenceTitles=[]),
+        ])
+        self.assertNotRegex(json.dumps(judge), r'\bE-\d+\b')
+        version = json.loads(self.request('GET', '/api/version')[2])
+        self.assertEqual(version['fitVersion'], data['fitVersion'])
+
+    def test_star_and_unstar_are_idempotent(self):
+        self.login()
+        start = self.data()
+        base = dict(sheet='Fictional jobs', row=2, expect={'Company': 'Example Company', 'Role': 'Example Engineer'})
+
+        def save(**fields):
+            payload = dict(base, version=self.data()['version'], requestId=str(uuid.uuid4()), **fields)
+            first = self.request('POST', '/api/star', payload)
+            self.assertEqual(first[0], 200, first[2])
+            self.assertEqual(self.request('POST', '/api/star', payload)[2], first[2])
+            return json.loads(first[2])
+
+        star = save(starred=True)
+        self.assertTrue(self.data()['jobs'][0]['starred'])
+        self.assertEqual(self.data()['fitVersion'], start['fitVersion'])
+        self.assertIsNone(save(starred=True)['choice'])
+        unstar = save(starred=False)
+        self.assertFalse(self.data()['jobs'][0]['starred'])
+        restar = save(starred=True)
+        self.assertTrue(self.data()['jobs'][0]['starred'])
+        save(starred=False)
+        self.assertFalse(self.data()['jobs'][0]['starred'])
+        with closing(sqlite3.connect(self.app.tracker_db_path)) as db:
+            events = db.execute('''SELECT kind, value, active, supersedes, origin, owner, idempotency_key
+                                   FROM choice_signals ORDER BY id''').fetchall()
+        self.assertEqual([event[:6] for event in events], [
+            ('star', '1', 0, None, 'site', 'owner'),
+            ('star', '0', 0, star['choice'], 'site', 'owner'),
+            ('star', '1', 0, unstar['choice'], 'site', 'owner'),
+            ('star', '0', 1, restar['choice'], 'site', 'owner'),
+        ])
+        self.assertEqual(len({event[-1] for event in events}), 4)
+
+    def test_site_moves_record_choices_without_teaching_rejection(self):
+        self.login()
+        version, request_id = self.data()['version'], str(uuid.uuid4())
+        skipped = self.edit(status='Skipped', reason='Example schedule', version=version, requestId=request_id)
+        self.assertEqual(skipped[0], 200, skipped[2])
+        self.assertEqual(self.edit(status='Skipped', reason='Example schedule', version=version,
+                                   requestId=request_id)[2], skipped[2])
+        self.assertEqual(self.edit(status='Review')[0], 200)
+        self.assertEqual(self.data()['jobs'][0]['My status'], 'Review')
+        self.assertEqual(self.edit(status='Applied', date='2026-01-01')[0], 200)
+        self.assertEqual(self.edit(status='Rejected')[0], 200)
+        with closing(sqlite3.connect(self.app.tracker_db_path)) as db:
+            events = db.execute('SELECT kind, value, active, supersedes, reason FROM choice_signals ORDER BY id').fetchall()
+            stages = db.execute('SELECT to_status FROM moves ORDER BY id').fetchall()
+        self.assertEqual(events, [
+            ('skip', 'Skipped', 1, None, 'Example schedule'),
+            ('move', 'Review', 1, None, None),
+            ('apply', 'Applied', 1, None, None),
+        ])
+        self.assertEqual(stages, [('Skipped',), ('Review',), ('Applied',), ('Rejected',)])
+
+    def test_legacy_undo_parameters_do_not_change_choice_recording(self):
+        self.login()
+        skipped = self.edit(status='Skipped')
+        self.assertEqual(skipped[0], 200, skipped[2])
+        returned = self.edit(status='Review', undoChoice=json.loads(skipped[2])['choice'])
+        self.assertEqual(returned[0], 200, returned[2])
+        self.assertEqual(self.data()['jobs'][0]['My status'], 'Review')
+        self.assertEqual(self.edit(status='Apply', undoStage=True)[0], 200)
+
+        def star(starred, **extra):
+            return self.request('POST', '/api/star', dict(
+                sheet='Fictional jobs', row=2, expect={'Company': 'Example Company', 'Role': 'Example Engineer'},
+                version=self.data()['version'], requestId=str(uuid.uuid4()), starred=starred, **extra))
+
+        starred = star(True)
+        self.assertEqual(starred[0], 200, starred[2])
+        removed = star(False, undoChoice=json.loads(starred[2])['choice'])
+        self.assertEqual(removed[0], 200, removed[2])
+        self.assertFalse(self.data()['jobs'][0]['starred'])
+        with closing(sqlite3.connect(self.app.tracker_db_path)) as db:
+            self.assertEqual(db.execute('SELECT kind, value FROM choice_signals ORDER BY id').fetchall(), [
+                ('skip', 'Skipped'), ('move', 'Review'), ('move', 'Apply'), ('star', '1'), ('star', '0'),
+            ])
+
+    def test_move_and_star_offer_no_undo_controls_browser(self):
+        from playwright.sync_api import expect, sync_playwright
+
+        self.serve_tls()
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            page = browser.new_page(viewport={'width': 1366, 'height': 900}, ignore_https_errors=True)
+            self.browser_login(page)
+            page.locator('.seg [data-v="board"]').click()
+            page.locator('.bcard', has_text='Example Engineer').click()
+            drawer = page.locator('#drawer')
+            with self.app.tracker.workbook_lock(self.book):
+                drawer.locator('select[data-status]').select_option('Skipped')
+                expect(page.locator('#pc-saves')).to_contain_text('Waiting for Excel or the job scan')
+                waiting = self.app.queue.recent()[0]
+                self.assertEqual(waiting['status'], 'waiting')
+                self.assertEqual(self.app.data()['jobs'][0]['My status'], 'Review')
+            self.app.queue.process_one()
+            self.assertEqual(self.app.queue.get(waiting['id'])['status'], 'saved')
+            expect(page.locator('#tmsg')).to_contain_text('→ Skipped', timeout=10000)
+            expect(page.get_by_role('button', name=re.compile('undo', re.I))).to_have_count(0)
+            self.assertEqual(self.app.data()['jobs'][0]['My status'], 'Skipped')
+
+            star = drawer.get_by_role('button', name='Star this job')
+            star.click()
+            expect(page.locator('#tmsg')).to_have_text('Job starred')
+            expect(star).to_have_attribute('aria-pressed', 'true')
+            expect(page.get_by_role('button', name=re.compile('undo', re.I))).to_have_count(0)
+            drawer.get_by_role('button', name='Close details').click()
+            page.locator('.seg [data-v="overview"]').click()
+            expect(page.locator('.ov-activity-feed li', has_text='Example Company moved to Skipped')
+                   .locator('time')).to_have_attribute('datetime', re.compile(r'^\d{4}-\d{2}-\d{2}$'))
+            browser.close()
+
+    def test_starred_lower_score_leads_list_and_overview_browser(self):
+        from playwright.sync_api import expect, sync_playwright
+
+        self.login()
+        code, _, body = self.request('POST', '/api/add', {
+            'sheet': 'Fictional jobs', 'Company': 'Example Higher Score', 'Role': 'Example Analyst',
+            'version': self.data()['version'], 'requestId': str(uuid.uuid4()),
+        })
+        self.assertEqual(code, 200, body)
+        with closing(sqlite3.connect(self.app.tracker_db_path)) as db, db:
+            db.execute("""INSERT INTO judgements(job_id, current, fit, score)
+                          SELECT id, 1, CASE WHEN company='Example Higher Score' THEN 'Apply now' ELSE 'Skip' END,
+                          CASE WHEN company='Example Higher Score' THEN 4.8 ELSE 3.2 END FROM jobs""")
+        self.serve_tls()
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            page = browser.new_page(viewport={'width': 1366, 'height': 900}, ignore_https_errors=True)
+            self.browser_login(page)
+            page.locator('.seg [data-v="list"]').click()
+            expect(page.locator('.lcard .fit-chip')).to_have_text(['4.8 · Apply now', '3.2 · Skip'])
+            page.locator('.seg [data-v="board"]').click()
+            page.locator('.bcard', has_text='Example Engineer').click()
+            drawer = page.locator('#drawer')
+            star = drawer.get_by_role('button', name='Star this job')
+            star.click()
+            expect(star).to_have_attribute('aria-pressed', 'true')
+            drawer.get_by_role('button', name='Close details').click()
+
+            # A star still takes priority over score.
+            page.locator('.seg [data-v="list"]').click()
+            expect(page.locator('.lcard .fit-chip')).to_have_text(['3.2 · Skip', '4.8 · Apply now'])
+            page.locator('.seg [data-v="overview"]').click()
+            expect(page.locator('.ov-job-list .fit-chip')).to_have_text(['3.2 · Skip', '4.8 · Apply now'])
+            browser.close()
+
+    def test_legacy_verify_shows_source_warning_and_keeps_owner_notes_browser(self):
+        from playwright.sync_api import expect, sync_playwright
+
+        with self.app.tracker.editing_workbook() as wb:
+            sheet = wb['Fictional jobs']
+            sheet.cell(1, 8).value = 'Verdict'
+            sheet.cell(2, 8).value = 'Verify'
+            sheet.cell(2, 6).value = (
+                'Lane: Verify\nWhy it fits: Example.\n'
+                'Next step: Review the original posting and remaining application checks.\n\n'
+                'Owner note: confirm the schedule.'
+            )
+        self.serve_tls()
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            page = browser.new_page(viewport={'width': 1366, 'height': 900}, ignore_https_errors=True)
+            self.browser_login(page)
+            page.locator('.seg [data-v="board"]').click()
+            page.locator('.bcard', has_text='Example Engineer').click()
+            drawer = page.locator('#drawer')
+            expect(drawer.locator('.judge-note')).to_have_text('Check: source unclear')
+            notes = drawer.locator('[data-note]')
+            expect(notes).not_to_have_value(re.compile(r'Lane: Verify'))
+            expect(notes).to_have_value(re.compile(r'Owner note: confirm the schedule\.'))
+            browser.close()
+
+    def test_posting_review_uses_evidence_titles_and_legacy_source_labels_browser(self):
+        from playwright.sync_api import expect, sync_playwright
+
+        self.serve_tls()
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            page = browser.new_page(ignore_https_errors=True)
+            self.browser_login(page)
+            page.locator('.seg [data-v="review"]').click()
+            page.evaluate("""() => {
+                EVIDENCE_TITLES = {'E-701': 'Example SQL reporting'};
+                renderResult({_id: 'fixture', company: 'Example Company', fit: {
+                    location_ok: 'See E-701', cv_edits: ['Used E-701'],
+                    sources: ['L:Example Company']
+                }});
+            }""")
+            result = page.locator('#result')
+            expect(result).not_to_contain_text('E-701')
+            expect(result).to_contain_text('Location: See Example SQL reporting')
+            result.get_by_text('What was tailored in the CV', exact=True).click()
+            expect(result.get_by_text('Used Example SQL reporting', exact=True)).to_be_visible()
+            expect(result.get_by_text('Evidence used:', exact=False)).to_contain_text('Example Company (legacy CV)')
+            browser.close()
+
+    def test_score_requirements_cards_sort_and_star_browser(self):
+        from playwright.sync_api import expect, sync_playwright
+
+        evidence = self.state / 'evidence'
+        evidence.mkdir()
+        (evidence / 'E-701-example.md').write_text(
+            '# E-701 — Example SQL reporting\n\n- level: verified\n', encoding='utf-8')
+        self.enterContext(mock.patch.object(hq.hq_settings, 'data_root', return_value=self.state))
+        self.login()
+        for role in ('Example Newer', 'Example Older', 'Example Pending'):
+            status, _, body = self.request('POST', '/api/add', {
+                'sheet': 'Fictional jobs', 'Company': 'Example Company', 'Role': role,
+                'version': self.data()['version'], 'requestId': str(uuid.uuid4()),
+            })
+            self.assertEqual(status, 200, body)
+        with closing(sqlite3.connect(self.app.tracker_db_path)) as db, db:
+            for role, posted in (('Example Engineer', '2026-01-05'), ('Example Newer', '2026-01-03'),
+                                 ('Example Older', '2026-01-02'), ('Example Pending', '2026-01-04')):
+                db.execute('UPDATE jobs SET posted_on=? WHERE role=?', (posted, role))
+            requirements = [
+                dict(text='Write SQL reports', state='supported', evidence=['E-701'], years_asked=5, years_have=6.5),
+                dict(text='Operate a reporting tool', state='adjacent', evidence=['E-701']),
+                dict(text='Configure a training sandbox', state='gap', evidence=[]),
+                dict(text='Verify the E-702 requirement', state='unknown', evidence=[]),
+            ]
+            db.execute("""INSERT INTO judgements(job_id, current, fit, score, why, requirements)
+                          SELECT id, 1, 'Only with a reason',
+                          CASE WHEN role='Example Engineer' THEN 3.7 ELSE 3.8 END, ?, ?
+                          FROM jobs WHERE role!='Example Pending'""",
+                       (json.dumps([
+                            dict(text='Reporting experience', quote='Write SQL reports.', evidence=['E-701']),
+                            dict(text='Reporting tools', quote='Operate a reporting tool.', evidence=['E-701']),
+                        ]), json.dumps(requirements)))
+        self.serve_tls()
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            for width in (1366, 375):
+                context = browser.new_context(viewport={'width': width, 'height': 900}, ignore_https_errors=True,
+                                              has_touch=width == 375)
+                page = context.new_page()
+                page.goto(self.app.origin + '/login')
+                page.locator('#password').fill(self.password)
+                page.get_by_role('button', name='Sign in').click()
+                page.locator('.seg [data-v="list"]').click()
+                roles = page.locator('.lcard .ro')
+                unstarred = ['Example Newer', 'Example Older', 'Example Engineer', 'Example Pending']
+                expect(roles).to_have_text(unstarred)
+                expect(page.locator('.lcard .fit-chip')).to_have_text(['3.8 · Only with a reason', '3.8 · Only with a reason',
+                                                                      '3.7 · Only with a reason', 'Not scored yet'])
+                page.locator('.seg [data-v="board"]').click()
+                card = page.locator('.bcard', has_text='Example Engineer')
+                expect(card.locator('.fit-chip')).to_have_text('3.7 · Only with a reason')
+                card.click()
+                drawer = page.locator('#drawer')
+                expect(drawer).to_be_in_viewport()
+                fit = drawer.locator('.judge-fit')
+                expect(fit.locator('.fit-chip')).to_have_text('3.7 · Only with a reason')
+                expect(fit.locator('.judge-why q')).to_have_text(['Write SQL reports.', 'Operate a reporting tool.'])
+                expect(fit.locator('.judge-why small')).to_have_text(['Example SQL reporting', 'Example SQL reporting'])
+                details = fit.locator('details')
+                expect(details.locator('li').first).to_be_hidden()
+                details.locator('summary').click()
+                expect(details.locator('li .chip')).to_have_text(['Supported', 'Close', 'Missing', 'Unclear'])
+                expect(details.locator('.judge-evidence')).to_have_text(['Example SQL reporting', 'Example SQL reporting'])
+                expect(details.get_by_text('Years: 6.5 of 5 asked', exact=True)).to_be_visible()
+                expect(drawer).not_to_contain_text(re.compile(r'\bE-\d+\b'))
+                star = fit.get_by_role('button', name='Star this job')
+                expect(star).to_have_attribute('aria-pressed', 'false')
+                star.click()
+                expect(star).to_have_attribute('aria-pressed', 'true')
+                expect(details.locator('.judge-evidence').first).to_be_visible()
+                drawer.get_by_role('button', name='Close details').click()
+                page.locator('.seg [data-v="list"]').click()
+                expect(roles).to_have_text(['Example Engineer', 'Example Newer', 'Example Older', 'Example Pending'])
+                page.locator('.seg [data-v="board"]').click()
+                card.click()
+                star.click()
+                expect(star).to_have_attribute('aria-pressed', 'false')
+                drawer.get_by_role('button', name='Close details').click()
+                page.locator('.seg [data-v="list"]').click()
+                expect(roles).to_have_text(unstarred)
+                page.reload()
+                expect(roles).to_have_text(unstarred)
+                expect(page.locator('.ring, .bcard-fit-badge, .gd-match-card')).to_have_count(0)
+                self.assertFalse(next(job['starred'] for job in self.app.data()['jobs'] if job['Role'] == 'Example Engineer'))
+                context.close()
+            browser.close()
+
+    def test_overview_charts_fit_and_dated_activity_browser(self):
         from playwright.sync_api import sync_playwright, expect
 
         store = self.app.tracker.store
@@ -1479,10 +1827,10 @@ class IntegrationSQLite(Integration):
         ws.title = 'Fictional jobs'
         ws.append(('Company', 'Role', 'My status', 'Verdict', 'Score'))
         ws.append(('Example Company', 'Example Engineer', 'Review', 'Long shot', 1.0))
-        ws.append(('Example Good', 'Example Analyst', 'Applied', 'Good fit', 2.0))
-        ws.append(('Example Stretch', 'Example Analyst', 'Apply', 'Stretch', 4.9))
-        ws.append(('Example Long Shot', 'Example Analyst', 'Tracked', 'Long shot', 5.0))
-        ws.append(('Example Undated', 'Example Analyst', 'Offer', '', 5.0))
+        ws.append(('Sample Company', 'Example Analyst', 'Applied', 'Good fit', 2.0))
+        ws.append(('Training Company', 'Example Analyst', 'Apply', 'Stretch', 4.9))
+        ws.append(('Demo Company', 'Example Analyst', 'Tracked', 'Long shot', 5.0))
+        ws.append(('Example Undated', 'Example Analyst', 'Offer', 'Strong', 5.0))
         wb.save(self.book)
         wb.close()
         self.assertTrue(store.migrate(self.book, apply=True)['ok'])
@@ -1491,7 +1839,12 @@ class IntegrationSQLite(Integration):
             job_id = db.execute("SELECT id FROM jobs WHERE company='Example Company'").fetchone()[0]
             db.execute("UPDATE jobs SET first_seen=NULL")
             db.execute("UPDATE jobs SET first_seen='2026-01-01' WHERE id=?", (job_id,))
-            db.execute("UPDATE jobs SET first_seen='2026-01-20' WHERE company='Example Good'")
+            db.execute("UPDATE jobs SET first_seen='2026-01-20' WHERE company='Sample Company'")
+            db.executemany('''INSERT INTO judgements(job_id, current, fit, score)
+                              SELECT id, 1, ?, ? FROM jobs WHERE company=?''', [
+                ('Apply now', 4.8, 'Example Company'), ('Worth applying', 4.2, 'Sample Company'),
+                ('Only with a reason', 3.8, 'Training Company'), ('Skip', 3.1, 'Demo Company'),
+            ])
             db.execute("""INSERT INTO moves(job_id, from_status, to_status, at, who)
                           VALUES (?, 'Tracked', 'Review', '2026-01-19T12:00:00+00:00', 'site')""", (job_id,))
             db.execute("UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='revision'")
@@ -1573,19 +1926,30 @@ class IntegrationSQLite(Integration):
                 expect(chart).to_be_visible()
                 expect(activity_dot).to_have_attribute('aria-current', 'true')
                 expect(chart.locator('path[data-metric]')).to_have_count(9)
-                self.assertEqual(page.locator('.rc-x-lbl').evaluate_all("xs => xs.map(x => x.dateTime)"),
-                                 ['2026-01-19', '2026-01-20'])
+                activity_slide = carousel.locator('#chart-activity')
+
+                def expect_dates(start):
+                    dates = activity_slide.locator('.rc-x-axis .rc-x-lbl')
+                    expect(dates).to_have_count(2)
+                    expect(dates.nth(0)).to_have_attribute('datetime', start)
+                    expect(dates.nth(1)).to_have_attribute('datetime', '2026-01-20')
+
+                expect_dates('2026-01-19')
                 page.get_by_role('button', name='4W', exact=True).click()
-                self.assertEqual(page.locator('.rc-x-lbl').evaluate_all("xs => xs.map(x => x.dateTime)"),
-                                 ['2026-01-01', '2026-01-20'])
+                expect_dates('2026-01-01')
                 expect(page.locator('.rc-legend-pill[data-metric="all"] b')).to_have_text('2')
+                actions = page.get_by_role('region', name='Score actions')
+                expect(actions.locator('.ov-donut-slice title')).to_have_text([
+                    'Apply now: 1 (20.0%)', 'Worth applying: 1 (20.0%)', 'Only with a reason: 1 (20.0%)',
+                    'Skip: 1 (20.0%)', 'Not scored yet: 1 (20.0%)',
+                ])
                 opportunities = page.locator('.ov-job-list')
                 expect(opportunities.locator('.t b')).to_have_text(
-                    ['Example Long Shot', 'Example Undated', 'Example Stretch', 'Example Good'])
-                opportunity_scores = opportunities.locator('.ring').evaluate_all('rings => rings.map(r => r.outerHTML)')
+                    ['Example Company', 'Sample Company', 'Training Company', 'Demo Company'])
+                expect(opportunities.locator('.fit-chip')).to_have_text(['4.8 · Apply now', '4.2 · Worth applying', '3.8 · Only with a reason', '3.1 · Skip'])
                 recent = page.locator('.ov-activity-feed')
                 expect(recent.locator('time')).to_have_text(['2026-01-20', '2026-01-19', '2026-01-01'])
-                expect(recent).to_contain_text('Added Example Good (Example Analyst)')
+                expect(recent).to_contain_text('Added Sample Company (Example Analyst)')
                 expect(recent).to_contain_text('Example Company moved to Review')
                 expect(recent).to_contain_text('Added Example Company (Example Engineer)')
                 expect(recent).not_to_contain_text('Example Undated')
@@ -1593,10 +1957,10 @@ class IntegrationSQLite(Integration):
                     drawer = page.locator('#drawer')
                     close = drawer.get_by_role('button', name='Close details')
                     for entry, company in (
-                        (opportunities.get_by_role('button', name='Example Long Shot', exact=False), 'Example Long Shot'),
-                        (page.locator('.ov-attention-list').get_by_role('button', name='Example Stretch', exact=False),
-                         'Example Stretch'),
-                        (recent.get_by_role('button', name='Added Example Good', exact=False), 'Example Good'),
+                        (opportunities.get_by_role('button', name='Demo Company', exact=False), 'Demo Company'),
+                        (page.locator('.ov-attention-list').get_by_role('button', name='Training Company', exact=False),
+                         'Training Company'),
+                        (recent.get_by_role('button', name='Added Sample Company', exact=False), 'Sample Company'),
                     ):
                         entry.tap()
                         expect(drawer).to_be_in_viewport()
@@ -1616,14 +1980,14 @@ class IntegrationSQLite(Integration):
                     expect(entry).to_be_focused()
                 page.click('.seg [data-v="list"]')
                 page.locator('.jobviews [data-jv="all"]').click()
-                page.locator('#sort').select_option('score')
+                page.locator('#sort').select_option('fit')
                 expect(page.locator('.lcard .co')).to_have_count(5)
-                list_scores = page.locator('.lcard .ring').evaluate_all('rings => rings.map(r => r.outerHTML)')
-                self.assertEqual(opportunity_scores, list_scores[:4])
+                expect(page.locator('.lcard .fit-chip')).to_have_text(['4.8 · Apply now', '4.2 · Worth applying', '3.8 · Only with a reason', '3.1 · Skip', 'Not scored yet'])
                 page.locator('.lcard', has_text='Example Undated').click()
-                match = page.locator('.gd-match-card:visible')
-                expect(match.get_by_role('heading', name='Is your resume a good match?')).to_be_visible()
-                expect(match.locator('.ring b')).to_have_text('5')
+                match = page.locator('.judge-fit:visible')
+                expect(match.locator('.fit-chip')).to_have_text('Not scored yet')
+                expect(match.locator('.judge-requirements')).to_have_count(0)
+                expect(page.locator('.ring, .bcard-fit-badge, .gd-match-card')).to_have_count(0)
                 context.close()
             browser.close()
 
@@ -2113,10 +2477,10 @@ class IntegrationSQLite(Integration):
                 expect(page.locator('.bcard')).to_have_count(2)
                 page.locator('.jobviews [data-jv="all"]').click()
                 expect(page.locator('.bcard')).to_have_count(8)
-                # The filter panel: Posted, Place, Posting, Fit score, Needs attention; no Status, Verdict, List or "Hide closed".
+                # Score action is the filter for the card 04b action labels.
                 page.evaluate('openFilters()')
                 panel = page.locator('#fdrawer')
-                for heading in ('Posted', 'Place', 'Posting'):
+                for heading in ('Posted', 'Place', 'Posting', 'Score action'):
                     expect(panel.get_by_role('heading', name=heading, exact=True)).to_be_visible()
                 for gone in ('Status', 'Verdict', 'List', 'Country / region'):
                     expect(panel.get_by_role('heading', name=gone, exact=True)).to_have_count(0)

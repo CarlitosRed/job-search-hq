@@ -65,10 +65,10 @@ details.sec ul{margin-top:8px}
 .mini .has .chip{font-size:10.5px;padding:0 7px}
 @media (max-width:900px){.tool-in{padding:14px 16px 50px}}
 @media (max-width:560px){.seg button{flex:1 0 auto;padding:7px 8px}.reqm li{grid-template-columns:auto minmax(0,1fr)}.reqm code{grid-column:2}}
-/* every width: a long verdict wraps inside its card; touch-only wording and the card's Move select */
+/* Touch-only wording and the card’s Move select. */
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .top{-webkit-backdrop-filter:blur(10px)}
-.card-foot .chip,.d-score .chip{white-space:normal;overflow-wrap:anywhere;max-width:100%}
+.card-foot .chip{white-space:normal;overflow-wrap:anywhere;max-width:100%}
 .card-foot .chips{min-width:0}
 .result{grid-template-columns:minmax(0,1fr)}
 .h-touch,.mv{display:none}
@@ -84,7 +84,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
  .chip{white-space:normal;overflow-wrap:anywhere;max-width:100%}
  .form2{grid-template-columns:repeat(2,minmax(0,1fr))}
  .contacts{grid-template-columns:repeat(auto-fill,minmax(min(310px,100%),1fr))}.pcard{grid-template-columns:minmax(0,1fr)}
- .btn,.btn.attn,.btn.quiet,.btn.icon,.inp,.sel-s,.seg button,.search input,#tact,#tx,.fchip,.linkbtn,.bar,label.opt,label.switch,#minScore{min-height:44px}
+ .btn,.btn.attn,.btn.quiet,.btn.icon,.inp,.sel-s,.seg button,.search input,#tx,.fchip,.linkbtn,.bar,label.opt,label.switch{min-height:44px}
  .btn.icon,#tx,.seg button{min-width:44px;justify-content:center}
  .linkbtn{display:inline-flex;align-items:center;text-align:left;max-width:100%;overflow-wrap:anywhere}
  .opt input{width:20px;height:20px}
@@ -94,7 +94,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
  button,a,summary,label,select,.card{touch-action:manipulation}
  .card,#sk .nd,#sk .lnk{cursor:pointer}
  .seg button[aria-selected=true]{background:var(--blue-soft);color:var(--blue-ink)}
- .card.dim{opacity:1;box-shadow:none;background:color-mix(in srgb,var(--card) 55%,var(--soft))}.card.dim .av,.card.dim .ring svg{opacity:.6}.stepper.closed li .b{opacity:.8}
+ .card.dim{opacity:1;box-shadow:none;background:color-mix(in srgb,var(--card) 55%,var(--soft))}.card.dim .av{opacity:.6}.stepper.closed li .b{opacity:.8}
  /* drawer: nothing may widen it; the safe areas stay clear; the end clears the toast */
  #drawer,#fdrawer,dialog,#help{overscroll-behavior:contain}
  html:has(.drawer.on),html:has(dialog[open]){overflow:hidden}
@@ -104,7 +104,6 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
  .detail{overflow-wrap:anywhere}
  .d-head h2 .pl{white-space:normal}.d-meta>span{max-width:100%;min-width:0}
  dl.facts{grid-template-columns:auto minmax(0,1fr)}
- .d-score{flex-wrap:wrap}.d-score .t{flex:1 1 130px}
  /* toast: a bar across the bottom, one or two lines, gone quickly */
  #toast{left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));width:auto;max-width:560px;max-height:40vh;margin:0 auto;transform:translateY(20px);padding:6px 6px 6px 14px;overflow:auto}
  #toast.on{transform:none}
@@ -121,12 +120,12 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 }
 /* phone header: rows of brand, search, chips, then the tabs last, so the tabs alone can stay stuck (fitTop in tools.js) */
 @media (max-width:900px){
- .top{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto auto;column-gap:8px;padding:8px max(16px,env(safe-area-inset-right,0px)) 6px max(16px,env(safe-area-inset-left,0px));top:calc(env(safe-area-inset-top,0px) - var(--hide,0px));background:var(--bg);-webkit-backdrop-filter:none;backdrop-filter:none}
+ .top{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;column-gap:8px;padding:8px max(16px,env(safe-area-inset-right,0px)) 6px max(16px,env(safe-area-inset-left,0px));top:calc(env(safe-area-inset-top,0px) - var(--hide,0px));background:var(--bg);-webkit-backdrop-filter:none;backdrop-filter:none}
  .top.flat{position:static}
  .top-in,.actions{display:contents!important}
  .brand{grid-area:1/1;margin:0}.brand h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.brand small{max-width:none}
- #undoBtn{grid-area:1/3}.actions [popovertarget=help]{grid-area:1/4}#refresh{grid-area:1/5}
- .search{grid-area:2/1/3/4;margin-top:8px}#fbtn{grid-area:2/4;margin-top:8px}#addbtn{grid-area:2/5;margin-top:8px}
+ .actions [popovertarget=help]{grid-area:1/3}#refresh{grid-area:1/4}
+ .search{grid-area:2/1/3/3;margin-top:8px}#fbtn{grid-area:2/3;margin-top:8px}#addbtn{grid-area:2/4;margin-top:8px}
  .search[hidden]~.actions #addbtn{grid-area:1/2;margin:0}
  .activebar{grid-area:3/1/4/-1;position:relative;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:0;margin-top:8px;max-width:none;width:100%}
  .activebar::-webkit-scrollbar,.seg::-webkit-scrollbar{display:none}
@@ -143,8 +142,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 /* short screens (landscape, big Safari text): nothing sticks, and the header packs into two rows when it can */
 @media (max-height:500px) and (max-width:900px),(max-height:500px) and (pointer:coarse){.top{position:static}}
 @media (max-height:500px) and (max-width:900px) and (min-width:561px){
- .top{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) auto auto auto auto auto}
- .search{grid-area:1/2;margin:0}#undoBtn{grid-area:1/3}#fbtn{grid-area:1/4;margin:0}#addbtn,.search[hidden]~.actions #addbtn{grid-area:1/5;margin:0}.actions [popovertarget=help]{grid-area:1/6}#refresh{grid-area:1/7}
+ .top{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) auto auto auto auto}
+ .search{grid-area:1/2;margin:0}#fbtn{grid-area:1/3;margin:0}#addbtn,.search[hidden]~.actions #addbtn{grid-area:1/4;margin:0}.actions [popovertarget=help]{grid-area:1/5}#refresh{grid-area:1/6}
  .actions .btn .l{display:none}
  .activebar{grid-area:2/1/3/-1}.seg{grid-area:3/1/4/-1}
 }

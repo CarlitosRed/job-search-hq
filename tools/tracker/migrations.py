@@ -70,11 +70,11 @@ JUDGE_TABLES = '''
         posting_row INTEGER, pass TEXT NOT NULL DEFAULT 'qualification', posting_hash TEXT,
         profile_id TEXT, profile_revision INTEGER, evidence_revision TEXT, model TEXT,
         prompt_version TEXT, schema_version TEXT, rule_version TEXT, cache_key TEXT,
-        requirements TEXT, fit TEXT, suggestion TEXT, why TEXT, notes TEXT, place_sentence TEXT,
+        requirements TEXT, fit TEXT, suggestion TEXT, why TEXT, notes TEXT, place_sentence TEXT, score REAL,
         complete INTEGER, created TEXT, day TEXT, run_id TEXT, error TEXT, current INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS judgements_by_job ON judgements (job_id, pass, current);
     CREATE TABLE IF NOT EXISTS choice_signals (id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL,
-        kind TEXT NOT NULL, value TEXT, at TEXT, origin TEXT, active INTEGER NOT NULL DEFAULT 1,
+        kind TEXT NOT NULL, value TEXT, at TEXT, origin TEXT, owner TEXT, active INTEGER NOT NULL DEFAULT 1,
         supersedes INTEGER, reason TEXT, idempotency_key TEXT UNIQUE);
 '''
 
@@ -91,8 +91,29 @@ def judge(db):
             db.execute(f'ALTER TABLE {table} ADD COLUMN starred INTEGER DEFAULT 0')
 
 
+def choice_owner(db):
+    if 'owner' not in columns(db, 'choice_signals'):
+        db.execute('ALTER TABLE choice_signals ADD COLUMN owner TEXT')
+
+
+def current_fit(db):
+    # Keep migration 7 numbered for old databases. Only a judge save writes the action copy.
+    pass
+
+
+def judgement_score(db):
+    if 'score' not in columns(db, 'judgements'):
+        db.execute('ALTER TABLE judgements ADD COLUMN score REAL')
+    if 'fit' in columns(db, 'jobs'):
+        db.execute('''UPDATE jobs SET fit=NULL WHERE fit IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM judgements WHERE job_id=jobs.id AND pass='qualification' AND current=1 AND score IS NOT NULL
+        )''')
+
+
 STEPS = [(1, 'baseline', baseline), (2, 'document job numbers', document_refs),
-         (3, 'posting links', postings), (4, 'posting checks', posting_checks), (5, 'judge', judge)]
+         (3, 'posting links', postings), (4, 'posting checks', posting_checks), (5, 'judge', judge),
+         (6, 'owner choices', choice_owner), (7, 'current fit', current_fit),
+         (8, 'judgement score', judgement_score)]
 
 
 def __getattr__(name):
@@ -121,6 +142,10 @@ def upgrade(db, db_file):
                          or any(columns(db, table) and 'starred' not in columns(db, table)
                                 for table in ('jobs', 'old_jobs'))):
         version = 4
+    if version >= 6 and 'owner' not in columns(db, 'choice_signals'):
+        version = 5
+    if version >= 8 and 'score' not in columns(db, 'judgements'):
+        version = 7
     pending = [step for step in STEPS if step[0] > version]
     if not pending:
         return

@@ -74,7 +74,7 @@ button,input,select,textarea{font:inherit;color:inherit;touch-action:manipulatio
 button{cursor:pointer}
 a{touch-action:manipulation}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
-.tile b,.ring b,.bar b,.col-h em,.facts dd,.count,time,[data-pct],.ov-metric-val,.ov-donut-center b,.tile-val .num,.tile-val .pct,.rc-x-lbl,.rc-tip-v,.rc-tip-total,.rc-tip-num,.opt .n,.stepper .sd,.tile-trend,.ov-legend-pct,.bcard-fit-badge,.bcard-round,.badge,.status-pill,td.numeric,.tabular,.fchip span{font-family:var(--font-body);font-variant-numeric:tabular-nums slashed-zero;font-feature-settings:"tnum" 1,"zero" 1,"cv01" 1}
+.tile b,.bar b,.col-h em,.facts dd,.count,time,[data-pct],.ov-metric-val,.ov-donut-center b,.tile-val .num,.tile-val .pct,.rc-x-lbl,.rc-tip-v,.rc-tip-total,.rc-tip-num,.opt .n,.stepper .sd,.tile-trend,.ov-legend-pct,.bcard-round,.badge,.status-pill,td.numeric,.tabular,.fchip span{font-family:var(--font-body);font-variant-numeric:tabular-nums slashed-zero;font-feature-settings:"tnum" 1,"zero" 1,"cv01" 1}
 .drawer,dialog{overscroll-behavior:contain}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 svg{display:block}
@@ -101,7 +101,6 @@ a{color:var(--blue-ink)}
  .actions .btn .l{display:none}
  .brand h1{overflow:hidden;text-overflow:ellipsis}
 }
-@media (min-width:1281px){.actions:has(#undoBtn:not([hidden])) .btn .l{display:none}}
 
 /* theme toggle button */
 #themeBtn{position:relative;width:36px;height:36px;min-width:36px;padding:0;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:0;color:var(--mute);border-radius:var(--r-sm,10px);cursor:pointer;transition:background .15s,color .15s}
@@ -152,7 +151,7 @@ a{color:var(--blue-ink)}
 .btn.quiet{background:transparent;color:var(--ink2);font-weight:500;padding:7px 10px}
 .btn.quiet:hover{background:var(--soft);filter:none}
 .btn.icon{padding:8px}
-.btn.attn{padding:5px 10px;font-size:12.5px}.btn.attn svg{width:14px;height:14px}.btn.ghost.attn{color:var(--amber-ink)}#undoBtn .count{background:var(--soft);color:var(--ink)}
+.btn.attn{padding:5px 10px;font-size:12.5px}.btn.attn svg{width:14px;height:14px}.btn.ghost.attn{color:var(--amber-ink)}
 .btn.ghost.attn .count{background:var(--amber-soft);color:var(--amber-ink)}
 .btn:disabled{opacity:.5;cursor:default;filter:none}
 .btn .count{background:var(--blue);color:var(--on-blue);border-radius:9px;font-size:11px;padding:0 6px;line-height:17px}
@@ -327,7 +326,7 @@ main{flex:1 0 auto;width:100%;max-width:100%;margin:0;padding:20px 32px 60px}
 .ov-job-list .t small{display:flex;align-items:center;gap:6px;margin-top:2px;font-size:11.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ov-stage-tag{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:6px;background:color-mix(in srgb,var(--soft) 70%,transparent);color:var(--ink2);flex-shrink:0}
 .ov-stage-tag .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
-.ov-job-list .ring{flex-shrink:0;margin-left:auto}
+.ov-job-list .fit-chip{flex-shrink:0;margin-left:auto}
 .ov-job-list .ov-item-arrow{color:var(--mute);font-size:14px;margin-left:6px;transition:transform .15s;flex-shrink:0}
 .ov-job-list li>button:hover .ov-item-arrow{transform:translateX(2px);color:var(--ink)}
 
@@ -461,7 +460,7 @@ html.no-anim #sk text,html.no-anim #sk [data-col] text,html.no-anim #sk [data-ro
 .bar b{font-variant-numeric:tabular-nums;font-size:13px;min-width:22px;text-align:right}
 .bar:hover .lab{color:var(--blue-ink)}
 
-/* avatars, flags, chips, rings */
+/* avatars, flags, chips */
 .av{--h:220;flex:none;width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-weight:700;font-size:13.5px;letter-spacing:.02em;background:hsl(var(--h) var(--av-s) var(--av-l));color:hsl(var(--h) 50% var(--av-fl))}
 .av.sm{width:32px;height:32px;border-radius:9px;font-size:12px}
 .av.lg{width:56px;height:56px;border-radius:16px;font-size:19px}
@@ -480,13 +479,6 @@ html.no-anim #sk text,html.no-anim #sk [data-col] text,html.no-anim #sk [data-ro
 .chip.r{background:var(--red-soft);color:var(--red-ink)}
 .chip svg{width:12px;height:12px}
 .dot{width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block;flex:none}
-.ring{position:relative;flex:none;display:grid;place-items:center}
-.ring svg{position:absolute;inset:0;width:100%;height:100%}
-.ring .trk{stroke:var(--soft);fill:none}
-.ring .val{fill:none;stroke-linecap:round}
-.ring.hi .val{stroke:var(--green)}.ring.mid .val{stroke:var(--blue)}.ring.lo .val{stroke:#9aa6bd}
-.ring b{position:relative;font-size:11px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
-.ring.none{color:var(--mute);font-size:12px;width:34px;height:34px;border-radius:50%;border:2px dashed var(--line)}
 
 /* board - Kanban pipeline */
 .board{display:flex;flex-direction:column;gap:18px;width:100%;min-width:0;padding-bottom:48px}
@@ -566,16 +558,6 @@ body.is-dragging .board .col.over{border-color:var(--blue)}
 
 /* rating & stage row */
 .bcard-fit-row{display:flex;align-items:center;justify-content:space-between;gap:6px;padding-top:1px}
-.bcard-fit{display:inline-flex;align-items:center;gap:5px}
-.bcard-fit-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:10px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;flex-shrink:0}
-.bcard-fit-badge.hi{border:1.5px solid #15803d;color:#15803d;background:#f0fdf4}
-:root:not([data-theme="light"]) .bcard-fit-badge.hi{border-color:#45c98a;color:#45c98a;background:rgba(69,201,138,.12)}
-.bcard-fit-badge.mid{border:1.5px solid #1d4ed8;color:#1d4ed8;background:#eff6ff}
-:root:not([data-theme="light"]) .bcard-fit-badge.mid{border-color:#5b84ff;color:#a9c1ff;background:rgba(91,132,255,.12)}
-.bcard-fit-badge.lo{border:1.5px solid #b45309;color:#b45309;background:#fffbeb}
-:root:not([data-theme="light"]) .bcard-fit-badge.lo{border-color:#f0b54a;color:#f7d58f;background:rgba(240,181,74,.12)}
-.bcard-fit-badge.none{border:1.5px dashed var(--line);color:var(--mute);background:transparent}
-.bcard-fit-text{font-size:10.5px;color:var(--mute)}
 .bcard-stage-name{font-size:10.5px;color:var(--mute)}
 
 /* footer row with contact and move button */
@@ -666,7 +648,7 @@ border-radius:24px;border:1px solid var(--line);background:var(--card);color:var
 .lcard .co{font-family:var(--font-body)!important;font-size:13px!important;font-weight:600!important;text-transform:uppercase!important;letter-spacing:.04em!important;color:var(--ink2)!important;line-height:1.3!important;display:flex;align-items:center;gap:6px}
 .lcard .co .pl{font-size:12px!important;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--mute)!important}
 .lcard .ro{font-family:var(--font-display)!important;font-size:16px!important;font-weight:700!important;letter-spacing:-.02em!important;line-height:1.35!important;color:var(--ink)!important;margin-top:3px!important}
-.lcard .card-top .ring{margin-left:auto;flex-shrink:0}
+.lcard .card-top .fit-chip{margin-left:auto;flex-shrink:0}
 .lcard .loc{font-size:13px;color:var(--mute);display:flex;align-items:center;gap:6px;margin:2px 0 0 0}
 .lcard .card-foot{display:flex;align-items:center;gap:12px;margin-top:6px;flex-wrap:wrap}
 .lcard .chips{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
@@ -688,40 +670,20 @@ border-radius:24px;border:1px solid var(--line);background:var(--card);color:var
 .gd-card{background:transparent!important;border:1px solid var(--subtle-border)!important;box-shadow:var(--float-shadow)!important;border-radius:16px!important;padding:22px 24px!important;transition:box-shadow .2s ease,border-color .2s ease}
 .gd-btn-insights{background:var(--green)!important;color:#fff!important;border:none!important;border-radius:8px!important;padding:8px 16px!important;font-size:13px!important;font-weight:700!important;display:inline-flex;align-items:center;gap:6px}
 .gd-btn-insights:hover{opacity:.9}
-.gd-match-card{background:#ebf9f2!important;border:1px solid #bbf0d4!important;border-radius:16px!important;box-shadow:0 4px 16px -2px rgba(16,185,129,0.08),0 2px 6px -1px rgba(0,0,0,0.04)!important;padding:22px 24px!important}
-.gd-match-card h4{font-size:16px;font-weight:700;color:#064e3b!important;margin:0 0 6px 0;display:flex;align-items:center;gap:8px;letter-spacing:-.01em}
-.gd-match-card p.gd-sub{font-size:13px;color:#047857!important;margin:0 0 16px 0;line-height:1.45;font-weight:500}
-.gd-match-body{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-top:1px solid rgba(6,78,59,0.14)!important;padding-top:14px}
-.gd-match-score{display:flex;align-items:center;gap:14px}
-.gd-match-score b{font-size:14px;color:#064e3b!important;font-weight:700}
-.gd-match-score p{font-size:12px;color:#065f46!important;margin:2px 0 0 0}
-.gd-match-card .ring b{color:#064e3b!important}
-.gd-match-card .ring .trk{stroke:rgba(6,78,59,0.15)!important}
-.gd-match-card .chip.g{color:#064e3b!important;font-weight:700!important}
-.gd-btn-insights{background:var(--green)!important;color:#fff!important;border:none!important;border-radius:8px!important;padding:8px 16px!important;font-size:13px!important;font-weight:700!important;display:inline-flex;align-items:center;gap:6px}
-.gd-btn-insights:hover{opacity:.9}
-@media (prefers-color-scheme:dark){
-:root:not([data-theme="light"]) .gd-match-card{background:#06281e!important;border-color:rgba(52,211,153,0.3)!important;box-shadow:0 4px 20px -2px rgba(0,0,0,0.4),0 0 0 1px rgba(52,211,153,0.15)!important}
-:root:not([data-theme="light"]) .gd-match-card h4{color:#6ee7b7!important}
-:root:not([data-theme="light"]) .gd-match-card p.gd-sub{color:#a7f3d0!important}
-:root:not([data-theme="light"]) .gd-match-body{border-top-color:rgba(52,211,153,0.2)!important}
-:root:not([data-theme="light"]) .gd-match-score b{color:#ecfdf5!important}
-:root:not([data-theme="light"]) .gd-match-score p{color:#a7f3d0!important}
-:root:not([data-theme="light"]) .gd-match-card .ring b{color:#6ee7b7!important}
-:root:not([data-theme="light"]) .gd-match-card .ring .trk{stroke:rgba(255,255,255,0.15)!important}
-:root:not([data-theme="light"]) .gd-match-card .chip.g{color:#6ee7b7!important}
-}
-[data-theme="dark"] .gd-match-card{background:#06281e!important;border-color:rgba(52,211,153,0.3)!important;box-shadow:0 4px 20px -2px rgba(0,0,0,0.4),0 0 0 1px rgba(52,211,153,0.15)!important}
-[data-theme="dark"] .gd-match-card h4{color:#6ee7b7!important}
-[data-theme="dark"] .gd-match-card p.gd-sub{color:#a7f3d0!important}
-[data-theme="dark"] .gd-match-body{border-top-color:rgba(52,211,153,0.2)!important}
-[data-theme="dark"] .gd-match-score b{color:#ecfdf5!important}
-[data-theme="dark"] .gd-match-score p{color:#a7f3d0!important}
-[data-theme="dark"] .gd-match-card .ring b{color:#6ee7b7!important}
-[data-theme="dark"] .gd-match-card .ring .trk{stroke:rgba(255,255,255,0.15)!important}
-[data-theme="dark"] .gd-match-card .chip.g{color:#6ee7b7!important}
+.fit-chip{flex:none;white-space:nowrap}
+.judge-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.judge-head .btn{min-height:44px}
+.judge-head .btn[aria-pressed="true"] svg{fill:currentColor;color:var(--amber-ink)}
+.judge-fit p{margin:10px 0 0;overflow-wrap:anywhere}
+.judge-why{overflow-wrap:anywhere;margin:8px 0 0;padding:0;list-style:none}
+.judge-why li+li{margin-top:4px}
+.judge-note,.judge-why small,.judge-requirements small{color:var(--mute)}
+.judge-requirements{margin-top:10px;overflow-wrap:anywhere}
+.judge-requirements summary{padding:8px 0;cursor:pointer;font-weight:650}
+.judge-requirements ul{list-style:none;padding:0;margin:6px 0 0;display:grid;gap:10px}
+.judge-requirements li{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:start;gap:8px}
+.judge-why small,.judge-requirements small{display:block;margin-top:3px}
 .gd-qual-card h4{font-size:16px;font-weight:700;color:var(--ink);margin:0 0 4px 0}
-.gd-qual-card p.gd-sub{font-size:13.5px;font-weight:300;color:var(--mute);margin:0 0 16px 0;line-height:1.5}
 .gd-qual-list{display:grid;gap:10px;margin:16px 0 20px 0}
 .gd-qual-item{display:flex;align-items:flex-start;gap:12px;padding:10px 14px;background:transparent!important;border:1px solid var(--subtle-border)!important;border-radius:10px}
 .gd-check{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:color-mix(in srgb,var(--green-soft) 80%,transparent);color:var(--green);flex:none}.gd-check svg{width:13px;height:13px;stroke:currentColor;stroke-width:3}
@@ -753,10 +715,6 @@ border-radius:24px;border:1px solid var(--line);background:var(--card);color:var
 .d-head .role{color:var(--ink);font-family:var(--font-display);font-size:26px;font-weight:700;letter-spacing:-.025em;line-height:1.25;margin:4px 0 0 0}
 .d-meta{display:flex;gap:12px;flex-wrap:wrap;color:var(--mute);font-size:12.5px;align-items:center}
 .d-meta>span{display:inline-flex;gap:6px;align-items:center}
-.d-score{display:flex;gap:14px;align-items:center;background:var(--soft);border-radius:14px;padding:12px 14px}
-.d-score .t{flex:1;min-width:0}
-.d-score b{font-size:13.5px}
-.d-score p{margin:2px 0 0;color:var(--mute);font-size:12.5px}
 .banner{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;font-size:13px;background:var(--red-soft);color:var(--red-ink)}
 .banner.a{background:var(--amber-soft);color:var(--amber-ink)}
 .banner.n{background:var(--soft);color:var(--ink2)}
@@ -801,9 +759,6 @@ dl.facts dd{margin:0;word-break:break-word;min-width:0}
 .opt input{width:16px;height:16px;margin:0;accent-color:var(--blue);flex:none}
 .opt .n{margin-left:auto;color:var(--mute);font-size:12px;font-variant-numeric:tabular-nums}
 .opt .lb{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.range{display:grid;gap:6px}
-.range input{width:100%;accent-color:var(--blue)}
-.range .rl{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink2)}
 .switch{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;padding:6px 8px;border-radius:9px;cursor:pointer}
 .switch:hover{background:var(--hover)}
 .switch input{appearance:none;width:34px;height:20px;border-radius:20px;background:var(--line);position:relative;margin:0;cursor:pointer;transition:background-color .15s ease;flex:none}
@@ -830,9 +785,7 @@ dl.facts dd{margin:0;word-break:break-word;min-width:0}
 #toast.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 #toast.err{background:var(--red);color:#fff}
 #toast button{border:0;background:color-mix(in srgb,var(--bg) 18%,transparent);color:inherit;font-weight:700;border-radius:9px;padding:5px 11px}
-#toast #tact{background:var(--blue);color:var(--on-blue);padding:6px 14px}
 #toast #tx{background:none;font-size:18px;line-height:1;padding:4px 6px;opacity:.7}
-#toast button:empty{display:none}
 dialog{border:0;border-radius:20px;padding:0;width:min(620px,calc(100% - 24px));background:var(--card);color:var(--ink);box-shadow:var(--shadow-lg)}
 dialog::backdrop{background:rgba(14,20,34,.4)}
 dialog form{padding:22px 24px;display:grid;gap:14px}
@@ -963,7 +916,6 @@ html{overflow-y:scroll;scrollbar-gutter:stable}
    <button class="btn icon ghost" id="refresh" title="Reload from the spreadsheet" aria-label="Reload from the spreadsheet"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
    <button class="btn icon ghost" id="themeBtn" title="Switch theme" aria-label="Switch theme"><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg></button>
    <button class="btn ghost" id="fbtn" aria-controls="fdrawer" title="Filters" aria-label="Filters"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg><span class="l">Filters</span><span class="count" id="fcount" hidden></span></button>
-   <button class="btn ghost" id="undoBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg><span class="l">Undo</span><span class="count" id="undoCount">0</span></button>
    <button class="btn" id="addbtn" data-act="add" title="Add a lead"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="l">Add lead</span></button>
   </div>
  </div>
@@ -982,8 +934,8 @@ html{overflow-y:scroll;scrollbar-gutter:stable}
  <dt><kbd>/</kbd></dt><dd>Search</dd><dt><kbd>n</kbd></dt><dd>Add a lead</dd><dt><kbd>1</kbd>–<kbd>4</kbd></dt><dd>Overview, List, Board, Contacts</dd>
  <dt><kbd>Shift</kbd>+<kbd>←</kbd>/<kbd>→</kbd></dt><dd>Board: move the focused card one column</dd><dt><kbd>j</kbd>/<kbd>k</kbd> or <kbd>↑</kbd>/<kbd>↓</kbd></dt><dd>List: next / previous job</dd>
  <dt><kbd>Enter</kbd></dt><dd>Open the focused card</dd><dt><kbd>Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>Save notes</dd><dt><kbd>Esc</kbd></dt><dd>Close panel</dd></dl>
- <p>Every change saves straight into the spreadsheet and can be undone from the message at the bottom. This page only records; it never applies or sends anything.</p></div>
-<div id="toast" role="status" aria-live="polite"><span id="tmsg"></span><button id="tact" type="button"></button><button id="tx" type="button" aria-label="Dismiss">×</button></div>
+ <p>Every change saves straight into the spreadsheet. This page only records; it never applies or sends anything.</p></div>
+<div id="toast" role="status" aria-live="polite"><span id="tmsg"></span><button id="tx" type="button" aria-label="Dismiss">×</button></div>
 <dialog id="addDlg" aria-labelledby="addTitle"><form method="dialog" id="addForm" novalidate>
  <h2 id="addTitle">Add a lead</h2><p class="sub">Adds a new row to the spreadsheet. It's recorded only; applying stays yours.</p>
  <div class="form2">
@@ -993,8 +945,6 @@ html{overflow-y:scroll;scrollbar-gutter:stable}
   <label class="f"><span>Role <span class="req">*</span></span><input class="inp" name="Role" required maxlength="200"></label>
   <label class="f">Where<input class="inp" name="Where" placeholder="{{TRACKER_LOCATION_PLACEHOLDER}}" maxlength="120"></label>
   <label class="f">Posted<input class="inp" name="Posted" type="date"></label>
-  <label class="f">Fit score (0–5)<input class="inp" name="Score" inputmode="decimal" placeholder="e.g. 3.6" maxlength="20"></label>
-  <label class="f">Verdict<select class="inp" name="Verdict"><option value="">Not scored yet</option><option>APPLY</option><option>CONSIDER</option><option>LOW</option><option>SKIP</option></select></label>
   <label class="f full">Link to posting<input class="inp" name="Link" type="url" placeholder="https://" maxlength="500"></label>
   <label class="f" id="srcWrap">Source<input class="inp" name="Source" placeholder="LinkedIn, Greenhouse, referral…" maxlength="80"></label>
   <label class="f">Date applied<input class="inp" name="Date applied" type="date"></label>
@@ -1046,7 +996,6 @@ const closedStage=s=>["skipped","rejected"].includes(s.id);
 function allowedMove(j,s){return !!s&&s.id!=="other"&&(s.id!=="rejected"||stageOf(j).id==="rejected"||STAGE_DATA.rejected_from.includes(j["My status"]))}
 function boardMove(j,s){return allowedMove(j,s)&&!(s.id==="skipped"&&["applied","interview","offer","rejected"].includes(stageOf(j).id))}
 const REG={CR:[HQ_SETTINGS.home_country_label||"Home country",HQ_SETTINGS.home_country_icon||"globe"],LATAM:["LatAm / Americas","globe"],ES:["Spain","es"],DE:["Germany","de"],IT:["Italy","it"],EU:["EU-wide remote","eu"],OTHER:["Other","globe"]};
-const VERD={APPLY:["Apply","g"],CONSIDER:["Consider","b"],LOW:["Low","a"],SKIP:["Skip",""],NONE:["Not scored",""]};
 function region(w){w=w||"";
  if(/spain|madrid|barcelona|m[aá]laga|valencia|sevill/i.test(w))return"ES";
  if(/germany|berlin|munich|m[uü]nchen|hamburg|frankfurt/i.test(w))return"DE";
@@ -1056,10 +1005,6 @@ function region(w){w=w||"";
  if(/latam|latin america|namer|americas/i.test(w))return"LATAM";
  return"OTHER"}
 function flag(code){const f=(REG[code]||REG.OTHER)[1];return f==="globe"?IC.globe:`<i class="flag ${f}" aria-hidden="true"></i>`}
-function score(s){s=String(s||"");const m=/(\d+(?:\.\d+)?)/.exec(s);if(!m)return null;
- const c=/cap\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*cap/i.exec(s);return{raw:s,txt:m[1],val:parseFloat(m[1]),cap:c?parseFloat(c[1]||c[2]):null}}
-function verdict(v){v=String(v||"").trim();const k=(v.split(/[\s(]/)[0]||"").toUpperCase();const key=VERD[k]?k:(v?"NONE":"NONE");
- const sub=v.slice(k.length).trim().replace(/^\(|\)$/g,"").trim();return{key:v?(VERD[k]?k:"NONE"):"NONE",label:VERD[key][0],cls:VERD[key][1],sub,raw:v}}
 function daysBetween(a,b){const d=(new Date(b)-new Date(a))/864e5;return isNaN(d)?null:Math.round(d)}
 // # Card 03: closing and re-check.
 function openState(j){if(j.posting&&j.posting.state!=="unknown")return["open","closed"].includes(j.posting.state)?j.posting.state:"unknown";const c=j._check||"";if(/^CLOSED|expired|no longer/i.test(c))return"closed";if(/^OPEN/i.test(c))return"open";return"unknown"}
@@ -1068,11 +1013,36 @@ function initials(n){n=String(n||"?").replace(/\(.*?\)/g,"").replace(/[^\p{L}\p{
  if(w.length>=2)return(w[0][0]+w[1][0]).toUpperCase();const caps=(w[0]||"?").match(/\p{Lu}/gu)||[];return(caps.length>=2?caps[0]+caps[1]:(w[0]||"?").slice(0,2)).toUpperCase()}
 function hue(n){let h=0;for(const c of String(n||""))h=(h*31+c.codePointAt(0))>>>0;return h%360}
 const av=(n,cls="")=>`<span class="av ${cls}" style="--h:${hue(n)}" aria-hidden="true">${esc(initials(n))}</span>`;
-function ring(sc,size=38){if(!sc)return`<span class="ring none" title="Not scored" aria-label="Not scored">–</span>`;
- const r=size/2-3,C=2*Math.PI*r,f=Math.max(0,Math.min(1,sc.val/5)),cls=sc.val>=3.75?"hi":sc.val>=3.25?"mid":"lo",c=size/2;
- return`<span class="ring ${cls}" style="width:${size}px;height:${size}px" title="Fit score ${esc(sc.raw)} of 5" role="img" aria-label="Fit score ${esc(sc.raw)} of 5"><svg viewBox="0 0 ${size} ${size}"><circle class="trk" cx="${c}" cy="${c}" r="${r}" stroke-width="3.5"/><circle class="val" cx="${c}" cy="${c}" r="${r}" stroke-width="3.5" stroke-dasharray="${(f*C).toFixed(2)} ${C.toFixed(2)}" transform="rotate(-90 ${c} ${c})"/></svg><b style="font-size:${size>50?15:sc.txt.length>3?10:11}px">${esc(sc.txt)}</b></span>`}
-const vchip=v=>v.key==="NONE"&&!v.raw?"":`<span class="chip ${v.cls}" title="${esc(v.raw)}">${esc(v.key==="NONE"?v.raw:v.label)}</span>`;
-function fitText(sc,v){if(v.key==="APPLY")return"Top pick";if(!sc)return"Not scored yet";return sc.val>=3.75?"Strong fit":sc.val>=3.25?"Good fit":sc.val>=2.75?"Partial fit":"Weak fit"}
+const UNSCORED="Not scored yet";
+const SCORE_ACTIONS={
+ "Apply now":["g","var(--tc-offer)"],
+ "Worth applying":["","var(--tc-applied)"],
+ "Only with a reason":["a","var(--tc-ready)"],
+ "Skip":["r","var(--tc-rejected)"],
+ [UNSCORED]:["","var(--tc-skipped)"]
+};
+const fitAction=j=>Number.isFinite(j.judgement?.score)&&Object.hasOwn(SCORE_ACTIONS,j.judgement.action)?j.judgement.action:UNSCORED;
+const fitScore=j=>fitAction(j)===UNSCORED?0:j.judgement.score;
+const fitChip=j=>{
+ const action=fitAction(j);
+ const label=action===UNSCORED?action:fitScore(j).toFixed(1)+" · "+action;
+ return '<span class="chip fit-chip '+SCORE_ACTIONS[action][0]+'">'+label+'</span>';
+};
+const REQUIREMENT_STATE={supported:["Supported","g"],adjacent:["Close","a"],gap:["Missing","r"],unknown:["Unclear",""]};
+function fitDetail(j){
+ const judgement=j.judgement;
+ const notes=new Set(judgement?.notes||[]);
+ if(String(j.Verdict||"").trim().toLowerCase()==="verify")notes.add("Check: source unclear");
+ return `<section class="gd-card judge-fit" aria-label="Score">
+  <div class="judge-head">${fitChip(j)}<button class="btn ghost" type="button" data-act="star" aria-label="Star this job" aria-pressed="${!!j.starred}" ${D.canStar&&!STAR_PENDING.has(key(j))?"":"disabled"}>${IC.star}Star</button></div>
+  ${judgement?.reasons.length?`<ul class="judge-why">${judgement.reasons.map(reason=>`<li>${esc(reason.text)} <q>${esc(reason.quote)}</q>${reason.evidenceTitles.length?`<small>${esc(reason.evidenceTitles.join(" · "))}</small>`:""}</li>`).join("")}</ul>`:""}
+  ${[...notes].map(note=>`<p class="judge-note">${esc(note)}</p>`).join("")}
+  ${judgement?.requirements.length?`<details class="judge-requirements"><summary>Main requirements (${judgement.requirements.length})</summary>
+   <ul>${judgement.requirements.map(item=>{const [label,tone]=REQUIREMENT_STATE[item.state];
+    return `<li><span class="chip ${tone}">${label}</span><span>${esc(item.text)}${item.years?`<small>${esc(item.years)}</small>`:""}${item.note?`<small>${esc(item.note)}</small>`:""}${item.evidenceTitles.length?`<small class="judge-evidence">${esc(item.evidenceTitles.join(" · "))}</small>`:""}</span></li>`;
+   }).join("")}</ul></details>`:""}
+ </section>`;
+}
 
 const POSTED=[[3,"Last 3 days"],[7,"1 week"],[14,"2 weeks"],[21,"3 weeks"],[28,"4 weeks"],[null,"All"]];
 function postedAge(j){if(j._age==null)return"";const age=j._age;
@@ -1090,14 +1060,16 @@ try{
 }catch{}
 const JOB_VIEWS={todo:"To do",progress:"In progress",skipped:"Skipped",closed:"Closed",all:"All"};
 const POSTING={open:"Open",closed:"Closed",unknown:"Not checked"};
-const S=Object.assign({view:"overview",jobView:"todo",sheets:[],regions:[],verdicts:[],stages:[],posting:[],posted:null,minScore:0,sort:"score",group:"none",sel:null},store.get("state",{}));
+const S=Object.assign({view:"overview",jobView:"todo",sheets:[],regions:[],bands:[],stages:[],posting:[],posted:null,sort:"fit",group:"none",sel:null},store.get("state",{}));
 S.q="";S.view="list";S.attention=false;
 delete S.openOnly;delete S.hideClosed;
-S.sheets=[];S.verdicts=[];S.stages=[];
+S.sheets=[];S.stages=[];
 if(!Object.hasOwn(JOB_VIEWS,S.jobView))S.jobView="todo";
 S.posting=Array.isArray(S.posting)?S.posting.filter(p=>Object.hasOwn(POSTING,p)):[];
 if(!POSTED.some(([days])=>days===S.posted))S.posted=null;
-const save=()=>store.set("state",{jobView:S.jobView,regions:S.regions,posting:S.posting,posted:S.posted,minScore:S.minScore,sort:S.sort,group:S.group,sel:S.sel});
+S.bands=Array.isArray(S.bands)?S.bands.filter(b=>Object.hasOwn(SCORE_ACTIONS,b)):[];
+if(S.sort==="score")S.sort="fit";
+const save=()=>store.set("state",{jobView:S.jobView,regions:S.regions,posting:S.posting,posted:S.posted,bands:S.bands,sort:S.sort,group:S.group,sel:S.sel});
 const key=j=>j._sheet+"|"+j._row;
 const byKey=k=>D.jobs.find(j=>key(j)===k);
 const sheetShort=s=>s.replace(/\s*\((\d{4}-\d{2}-\d{2})\)$/,"").replace(/\s*\(evening\)$/," (evening)");
@@ -1111,7 +1083,7 @@ const coKey=n=>String(n||"").replace(/\(.*?\)/g,"").trim().toLowerCase();
 const jname=j=>`${j.Company} (${place(j)})`;
 function place(j){return j._reg==="OTHER"||j._reg==="LATAM"?(j.Where||"Location not listed"):REG[j._reg][0]}
 function linkSiblings(){const m=new Map();D.jobs.forEach(j=>{const k=coKey(j.Company);if(!m.has(k))m.set(k,[]);m.get(k).push(j)});D.jobs.forEach(j=>j._sib=m.get(coKey(j.Company)).filter(x=>x!==j))}
-function enrich(j){j._reg=region(j.Where);j._sc=score(j.Score);j._v=verdict(j.Verdict);j._open=openState(j);
+function enrich(j){j._reg=region(j.Where);j._open=openState(j);
  j._checkAge=j._checkdate?daysBetween(j._checkdate,D.today):null;j._remote=/remote|flexible/i.test(j.Where||"")}
 
 /* ---------- filtering ---------- */
@@ -1128,22 +1100,22 @@ function matches(j,skip){const q=S.q.trim().toLowerCase();
  if(q&&!(`${j.Company} ${j.Role} ${j.Where} ${j.Notes} ${j._sheet}`).toLowerCase().includes(q))return false;
  if(skip!=="sheets"&&S.sheets.length&&!S.sheets.includes(j._sheet))return false;
  if(skip!=="regions"&&S.regions.length&&!S.regions.includes(j._reg))return false;
- if(skip!=="verdicts"&&S.verdicts.length&&!S.verdicts.includes(j._v.key))return false;
  if(skip!=="stages"&&S.stages.length&&!S.stages.includes(stageOf(j).id))return false;
  if(skip!=="posted"&&S.posted!==null&&(j._age==null||j._age>S.posted))return false;
- if(S.minScore>0&&!(j._sc&&j._sc.val>=S.minScore))return false;
+ if(skip!=="bands"&&S.bands.length&&!S.bands.includes(fitAction(j)))return false;
  if(skip!=="posting"&&S.posting.length&&!S.posting.includes(j._open))return false;
  if(skip!=="attention"&&S.attention&&!attention(j))return false;
  return true}
 const filtered=()=>D.jobs.filter(j=>matches(j));
-const bestFitFirst=(a,b)=>(b._sc?.val??-1)-(a._sc?.val??-1)||a.Company.localeCompare(b.Company);
+const fitDate=j=>j._posted_on||j._first_seen||"";
+const bestFitFirst=(a,b)=>Number(!!b.starred)-Number(!!a.starred)||fitScore(b)-fitScore(a)||fitDate(b).localeCompare(fitDate(a))||a.Company.localeCompare(b.Company)||a.Role.localeCompare(b.Role);
 function sorter(){return{
- score:bestFitFirst,
- company:(a,b)=>a.Company.localeCompare(b.Company)||(b._sc?.val??-1)-(a._sc?.val??-1),
- posted:(a,b)=>String(b.Posted).localeCompare(String(a.Posted))||(b._sc?.val??-1)-(a._sc?.val??-1),
- applied:(a,b)=>String(b["Date applied"]).localeCompare(String(a["Date applied"]))||stageIdx(b)-stageIdx(a)||(b._sc?.val??-1)-(a._sc?.val??-1)}[S.sort]||((a,b)=>0)}
-const activeCount=()=>S.sheets.length+S.regions.length+S.verdicts.length+S.stages.length+S.posting.length+(S.posted!==null)+(S.minScore>0)+S.attention;
-function clearFilters(){Object.assign(S,{sheets:[],regions:[],verdicts:[],stages:[],posting:[],posted:null,minScore:0,attention:false});S.q="";$("#q").value="";render()}
+ fit:bestFitFirst,
+ company:(a,b)=>a.Company.localeCompare(b.Company)||fitScore(b)-fitScore(a),
+ posted:(a,b)=>String(b.Posted).localeCompare(String(a.Posted))||fitScore(b)-fitScore(a),
+ applied:(a,b)=>String(b["Date applied"]).localeCompare(String(a["Date applied"]))||stageIdx(b)-stageIdx(a)||fitScore(b)-fitScore(a)}[S.sort]||((a,b)=>0)}
+const activeCount=()=>S.sheets.length+S.regions.length+S.bands.length+S.stages.length+S.posting.length+(S.posted!==null)+S.attention;
+function clearFilters(){Object.assign(S,{sheets:[],regions:[],bands:[],stages:[],posting:[],posted:null,attention:false});S.q="";$("#q").value="";render()}
 
 /* ---------- theme (kept outside the data section: the PC build replaces that section) ---------- */
 function toggleTheme(){
@@ -1166,11 +1138,11 @@ function boot(){try{localStorage.removeItem("jshq.cache")}catch{}load()}
 async function load(quiet){try{const r=await fetch("/api/data",{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);
   D=d;D.jobs.forEach(enrich);linkSiblings();if(S.sel&&!byKey(S.sel))S.sel=null;fillAdd();render();syncLabel();
   if(quiet)toast("Spreadsheet changed outside this page. Refreshed.")}
- catch(e){if(D.jobs.length){toast("Can't reach the tracker server. Changes won't save until it's back.",null,true);$("#sync").textContent="Offline";return}$("#main").innerHTML=emptyBox("Can't reach the tracker","Start it with open-tracker.bat, then refresh this page. ("+esc(e.message)+")","");$("#sync").textContent="Offline"}}
+ catch(e){if(D.jobs.length){toast("Can't reach the tracker server. Changes won't save until it's back.",true);$("#sync").textContent="Offline";return}$("#main").innerHTML=emptyBox("Can't reach the tracker","Start it with open-tracker.bat, then refresh this page. ("+esc(e.message)+")","");$("#sync").textContent="Offline"}}
 function syncLabel(){const t=new Date();$("#sync").textContent=`${D.jobs.length} jobs · ${D.file} · synced ${t.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}`}
 async function post(url,p){try{const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(p)});const d=await r.json().catch(()=>({}));
-  if(!r.ok){toast(d.error||"Save failed",null,true);return null}if(d.version)D.version=d.version;return d}
- catch(e){toast("Couldn't reach the tracker server. Nothing was saved.",null,true);return null}}
+  if(!r.ok){toast(d.error||"Save failed",true);return null}if(d.version)D.version=d.version;return d}
+ catch(e){toast("Couldn't reach the tracker server. Nothing was saved.",true);return null}}
 setInterval(async()=>{if(document.hidden||busy||$("#addDlg").open||$$("textarea[data-dirty='1']").length)return;
  try{const r=await fetch("/api/version",{cache:"no-store"});const v=(await r.json()).version;if(v&&D.version&&v!==D.version)load(true)}catch{}},15000);
 
@@ -1201,45 +1173,48 @@ async function setStatus(j,s,{date}={}){if(!j)return;const k=key(j);if(PENDING.h
  const ok=await post("/api/update",p);PENDING.delete(k);busy=PENDING.size>0;const cur=byKey(k)||j;
  if(!ok){cur["My status"]=prev.status;cur["Date applied"]=prev.date;render();return}
  const msg=date!==undefined&&s===prev.status?`${jname(j)}: applied date ${d||"cleared"}`:`${jname(j)}: ${sl(prev.status)} → ${sl(s)}${d&&d!==prev.date?` · applied ${d}`:d===""&&prev.date?" · applied date cleared":""}`;
- pushUndo({k,company:j.Company,role:j.Role,status:prev.status,date:prev.date,msg});toast(msg,undoLast)}
-/* Undo stack: last 10 status/date changes. The toast's Undo and the header Undo both pop the newest one. */
-const UNDO=[];
-function pushUndo(e){UNDO.push(e);if(UNDO.length>10)UNDO.shift();undoUI()}
-function undoUI(){const b=$("#undoBtn"),top=UNDO[UNDO.length-1];b.hidden=!top;$("#undoCount").textContent=UNDO.length;
- b.title=top?"Undo: "+top.msg:"";b.setAttribute("aria-label",top?`Undo last change (${UNDO.length} available): ${top.msg}`:"Undo")}
-let undoing=false;
-async function undoLast(){if(undoing)return;const e=UNDO.pop();undoUI();if(!e)return;const j=byKey(e.k);
- if(!j||j.Company!==e.company||j.Role!==e.role){toast("Can't undo: that row moved in the spreadsheet. Reload and check it.",null,true);return}
- undoing=true;PENDING.add(e.k);busy=true;const was={status:j["My status"],date:j["Date applied"]||""};j["My status"]=e.status;j["Date applied"]=e.date;render();
- const ok=await post("/api/update",{sheet:j._sheet,row:j._row,status:e.status,date:e.date,expect:{Company:j.Company,Role:j.Role}});
- PENDING.delete(e.k);busy=PENDING.size>0;undoing=false;const cur=byKey(e.k)||j;
- if(ok){cur["My status"]=e.status;cur["Date applied"]=e.date;render();toast(`Undone: ${jname(cur)} is back to ${sl(e.status)}${e.date?` (applied ${e.date})`:", no applied date"}`)}
- else{cur["My status"]=was.status;cur["Date applied"]=was.date;UNDO.push(e);undoUI();render()}}
+ toast(msg);
+}
+const STAR_PENDING=new Set();
+async function setStar(j,starred,button){
+ const k=key(j);
+ if(STAR_PENDING.has(k))return;
+ STAR_PENDING.add(k);
+ button.disabled=true;
+ const saved=await post("/api/star",{id:k,sheet:j._sheet,starred});
+ STAR_PENDING.delete(k);
+ button.disabled=false;
+ if(!saved){render();return}
+ const current=byKey(k);
+ if(current)current.starred=saved.starred;
+ render();
+ $(`[data-k="${CSS.escape(k)}"] [data-act="star"]`)?.focus({preventScroll:true});
+ toast(starred?"Job starred":"Star removed");
+}
 async function saveNote(j,txt){busy=true;const ok=await post("/api/update",{sheet:j._sheet,row:j._row,note:txt,expect:{Company:j.Company,Role:j.Role}});busy=false;
  if(ok){j.Notes=txt;j._noteSaved=true;toast("Notes saved");return true}return false}
 function dropStatus(j,stage){return stage.drop}
 
 /* ---------- toast ---------- */
 let tT,tMs=0;const tHide=()=>{clearTimeout(tT);tT=setTimeout(()=>$("#toast").classList.remove("on"),tMs)};
-function toast(m,undo,err){const t=$("#toast");$("#tmsg").textContent=m;const b=$("#tact");b.textContent=undo?"Undo":"";b.onclick=undo?()=>{t.classList.remove("on");undo()}:null;
+function toast(m,err){const t=$("#toast");$("#tmsg").textContent=m;
  $("#tx").onclick=()=>{clearTimeout(tT);t.classList.remove("on")};
- t.classList.toggle("err",!!err);t.classList.add("on");tMs=undo?10000:err?7000:3200;if(!t.matches(":hover,:focus-within"))tHide();else clearTimeout(tT)}
+ t.classList.toggle("err",!!err);t.classList.add("on");tMs=err?7000:3200;if(!t.matches(":hover,:focus-within"))tHide();else clearTimeout(tT)}
 $("#toast").addEventListener("mouseenter",()=>clearTimeout(tT));$("#toast").addEventListener("mouseleave",tHide);
 $("#toast").addEventListener("focusin",()=>clearTimeout(tT));$("#toast").addEventListener("focusout",tHide);
 
 /* ---------- pieces ---------- */
 function emptyBox(title,text,action){return`<div class="empty"><svg viewBox="0 0 120 90" fill="none"><rect x="14" y="18" width="92" height="62" rx="12" fill="var(--soft)"/><rect x="26" y="32" width="40" height="7" rx="3.5" fill="var(--line)"/><rect x="26" y="46" width="64" height="6" rx="3" fill="var(--line)"/><rect x="26" y="58" width="52" height="6" rx="3" fill="var(--line)"/><circle cx="92" cy="22" r="14" fill="var(--blue-soft)"/><path d="m86.5 22 4 4 7-8" stroke="var(--blue)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><h3>${title}</h3><p>${text}</p>${action||""}</div>`}
-function noMatch(){return emptyBox("No jobs match these filters","Try widening the score range or clearing a filter.",`<button class="btn ghost" data-act="clear">Clear filters</button>`)}
+function noMatch(){return emptyBox("No jobs match these filters","Try clearing a filter.",`<button class="btn ghost" data-act="clear">Clear filters</button>`)}
 function warnFor(j,compact){const st=stageOf(j).id;if(["skipped","rejected"].includes(st))return"";
  if(j._open==="closed")return`<div class="warn">${IC.warn}Posting looks closed</div>`;
  return""}
 function locLine(j){return`<div class="loc">${flag(j._reg)}<span>${esc(j.Where||"Location not listed")}</span></div>`}
-const jobScore=(j,opts)=>ring(j._sc,opts.list?40:36);
 function jobCard(j,opts={}){const st=stageOf(j);const dim=closedStage(st)||j._open==="closed";
  return`<article class="card ${opts.list?"lcard":""} ${dim?"dim":""} ${S.sel===key(j)&&opts.list?"sel":""}" tabindex="0" ${opts.drag?'draggable="true"':""} data-k="${esc(key(j))}" data-drawer-trigger="list:${esc(key(j))}" aria-label="${esc(jname(j))}, ${esc(j.Role)}, ${esc(sl(j["My status"]))}">
- <div class="card-top">${av(j.Company,"sm")}<div class="t"><div class="co">${esc(j.Company)} <span class="pl">· ${flag(j._reg)}${esc(place(j))}</span></div><div class="ro">${esc(j.Role)}</div></div>${jobScore(j,opts)}</div>
+ <div class="card-top">${av(j.Company,"sm")}<div class="t"><div class="co">${esc(j.Company)} <span class="pl">· ${flag(j._reg)}${esc(place(j))}</span></div><div class="ro">${esc(j.Role)}</div></div>${fitChip(j)}</div>
  ${postedAge(j)}
- <div class="card-foot"><div class="chips">${vchip(j._v)}${j.posting?.state==="closed"?`<span class="chip">Closed</span>`:""}${opts.list?`<span class="chip st"><i class="dot" style="color:${st.c}"></i>${esc(sl(j["My status"]))}</span>`:""}${j._sib.length?`<span class="chip" title="Also: ${esc(j._sib.map(x=>place(x)+" ("+sheetShort(x._sheet)+")").join("; "))}">Also in ${j._sib.length} place${j._sib.length>1?"s":""}</span>`:""}</div></div>
+ <div class="card-foot"><div class="chips">${j.posting?.state==="closed"?`<span class="chip">Closed</span>`:""}${opts.list?`<span class="chip st"><i class="dot" style="color:${st.c}"></i>${esc(sl(j["My status"]))}</span>`:""}${j._sib.length?`<span class="chip" title="Also: ${esc(j._sib.map(x=>place(x)+" ("+sheetShort(x._sheet)+")").join("; "))}">Also in ${j._sib.length} place${j._sib.length>1?"s":""}</span>`:""}</div></div>
  ${warnFor(j,true)||(S.attention&&attention(j)?`<div class="warn a">${IC.info}${esc(attention(j))}</div>`:"")}${opts.drag?`<span class="drag-handle" title="Arrastrar para mover" aria-label="Arrastrar para mover ${esc(j.Company)}">${IC.grip}</span>`:""}</article>`}
 
 /* ---------- sankey ---------- */
@@ -1433,8 +1408,7 @@ function sankey(js,C,phone=innerWidth<960){
 }
 /* ---------- views ---------- */
 function attnBtn(){const n=D.jobs.filter(j=>matches(j,"attention")&&attention(j)).length;return`<button class="btn ${S.attention?"":"ghost"} attn" data-act="attn" aria-pressed="${S.attention}">${IC.warn}Needs attention <span class="count">${n}</span></button>`}
-function donutChart(C){
- const total = C.total || 0;
+function applicationChart(C){
  const stages = STAGES.filter(s => s.id !== "other").map(s => ({
   id: s.id,
   label: s.label,
@@ -1442,6 +1416,20 @@ function donutChart(C){
   val: C[s.id] || 0
  }));
  if(C.other) stages.push({ id: "other", label: "Other", col: "var(--tc-skipped)", val: C.other || 0 });
+ return donutChart(C,stages,"Application progress breakdown");
+}
+
+function scoreChart(jobs){
+ const counts=Object.fromEntries(Object.keys(SCORE_ACTIONS).map(action=>[action,0]));
+ for(const job of jobs)counts[fitAction(job)]++;
+ const entries=Object.entries(SCORE_ACTIONS).map(([label,[,col]])=>({id:label,label,col,val:counts[label]}));
+ const percentages=pcts(entries.map(item=>item.val));
+ const pct=Object.fromEntries(entries.map((s,i)=>[s.id,percentages[i]]));
+ return donutChart({total:jobs.length,pct},entries,"Score actions breakdown",true);
+}
+
+function donutChart(C, stages, label, showCounts=false){
+ const total = C.total || 0;
  const activeStages = stages.filter(s => s.val > 0);
  const R = 64, circ = 2 * Math.PI * R;
  let outSlices = "";
@@ -1458,24 +1446,24 @@ function donutChart(C){
    offset += len;
   });
  }
- const legendRows = activeStages.map(s => `
+ const legendRows = (showCounts ? stages : activeStages).map(s => `
   <div class="ov-legend-row" data-stage="${s.id}" data-tip="${s.val} job${s.val===1?'':'s'} in ${s.label}">
    <div class="ov-legend-left">
     <span class="ov-legend-dot" style="background:${s.col}"></span>
     <span class="ov-legend-name">${s.label}</span>
    </div>
-   <span class="ov-legend-pct">${f1(C.pct[s.id])}</span>
+   <span class="ov-legend-pct">${showCounts?s.val:f1(C.pct[s.id])}</span>
   </div>`).join("");
 
  return `<div class="ov-donut-body">
   <div class="ov-donut-svg-wrap">
-   <svg class="ov-donut-svg" viewBox="0 0 190 190" role="img" aria-label="Application progress breakdown">${outSlices}</svg>
+   <svg class="ov-donut-svg" viewBox="0 0 190 190" role="img" aria-label="${label}">${outSlices}</svg>
    <div class="ov-donut-center">
     <b>${total}</b>
     <small>Total</small>
    </div>
   </div>
-  <div class="ov-donut-legend">${total ? legendRows : '<p style="color:var(--mute);font-size:12px">No jobs tracked yet</p>'}</div>
+  <div class="ov-donut-legend">${total || showCounts ? legendRows : '<p style="color:var(--mute);font-size:12px">No jobs tracked yet</p>'}</div>
  </div>`;
 }
 
@@ -1572,7 +1560,7 @@ function overview(js){const C=counts(js);
    <div class="panel-h ov-chart-header">
     <h2 id="aph">Application progress</h2>
    </div>
-   ${donutChart(C)}
+   ${applicationChart(C)}
   </section>
   <section class="panel ov-chart-card" aria-labelledby="lsh">
    <div class="ov-panel-head">
@@ -1590,7 +1578,7 @@ function overview(js){const C=counts(js);
        <b>${esc(j.Company)}</b>
        <small style="color:var(--mute)"><span>${esc(j.Role)}</span><span class="ov-stage-tag"><i class="dot" style="background:${OVERVIEW_COLORS[st?.id]||stageColor(st)}"></i>${esc(sl(j["My status"]))}</span></small>
       </span>
-      ${jobScore(j,{list:true})}
+      ${fitChip(j)}
       <span class="ov-item-arrow">→</span>
      </button></li>`;
    }).join("")}</ul>` : `<p class="ov-empty-msg">No jobs to show.</p>`}
@@ -1617,6 +1605,10 @@ function overview(js){const C=counts(js);
    ${recentActivity(js)}
   </section>
  </div>
+ <section class="panel ov-chart-card" aria-labelledby="score-action-heading" style="margin-top:16px">
+  <div class="panel-h ov-chart-header"><h2 id="score-action-heading">Score actions</h2></div>
+  ${scoreChart(js)}
+ </section>
 </div>`}
 
 const stageColor=s=>s?s.c:"var(--mute)";
@@ -1635,10 +1627,6 @@ function contactFor(j){
 function boardCard(j,s){
  const col=stageColor(s);
  const ns=nextStep(j);
- const sc=j._sc;
- const scCls=sc?(sc.val>=3.75?"hi":sc.val>=3.25?"mid":"lo"):"none";
- const scTxt=sc?esc(sc.txt):"–";
- const scLabel=sc?esc(fitText(sc,j._v)):"Not scored";
  const ct=contactFor(j);
  const realStatus=s.id==="other"?sl(j["My status"]):s.label;
  return`<article class="card bcard" tabindex="0" draggable="true" data-k="${esc(key(j))}" data-drawer-trigger="board:${esc(key(j))}" aria-label="${esc(j.Company)}, ${esc(j.Role)}, ${esc(realStatus)}" style="--bcard-notch:${col}">
@@ -1657,10 +1645,7 @@ function boardCard(j,s){
    <div class="bcard-next-title">${esc(ns.title)}</div>
   </div>
   <div class="bcard-fit-row">
-   <div class="bcard-fit" title="${sc?`Fit score ${esc(sc.raw)} of 5 · ${scLabel}`:"Not scored yet"}">
-    <span class="bcard-fit-badge ${scCls}">${scTxt}</span>
-    <span class="bcard-fit-text">${scLabel}</span>
-   </div>
+   ${fitChip(j)}
    <span class="bcard-stage-name">${esc(realStatus)}</span>
   </div>
   <div class="bcard-foot">
@@ -1725,7 +1710,7 @@ function listView(js){const so=sorter();js=js.slice().sort(so);
   <div class="pref-head">
    <div class="pref-title-group"><h2>${JOB_VIEWS[S.jobView]} · ${js.length} job${js.length===1?"":"s"}</h2></div>
    <div class="pref-controls">
-    <label><span class="sr">Sort</span><select class="sel-s" id="sort"><option value="score" ${S.sort==="score"?"selected":""}>Best fit first</option><option value="posted" ${S.sort==="posted"?"selected":""}>Newest posted</option><option value="applied" ${S.sort==="applied"?"selected":""}>Recently applied</option><option value="company" ${S.sort==="company"?"selected":""}>Company A–Z</option></select></label>
+    <label><span class="sr">Sort</span><select class="sel-s" id="sort"><option value="fit" ${S.sort==="fit"?"selected":""}>Highest score first</option><option value="posted" ${S.sort==="posted"?"selected":""}>Newest posted</option><option value="applied" ${S.sort==="applied"?"selected":""}>Recently applied</option><option value="company" ${S.sort==="company"?"selected":""}>Company A–Z</option></select></label>
     <label><span class="sr">Group</span><select class="sel-s" id="group"><option value="none" ${S.group==="none"?"selected":""}>No grouping</option><option value="region" ${S.group==="region"?"selected":""}>By country</option><option value="sheet" ${S.group==="sheet"?"selected":""}>By list</option><option value="stage" ${S.group==="stage"?"selected":""}>By status</option></select></label>
    </div>
   </div>
@@ -1750,14 +1735,14 @@ function contactsView(){const q=S.q.toLowerCase();const cs=D.contacts.filter(c=>
   <label class="f">Status<select class="inp" data-cstatus="${c._row}">${[...new Set([s,...opts])].filter(Boolean).map(o=>`<option ${o===s?"selected":""}>${esc(o)}</option>`).join("")}</select></label></article>`}).join("")}</div>
   <p class="hint">Recording only: this page never sends messages. Marking “Sent” fills today's date.</p>`}
 
-function sidebar(inDrawer){const cnt=(field,val)=>D.jobs.filter(j=>matches(j,field)&&(field==="regions"?j._reg===val:j._open===val)).length;
+function sidebar(inDrawer){const cnt=(field,val)=>D.jobs.filter(j=>matches(j,field)&&(field==="regions"?j._reg===val:field==="bands"?fitAction(j)===val:j._open===val)).length;
  const box=(field,val,label,pre="")=>{const on=S[field].includes(val);return`<label class="opt">${`<input type="checkbox" data-f="${field}" value="${esc(val)}" ${on?"checked":""}>`}${pre}<span class="lb">${esc(label)}</span><span class="n">${cnt(field,val)}</span></label>`};
  const regs=Object.keys(REG).filter(r=>D.jobs.some(j=>j._reg===r));
  return`<aside class="side" aria-label="Filters"><div class="side-h"><h2>Filters</h2>${activeCount()?`<button class="linkbtn" data-act="clear">Clear all</button>`:""}${inDrawer?`<button class="btn quiet icon" data-act="closef" aria-label="Close filters">${IC.close}</button>`:""}</div>
  <div><h3>Posted</h3><div class="posted-options">${POSTED.map(([days,label])=>`<button type="button" data-posted="${days??"all"}" aria-pressed="${S.posted===days}">${label}</button>`).join("")}</div></div>
  <div><h3>Place</h3><div class="opts">${regs.map(r=>box("regions",r,REG[r][0])).join("")}</div></div>
  <div><h3>Posting</h3><div class="opts">${Object.entries(POSTING).map(([id,label])=>box("posting",id,label)).join("")}</div></div>
- <div><h3>Fit score</h3><div class="range"><div class="rl"><span>At least</span><b id="minv">${S.minScore>0?S.minScore.toFixed(2).replace(/0$/,""):"Any"}</b></div><input type="range" min="0" max="4.5" step="0.25" value="${S.minScore}" id="minScore" aria-label="Minimum fit score"></div></div>
+ <div><h3>Score action</h3><div class="opts">${Object.keys(SCORE_ACTIONS).map(b=>box("bands",b,b)).join("")}</div></div>
  <div class="opts"><label class="switch">Needs attention<input type="checkbox" data-t="attention" ${S.attention?"checked":""}></label></div></aside>`}
 
 function roundSection(j){const rounds=j._rounds||[],interview=stageOf(j).id==="interview";
@@ -1769,7 +1754,13 @@ function roundSection(j){const rounds=j._rounds||[],interview=stageOf(j).id==="i
   <label class="f">Note<input class="inp" type="text" data-field="note" value="${esc(r.note)}" maxlength="280"></label>
   <button class="btn" type="button" data-act="save-round" aria-label="Save round ${r.round}">Save</button>
  </div>`).join("")}${interview?'<button class="btn ghost" type="button" data-act="add-round">Add round</button>':""}`}</section>`}
+function displayNotes(j){
+ const notes=String(j.Notes||"");
+ // The old Add to tracker action wrote this block at the start of Notes.
+ return notes.replace(/^Lane: (?:Ready|Stretch|Verify|Monitor|Archive)\r?\nWhy it fits: ([\s\S]*?)\r?\nNext step: Review the original posting and remaining application checks\.(?=\r?\n|$)/,"$1");
+}
 function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
+ const notes=displayNotes(j);
  const other=st.id==="other",ad=j["Date applied"];
  const steps=STAGES.filter(s=>s.id!=="other").map(s=>`<li class="${s===st?"cur":""}"><button data-step="${s.id}" title="Move to ${s.label}" ${allowedMove(j,s)?"":"disabled"} ${s===st?'aria-current="step"':""}><span class="b">${s===st?IC.check:STAGES.indexOf(s)+1}</span>${s.step}</button></li>`).join("");
  const ban=[];if(j.posting?.state==="closed"&&!closed)ban.push(`<div class="banner n"><span>${esc(postingText(j))}</span></div>`);
@@ -1777,24 +1768,14 @@ function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
  else if(j._checkAge!=null&&j._checkAge>3&&!closed&&si<2)ban.push(`<div class="banner a">${IC.clock}<span>Open check is ${j._checkAge} days old (${esc(j._checkdate)}). The daily rerun should refresh it.</span></div>`);
  if(other)ban.push(`<div class="banner a">${IC.info}<span>Status <b>${esc(j["My status"])}</b> isn't one of the tracker's statuses, so it's counted under “Other status”. Pick a status below to fix it.</span></div>`);
  if(closed)ban.push(`<div class="banner n">${IC.info}<span>Marked <b>${esc(sl(j["My status"]))}</b>. <button class="linkbtn" data-step="tracked" style="padding:0">Move back to first stage</button></span></div>`);
- const sc=j._sc,v=j._v;
  return`<article class="detail" data-k="${esc(key(j))}" aria-label="${esc(jname(j))} details">
  <div class="d-head">${av(j.Company,"lg")}<div class="t"><h2>${esc(j.Company)} <span class="pl">· ${flag(j._reg)} ${esc(place(j))}</span></h2><div class="role">${esc(j.Role)}</div></div><div class="d-actions d-actions-top">${/^https?:\/\//.test(j.Link)?`<a class="btn" href="${esc(j.Link)}" target="_blank" rel="noopener noreferrer">Open posting ${IC.ext}<span class="sr"> (opens a new tab)</span></a><button class="btn ghost" data-copy="${esc(j.Link)}">${IC.copy}Copy link</button>`:`<span style="color:var(--mute);font-size:13px">No link saved</span>`}</div></div>
+ ${fitDetail(j)}
  ${ban.join("")}
  ${j._sib.length?`<div class="banner n">${IC.info}<span>Same company, other postings: ${j._sib.map(x=>`<button class="linkbtn" style="padding:0 2px" data-open="${esc(key(x))}">${esc(place(x))} · ${esc(sheetShort(x._sheet))}</button>`).join(", ")}</span></div>`:""}
- <section class="gd-card gd-match-card">
-  <h4>Is your resume a good match?</h4>
-  <p class="gd-sub">Use AI to find out how well the skills on your resume fit this job description.</p>
-  <div class="gd-match-body">
-   <div class="gd-match-score">${ring(sc,52)}<div class="t"><b>${fitText(sc,v)}${v.key==="APPLY"?` <span class="chip g" style="margin-left:6px">${IC.star}Strong match</span>`:""}</b><p>${sc?`Fit score ${esc(sc.raw)} of 5${sc.cap!=null&&sc.cap!==sc.val?` · capped at ${sc.cap}`:sc.cap!=null?" · capped":""}`:"No fit score yet"}</p></div></div>
-   <div class="d-actions">${vchip(v)}</div>
-  </div>
- </section>
  <section class="gd-card gd-qual-card">
-  <h4>Your qualifications for this job</h4>
-  <p class="gd-sub">Do you have any of these qualifications?</p>
+  <h4>Posting and application</h4>
   <div class="gd-qual-list">
-   <div class="gd-qual-item"><div><b>Skills alignment:</b><small>${esc(sc||v.key!=="NONE"?(v.sub||"Review recorded; no skills details saved"):"Not reviewed yet")}</small></div></div>
    <div class="gd-qual-item">${j._open==="open"?`<span class="gd-check">${IC.check}</span>`:""}<div><b>Posting status:</b><small>${j.posting&&j.posting.state!=="unknown"?esc(postingText(j)):j._check?esc(j._check):"Not checked"}</small></div></div>
    <div class="gd-qual-item"><div><b>Location &amp; Remote:</b><small>${flag(j._reg)} ${esc(j.Where||place(j))}${j._remote?" · Remote-friendly":""}</small></div></div>
   </div>
@@ -1805,7 +1786,7 @@ function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
  ${roundSection(j)}
  <section class="gd-card gd-notes-card">
   <h4><label for="note-${j._row}">Notes &amp; details</label></h4>
-  <textarea class="inp" id="note-${j._row}" data-note rows="${Math.min(12,Math.max(4,Math.ceil((j.Notes||"").length/60)+(j.Notes||"").split("\n").length))}" placeholder="Add a note: who you spoke to, follow-up date, salary range…">${esc(j.Notes)}</textarea>
+  <textarea class="inp" id="note-${j._row}" data-note rows="${Math.min(12,Math.max(4,Math.ceil(notes.length/60)+notes.split("\n").length))}" placeholder="Add a note: who you spoke to, follow-up date, salary range…">${esc(notes)}</textarea>
   <div class="note-bar"><small data-notestate>${j._noteSaved?"Saved to the spreadsheet · ":"Saved to the Notes column · "}<kbd>Ctrl</kbd>+<kbd>Enter</kbd></small><button class="btn" data-savenote disabled>${j._noteSaved?"Saved ✓":"Save notes"}</button></div>
   <dl class="facts" style="margin-top:18px"><dt>Posted</dt><dd>${esc(j.Posted||"Unknown")}</dd><dt>Posting</dt><dd>${esc(postingText(j))}</dd>
    <dt>CV used</dt><dd>${esc(j["CV used"]||"None yet")}</dd>${j.Source?`<dt>Source</dt><dd>${esc(j.Source)}</dd>`:""}<dt>Spreadsheet</dt><dd>${esc(j._sheet)}, row ${j._row}${j["#"]?` (#${esc(j["#"])})`:""}</dd></dl>
@@ -1814,9 +1795,11 @@ function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
 
 /* ---------- render ---------- */
 function render(){const keep=$$("textarea[data-note][data-dirty='1']").map(t=>[t.closest("[data-k]").dataset.k,t.value,t===document.activeElement,t.selectionStart]);
+ const openRequirements=$$(".judge-requirements[open]").map(d=>d.closest("[data-k]").dataset.k);
  const rounds=$$(".round input[data-field]").filter(t=>t.value!==t.defaultValue||t===document.activeElement).map(t=>[t.closest("[data-k]").dataset.k,t.closest(".round").dataset.id,t.dataset.field,t.value,t===document.activeElement,t.selectionStart,t.selectionEnd,t.selectionDirection]);
  const focused=document.activeElement;
  renderInner();
+ for(const k of openRequirements){const details=$(`[data-k="${CSS.escape(k)}"] .judge-requirements`);if(details)details.open=true}
  if(focused?.dataset.drawerTrigger&&!focused.isConnected&&document.activeElement===document.body)restoreDrawerTrigger(focused);
  keep.forEach(([k,v,f,pos])=>{$$(`[data-k="${CSS.escape(k)}"] textarea[data-note]`).forEach(t=>{t.value=v;noteState(t);if(f){t.focus();t.setSelectionRange(pos,pos)}})});
  rounds.forEach(([k,id,field,v,f,start,end,direction])=>{$$(`[data-k="${CSS.escape(k)}"] .round[data-id="${CSS.escape(id)}"] input[data-field="${CSS.escape(field)}"]`).forEach(t=>{t.value=v;if(f){t.focus();if(start!==null)t.setSelectionRange(start,end,direction)}})})}
@@ -1840,9 +1823,9 @@ function renderInner(){const js=filtered();$$(".seg button").forEach(b=>b.setAtt
  save()}
 function activebar(inline=false){const ch=[];const add=(t,f,v)=>ch.push(`<button class="fchip" data-rm="${f}" data-v="${esc(v)}">${esc(t)}<span aria-hidden="true">×</span><i class="sr">Remove filter</i></button>`);
  if(S.posted!==null)add("Posted: "+POSTED.find(([days])=>days===S.posted)[1],"posted","");
- S.regions.forEach(r=>add(REG[r][0],"regions",r));S.verdicts.forEach(v=>add(VERD[v][0],"verdicts",v));S.stages.forEach(s=>add(STAGES.find(x=>x.id===s).label,"stages",s));S.sheets.forEach(s=>add(sheetShort(s),"sheets",s));
+ S.regions.forEach(r=>add(REG[r][0],"regions",r));S.bands.forEach(b=>add(b,"bands",b));S.stages.forEach(s=>add(STAGES.find(x=>x.id===s).label,"stages",s));S.sheets.forEach(s=>add(sheetShort(s),"sheets",s));
  S.posting.forEach(p=>add("Posting: "+POSTING[p],"posting",p));
- if(S.minScore>0)add("Score ≥ "+S.minScore,"minScore","");if(S.attention)add("Needs attention","attention","");
+ if(S.attention)add("Needs attention","attention","");
  if(inline)return ch.join("")+(ch.length?`<button class="linkbtn" data-act="clear">Clear all</button>`:"");
  if(S.view==="list"){$("#activebar").innerHTML="";return}
  $("#activebar").innerHTML=ch.length&&S.view!=="contacts"?ch.join("")+`<button class="linkbtn" data-act="clear">Clear all</button>`:""}
@@ -1890,7 +1873,6 @@ $("#themeBtn").onclick=toggleTheme;
 $("#refresh").onclick=()=>load().then(()=>toast("Reloaded from the spreadsheet"));
 $("#fbtn").onclick=e=>openFilters(e.currentTarget);
 $("#addbtn").onclick=()=>openAdd();
-$("#undoBtn").onclick=()=>{$("#toast").classList.remove("on");undoLast()};
 $("#scrim").onclick=closeDrawers;
 
 document.addEventListener("click",async e=>{const t=e.target;
@@ -1902,10 +1884,11 @@ document.addEventListener("click",async e=>{const t=e.target;
   if(v==="view-list"){S.view="list";render();return}
   if(v==="view-activity"){S.view="list";S.sort="applied";render();return}
   if(v==="add-round"||v==="save-round"){await saveRound(byKey(a.closest("[data-k]").dataset.k),a);return}
+  if(v==="star"){const j=byKey(a.closest("[data-k]").dataset.k);if(j)await setStar(j,!j.starred,a);return}
   if(v==="open-move"){const w=a.closest(".bcard-move-wrap"),m=w.querySelector(".bcard-move-menu"),opening=m.hidden;$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"));m.hidden=!opening;a.setAttribute("aria-expanded",String(opening));if(opening){const f=m.querySelector(".bcard-move-item");if(f)f.focus()}else a.focus();return}
   return}
  const mv=t.closest("[data-moveto]");if(mv){const k=mv.dataset.k,keyboard=e.detail===0,j=byKey(k),st=STAGES.find(x=>x.id===mv.dataset.moveto);if(j&&st&&boardMove(j,st)&&stageOf(j)!==st){setStatus(j,dropStatus(j,st)).then(()=>{const card=$(`.card[data-k="${CSS.escape(k)}"]`);if(card)card.focus();})}$$(".bcard-move-menu").forEach(x=>x.hidden=true);$$(".bcard-move-btn").forEach(x=>x.setAttribute("aria-expanded","false"));return}
- const rm=t.closest("[data-rm]");if(rm){const f=rm.dataset.rm;if(Array.isArray(S[f]))S[f]=S[f].filter(x=>x!==rm.dataset.v);else S[f]=f==="posted"?null:f==="minScore"?0:false;render();return}
+ const rm=t.closest("[data-rm]");if(rm){const f=rm.dataset.rm;if(Array.isArray(S[f]))S[f]=S[f].filter(x=>x!==rm.dataset.v);else S[f]=f==="posted"?null:false;render();return}
  const tile=t.closest("[data-tile]");if(tile){const v=tile.dataset.tile;S.view="list";S.jobView="all";S.stages=v==="all"?[]:[v];save();render();return}
  const reg=t.closest("[data-reg]");if(reg){S.regions=[reg.dataset.reg];S.view="list";save();render();return}
  const op=t.closest("[data-open]");if(op){
@@ -1918,7 +1901,7 @@ document.addEventListener("click",async e=>{const t=e.target;
  }
  const step=t.closest("[data-step]");if(step){const j=byKey(step.closest("[data-k]").dataset.k);const s=STAGES.find(x=>x.id===step.dataset.step);
   const ns=s.drop;if(ns&&allowedMove(j,s)&&ns!==j["My status"])setStatus(j,ns);return}
- const cp=t.closest("[data-copy]");if(cp){try{await navigator.clipboard.writeText(cp.dataset.copy);toast("Link copied")}catch{toast("Couldn't copy",null,true)}return}
+ const cp=t.closest("[data-copy]");if(cp){try{await navigator.clipboard.writeText(cp.dataset.copy);toast("Link copied")}catch{toast("Couldn't copy",true)}return}
  const sv=t.closest("[data-savenote]");if(sv){const art=sv.closest("[data-k]"),ta=art.querySelector("[data-note]");const j=byKey(art.dataset.k);
   sv.disabled=true;sv.textContent="Saving…";if(await saveNote(j,ta.value)){noteState(ta)}else{sv.disabled=false;sv.textContent="Save notes"}return}
  const card=t.closest(".card[data-k]");if(card&&!t.closest("a,button,select,input,textarea,.drag-handle,.bcard-move-wrap")){openJob(card.dataset.k,card)}});
@@ -1926,15 +1909,14 @@ document.addEventListener("change",e=>{const t=e.target;
  if(t.dataset.f){const f=t.dataset.f;S[f]=t.checked?[...new Set([...S[f],t.value])]:S[f].filter(x=>x!==t.value);render();return}
  if(t.dataset.t){S[t.dataset.t]=t.checked;render();return}
  if(t.id==="sort"){S.sort=t.value;render();return}if(t.id==="group"){S.group=t.value;render();return}
- if(t.id==="minScore"){S.minScore=+t.value;render();return}
  if(t.hasAttribute("data-status")){statusPicked(t);return}
  if(t.hasAttribute("data-date")){const j=byKey(t.closest("[data-k]").dataset.k);setStatus(j,j["My status"],{date:t.value});return}
  if(t.dataset.cstatus){const c=D.contacts.find(x=>x._row===+t.dataset.cstatus);const p={sheet:"Contacts",row:c._row,status:t.value,expect:{Person:c.Person}};
   if(/^sent$/i.test(t.value)&&!c["Date sent"])p.date=D.today;post("/api/update",p).then(ok=>{if(ok){c.Status=t.value;if(p.date)c["Date sent"]=p.date;render();toast(`${c.Person}: ${t.value}`)}else render()})}});
-document.addEventListener("input",e=>{const t=e.target;if(t.id==="minScore"){$("#minv").textContent=+t.value>0?t.value:"Any";return}
+document.addEventListener("input",e=>{const t=e.target;
  if(t.hasAttribute("data-note")){noteState(t);return}
  if(t.hasAttribute("data-status")){statusPicked(t);return}});
-function noteState(t){const art=t.closest("[data-k]"),j=byKey(art.dataset.k);const d=t.value!==(j.Notes||"");t.dataset.dirty=d?"1":"0";
+function noteState(t){const art=t.closest("[data-k]"),j=byKey(art.dataset.k);const d=t.value!==displayNotes(j);t.dataset.dirty=d?"1":"0";
  const b=art.querySelector("[data-savenote]"),ns=art.querySelector("[data-notestate]");b.disabled=!d;b.textContent=d?"Save notes":j._noteSaved?"Saved ✓":"Save notes";
  if(ns){ns.firstChild.textContent=d?"Unsaved changes · ":j._noteSaved?"Saved to the spreadsheet · ":"Saved to the Notes column · ";ns.classList.toggle("dirty",d)}}
 function statusPicked(t){const j=byKey(t.closest("[data-k]").dataset.k);if(j&&t.value&&t.value!==j["My status"])setStatus(j,t.value)}
@@ -2038,23 +2020,23 @@ function syncSrc(){const sh=D.sheets.find(s=>s.name===$("#addSheet").value);$("#
 $("#addSheet").onchange=syncSrc;
 $("#addCancel").onclick=()=>$("#addDlg").close();
 $("#addStatus").onchange=e=>{const d=$("#addForm")["Date applied"];if(e.target.value==="Applied"&&!d.value)d.value=D.today};
-function openAdd(){if(!D.sheets.length)return toast("No job sheets found in the spreadsheet",null,true);const f=$("#addForm");f.reset();fillAdd();
+function openAdd(){if(!D.sheets.length)return toast("No job sheets found in the spreadsheet",true);const f=$("#addForm");f.reset();fillAdd();
  const pref=S.sheets.length===1?S.sheets[0]:(D.sheets.find(s=>/new leads/i.test(s.name))||D.sheets[0]).name;$("#addSheet").value=pref;syncSrc();$("#addErr").hidden=true;$("#addDlg").showModal();f.Company.focus()}
 $("#addSave").onclick=async()=>{const f=$("#addForm"),err=$("#addErr");const p={};new FormData(f).forEach((v,k)=>p[k]=String(v).trim());
  let note="";if(p["Date applied"]&&PRE_APPLIED.includes(p["My status"]||PRE_APPLIED[0])){p["My status"]="Applied";note=" Status set to Applied because a date applied was entered."}
  else if(!p["Date applied"]&&POST_APPLIED.includes(p["My status"])){p["Date applied"]=D.today;note=` Date applied set to today (${D.today}).`}
  const bad=[];if(!p.Company)bad.push("company");if(!p.Role)bad.push("role");if(p.Link&&!/^https?:\/\//i.test(p.Link))bad.push("a link starting with https://");
- if(p.Score&&!/^\d(\.\d+)?$/.test(p.Score))bad.push("a score like 3.6");
+ if(p["Date applied"]>D.today)bad.push("a date applied that isn't in the future");
  if(bad.length){err.hidden=false;err.textContent="Please add "+bad.join(", ")+".";return}
  $("#addSave").disabled=true;const r=await post("/api/add",p);$("#addSave").disabled=false;
  if(r){const sh=D.sheets.find(x=>x.name===p.sheet),lost=Object.entries(p).filter(([k,v])=>k!=="sheet"&&v&&sh&&sh.columns.includes(k)&&String((r.saved||{})[k]??"")!==v).map(([k])=>k);
-  $("#addDlg").close();await load();if(lost.length)toast(`Saved, but these fields didn't match: ${lost.join(", ")}. Check row ${r.row}.`,null,true);else toast(`${p.Company} added to ${sheetShort(p.sheet)} with ${Object.entries(p).filter(([k,v])=>v&&k!=="sheet").length} fields.${note}`);openJob(p.sheet+"|"+r.row)}else{err.hidden=false;err.textContent="Not saved. See the message at the bottom of the screen."}};
+  $("#addDlg").close();await load();if(lost.length)toast(`Saved, but these fields didn't match: ${lost.join(", ")}. Check row ${r.row}.`,true);else toast(`${p.Company} added to ${sheetShort(p.sheet)} with ${Object.entries(p).filter(([k,v])=>v&&k!=="sheet").length} fields.${note}`);openJob(p.sheet+"|"+r.row)}else{err.hidden=false;err.textContent="Not saved. See the message at the bottom of the screen."}};
 $("#addForm").addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.tagName==="INPUT"){e.preventDefault();if(e.ctrlKey||e.metaKey)$("#addSave").click();else{const f=[...$$("#addForm .inp")];const n=f[f.indexOf(e.target)+1];n&&n.focus()}}});
 
 /* Self-test: checks that tiles, flow nodes and percentages all agree. Run in the console: await trackerSelfTest() */
 window.trackerSelfTest=function(){
  const lines=[],check=(ok,msg)=>lines.push((ok?"ok ":"FAIL ")+msg);
- const mk=(s,i)=>({Company:"Example "+i,Role:"Example role","My status":s,_sheet:"selftest",_row:i,_sib:[],_reg:"OTHER",_sc:null,_v:verdict(""),_open:"open"});
+ const mk=(s,i)=>({Company:"Example "+i,Role:"Example role","My status":s,_sheet:"selftest",_row:i,_sib:[],_reg:"OTHER",_open:"open"});
  const fixtures=[[],D.jobs,filtered(),STAGE_DATA.stages.map((s,i)=>mk(s.name,i)),[mk("Unknown status",0)],[...STAGE_DATA.stages.map((s,i)=>mk(s.name,i)),mk("Unknown status",99)],STAGE_DATA.stages.flatMap((s,i)=>Array.from({length:i+1},(_,n)=>mk(s.name,i*10+n)))];
  fixtures.forEach((js,i)=>{
   const C=counts(js,true),box=document.createElement("div");box.innerHTML=overview(js);

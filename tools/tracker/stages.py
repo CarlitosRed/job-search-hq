@@ -5,8 +5,9 @@ from pathlib import Path
 DATA = json.loads(Path(__file__).with_name('stages.json').read_text(encoding='utf-8'))
 STAGES = DATA['stages']
 NAMES = tuple(s['name'] for s in STAGES)
+NAME_BY_ID = {s['id']: s['name'] for s in STAGES}
 NEW_ROW = DATA['new_row']
-_REJECTED = next(s['name'] for s in STAGES if s['id'] == 'rejected')
+_REJECTED = NAME_BY_ID['rejected']
 
 
 def allowed(before, after):

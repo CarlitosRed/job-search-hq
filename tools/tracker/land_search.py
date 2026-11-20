@@ -109,14 +109,14 @@ def row_values(job, meta, number):
         posted = ('about ' if job['date_source'] == 'workday-about' else '') + job['posted_on'] + f' ({label})'
     found = date.fromisoformat(job['first_seen'])
     notes = (f'Status: Availability needs checking (found {found.day} {found:%b %Y}). You have not applied.\n'
-             'Fit: pending. The AI has not judged this job yet.\nPlace: ' +
+             'Place: ' +
              {'ok': 'OK.', 'check': 'Check availability and eligibility.',
               'out': 'Out of the stated work rules.'}[job['place']])
     agent = (f"Daily search {meta['date']}, profile {meta['profile_id']} rev {meta['profile_revision']}; "
              f"lane {job['lane']}; score {job['score']}; titles {', '.join(job['matched_titles'])}; "
              f"duties {', '.join(job['matched_duties'])}; place {job['place']}: {job['place_sentence']}; "
              f"posting {job['provider']}/{job['posting_id']}; judge {str(job['judge']).lower()}.")
-    return [number, job['company'], job['title'], job['place_text'], posted, None, 'Fit pending',
+    return [number, job['company'], job['title'], job['place_text'], posted, None, None,
             store.stages.NEW_ROW, None, None, 'Daily search ' + meta['date'], job['link'], notes,
             'Not independently spot-checked', agent]
 

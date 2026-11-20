@@ -306,7 +306,7 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                 temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
                 temporary.replace(target)
             if report['ai_unavailable'] and not report['judged']:
-                return 'skipped', 'AI unavailable; Fit stays pending.'
+                return 'skipped', 'AI unavailable. Jobs without a score are still unscored.'
 
             def count(n):
                 return f"{n} {'job' if n == 1 else 'jobs'}"
@@ -316,12 +316,15 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                 detail = 'Preview: ' + detail + ' Nothing was saved.'
             if report['failed']:
                 detail += f" {count(len(report['failed']))} could not be judged."
-            if report['skipped']:
-                detail += f" {count(report['skipped'])} without posting text yet."
+            no_text = sum(item['reason'] == judge.NO_TEXT for item in report['skipped_jobs'])
+            if no_text:
+                detail += f" {count(no_text)} without posting text yet."
+            if any(item['reason'] == judge.NOT_ENOUGH for item in report['skipped_jobs']):
+                detail += ' ' + judge.NOT_ENOUGH + '.'
             if report['backed_off']:
                 detail += f" {count(report['backed_off'])} failed recently and will be tried again later."
             if report['ai_unavailable']:
-                return 'partial', detail + ' The AI became unavailable; Fit stays pending for the rest.'
+                return 'partial', detail + ' The AI became unavailable; the remaining jobs keep their current scores.'
             return 'done', detail
 
         for step in config['before']:
@@ -396,7 +399,7 @@ def status(record_path, now, at='06:00'):
                 if phases.get('recheck', {}).get('status') == 'partial':
                     warnings.append(last_output_line(phases['recheck']['detail']))
                 if phases.get('judge', {}).get('status') == 'partial':
-                    warnings.append('the AI became unavailable while judging; Fit stays pending for the rest')
+                    warnings.append('the AI became unavailable while judging; the remaining jobs keep their current scores')
                 if warnings:
                     message = prefix + ' finished, but ' + '; '.join(warnings)
                     result.update(state='warning', tone='a', message=message if message.endswith('.') else message + '.')

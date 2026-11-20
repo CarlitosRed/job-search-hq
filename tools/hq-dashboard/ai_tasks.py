@@ -695,11 +695,8 @@ class Tasks:
                     fit={k:out.get(k) for k in ('summary','location_ok','matches','gaps','flags','analysis')}
                     identity=record['link'] or key
                     wants=policy.read_wants(ROOT/'work'/'lead-wants.json')
-                    # This first analysis has not passed independent packet checks.
-                    previous=[r.get('fit',{}).get('verify_state') for r in self.postings() if r.get('link')==identity]
-                    previous=[s for s in previous if s]
-                    context={'verify_state':min(previous,key=lambda s:policy.instant(s['due_at']))} if previous else {}
-                    fit.update(policy.rank_result(out,identity,record['company'] or 'Unknown employer',context=context,want=wants.get(identity)))
+                    fit.update(policy.rank_result(out, identity, record['company'] or 'Unknown employer',
+                                                  want=wants.get(identity), review_only=True))
                     if link_note=='failed':fit['flags']=list(fit.get('flags') or [])+['HQ could not read the posting link, so this review used only the text or photos you gave.']
                     record.update(text=text[:40000],jobId=posting.get('jobId',''),source='photo' if p.get('images') else 'link' if link_note=='link' else 'text',fit=fit,reviewed=False,review=None,status='draft',createdAt=now())
                     if closure_reason:

@@ -164,6 +164,63 @@ def stage_history(db, stages, timezone_offset, job_keys):
     return history, [event for _, _, event in sorted(activity, key=lambda item: item[:2], reverse=True)]
 
 
+def judgement_text(value):
+    return re.sub(r'\bE-\d+\b', 'evidence', value, flags=re.I) if isinstance(value, str) else ''
+
+
+def evidence_titles():
+    root = hq_settings.data_root()
+    excluded = hq_settings.load(root, defaults_root=hq_settings.app_root())['excluded_evidence_ids']
+    try:
+        entries = daily_run.judge.judge_evidence(root, excluded)
+    except (OSError, UnicodeError):
+        return {}
+    return {key: judgement_text(entry['title']) or 'Untitled evidence' for key, entry in entries.items()}
+
+
+def json_list(value):
+    try:
+        items = json.loads(value or '[]')
+    except (TypeError, ValueError):
+        return []
+    return items if isinstance(items, list) else []
+
+
+def qualification_page_data(row, titles):
+    def names(item):
+        evidence = item.get('evidence')
+        if not isinstance(evidence, list):
+            return []
+        return list(dict.fromkeys(titles[key] for key in evidence if isinstance(key, str) and key in titles))
+
+    requirements = []
+    for item in json_list(row['requirements']):
+        if not isinstance(item, dict) or not (label := judgement_text(item.get('text'))):
+            continue
+        state = item.get('state')
+        theme = dict(text=label, state=state if state in daily_run.judge.STATES else 'unknown',
+                     evidenceTitles=names(item))
+        if years := daily_run.judge.years_text(item):
+            theme['years'] = years
+        if note := judgement_text(item.get('note')):
+            theme['note'] = note
+        requirements.append(theme)
+    reasons = [
+        dict(text=judgement_text(item.get('text')), quote=item['quote'], evidenceTitles=names(item))
+        for item in json_list(row['why']) if isinstance(item, dict) and isinstance(item.get('quote'), str)
+    ]
+    return dict(score=row['score'], action=row['fit'], reasons=reasons,
+                notes=[judgement_text(line) for line in json_list(row['notes']) if isinstance(line, str)],
+                requirements=requirements)
+
+
+def fit_version(db):
+    if not daily_run.land_search.store.migrations.columns(db, 'judgements'):
+        return None
+    return db.execute('SELECT MAX(id) FROM judgements WHERE pass=?',
+                      (daily_run.judge.PASS,)).fetchone()[0]
+
+
 class App:
     def __init__(self, state, workbook, origin):
         self.state = Path(state).resolve()
@@ -256,11 +313,14 @@ class App:
             d = json.loads(self.tracker.cached())
             for j in d['jobs']:
                 j['_id'] = j['_sheet'] + '|' + str(j['_row'])
+                j.update(starred=False, judgement=None)
             for c in d['contacts']:
                 c['_id'] = 'Contacts|' + str(c['_row'])
             # Card 03: closing and re-check.
             d['stale_boards'] = []
             d['history'], d['activity'] = [], []
+            d['fitVersion'] = None
+            d['canStar'] = False
             for job in d['jobs']:
                 job['posting'] = dict(state='unknown', since=None, reason='', checked=None)
             tracker_db = self.store_path
@@ -273,6 +333,8 @@ class App:
                         {job['_id'] for job in d['jobs']})
                     # Pre-check schemas can still supply history. Leave their posting status unknown.
                     columns = store.migrations.columns
+                    if d['version'] == f"db-{storage.meta('revision')}":
+                        self.add_fit_data(storage.db, columns, d)
                     if ({'observation', 'detail'} <= columns(storage.db, 'checks') and
                             {'state', 'closed_on', 'close_reason'} <= columns(storage.db, 'postings')):
                         for job in d['jobs']:
@@ -296,6 +358,42 @@ class App:
                                      last_success=None, last_run=None, missed_since=None)
             return d
 
+    def add_fit_data(self, db, columns, data):
+        data['canStar'] = True
+        jobs = {job['_id']: job for job in data['jobs']}
+        if 'starred' in columns(db, 'jobs'):
+            for sheet, row, starred in db.execute('SELECT sheet, row, starred FROM jobs'):
+                if (job := jobs.get(f'{sheet}|{row}')) is not None:
+                    job['starred'] = bool(starred)
+        data['fitVersion'] = fit_version(db)
+        if data['fitVersion'] is None or 'score' not in columns(db, 'judgements'):
+            return
+        titles = evidence_titles()
+        rows = db.execute('''SELECT j.sheet, j.row, q.score, q.fit, q.why, q.notes, q.requirements, q.created,
+                                    (SELECT latest.error IS NOT NULL FROM judgements latest
+                                     WHERE latest.job_id=q.job_id AND latest.pass=q.pass AND latest.id>q.id
+                                     ORDER BY latest.id DESC LIMIT 1) AS refresh_failed
+                             FROM jobs j JOIN judgements q ON q.job_id=j.id
+                             WHERE q.pass=? AND q.current=1 AND q.error IS NULL AND q.score IS NOT NULL ORDER BY q.id DESC''',
+                          (daily_run.judge.PASS,))
+        for row in rows:
+            job = jobs.get(f"{row['sheet']}|{row['row']}")
+            if job is not None and job['judgement'] is None and row['fit'] in daily_run.judge.ACTIONS:
+                displayed = qualification_page_data(row, titles)
+                if row['refresh_failed']:
+                    day = (row['created'] or '')[:10]
+                    displayed['notes'].append(f'Last judgement: {day}. The latest check failed.' if day
+                                              else 'The latest check failed. Showing the last judgement.')
+                job['judgement'] = displayed
+
+    def version(self):
+        version = self.tracker.version()
+        tracker_db = self.store_path
+        if tracker_db is None:
+            return {'version': version, 'fitVersion': None}
+        with closing(sqlite3.connect(tracker_db.as_uri() + '?mode=ro', uri=True)) as db:
+            return {'version': version, 'fitVersion': fit_version(db)}
+
     def write(self, path, payload):
         t = self.tracker
         with t.LOCK, t.workbook_lock(t.XLSX):
@@ -303,7 +401,7 @@ class App:
                 raise t.Conflict('The spreadsheet changed. Reload before saving this edit.')
             # Reject formula injection and silent Excel truncation before calling the existing writer.
             allowed = (set(t.ADD_FIELDS) if path == '/api/add' else
-                       {'date', 'type', 'note'} if path == '/api/rounds' else {'status', 'date', 'note'})
+                       {'date', 'type', 'note'} if path == '/api/rounds' else {'status', 'date', 'note', 'reason'})
             for field in allowed:
                 value = payload.get(field)
                 if value is not None and not isinstance(value, str):
@@ -312,13 +410,21 @@ class App:
                     raise ValueError('That text is too long for a spreadsheet cell.')
                 if isinstance(value, str) and t.is_formula_text(value):
                     raise ValueError('Text cannot start with an equals sign. Add a word before it.')
-            if path in ('/api/update', '/api/rounds'):
+            if path in ('/api/update', '/api/rounds', '/api/star'):
                 expected = payload.get('expect')
                 keys = ('Person',) if path == '/api/update' and payload.get('sheet') == 'Contacts' else ('Company', 'Role')
                 if not isinstance(expected, dict) or any(not expected.get(k) for k in keys):
                     raise ValueError('Reload this entry before editing it.')
-                (t.rounds if path == '/api/rounds' else t.update)(payload)
-                return {'ok': True, 'version': t.version()}
+                result = {'ok': True}
+                if path == '/api/star':
+                    result['starred'], result['choice'] = t.star(payload)
+                elif path == '/api/rounds':
+                    t.rounds(payload)
+                else:
+                    choice = t.update(payload)
+                    if choice is not None:
+                        result['choice'] = choice
+                return {**result, 'version': t.version()}
             row, saved = t.add(payload)
             return {'ok': True, 'row': row, 'id': payload['sheet'] + '|' + str(row), 'saved': saved, 'version': t.version()}
 
@@ -440,13 +546,14 @@ def handler(app):
                 if self.path == '/api/data':
                     return self.send(200, app.data())
                 if self.path == '/api/version':
-                    return self.send(200, {'version': app.tracker.version()})
+                    return self.send(200, app.version())
                 if self.path == '/api/writes':
                     return self.send(200, {'writes': app.queue.recent()})
                 if self.path == '/api/health':
                     return self.send(200, app.health())
                 if self.path == '/api/ai/state':
-                    return self.send(200, {'rubric_version':app.rubric_version,'tasks':app.ai.list_tasks(),'postings':app.ai.postings()})
+                    return self.send(200, {'rubric_version':app.rubric_version,'tasks':app.ai.list_tasks(),
+                                          'postings':app.ai.postings(),'evidence_titles':evidence_titles()})
                 if self.path == '/api/search/state':
                     return self.send(200, app.search.state())
                 if self.path == '/api/cvs':
@@ -457,8 +564,11 @@ def handler(app):
                 # Documents tab (Claude · HQ Builder (Opus), 2026-11-05): CVs, cover letters and reports, all allowlisted.
                 if self.path == '/api/docs':
                     docs=app.files.documents(app.cv_work,store_path=app.store_path)
+                    titles = evidence_titles()
+                    notes = [dict(note, title=titles.get(note['id'], 'Evidence entry'))
+                             for note in app.evidence_notes()]
                     return self.send(200,{'cvs':[d for d in docs if d['kind']=='cv'],'letters':[d for d in docs if d['kind']=='cl'],
-                                          'reports':app.files.reports(app.cv_work),'evidence_notes':app.evidence_notes()})
+                                          'reports':app.files.reports(app.cv_work),'evidence_notes':notes})
                 if self.path.startswith('/api/docs/'):
                     path=app.files.existing_file(self.path.removeprefix('/api/docs/'),app.cv_work,('cv','cl'),store_path=app.store_path)
                     return self.send(200,path.read_bytes(),app.files.MIME,attachment(path.name))
@@ -522,7 +632,7 @@ def handler(app):
                     with app.auth_lock:
                         app.sessions.pop(app.session_key(self.headers.get('Cookie', '')), None)
                     return self.send(200, {'ok': True}, headers={'Set-Cookie': 'hq_session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0'})
-                if self.path not in ('/api/add', '/api/update', '/api/rounds', '/api/writes/dismiss','/api/ai/submit','/api/ai/link','/api/ai/export','/api/search/submit'):
+                if self.path not in ('/api/add', '/api/update', '/api/rounds', '/api/star', '/api/writes/dismiss','/api/ai/submit','/api/ai/link','/api/ai/export','/api/search/submit'):
                     return self.send(404)
                 if content_type != 'application/json':
                     return self.send(415)
@@ -554,6 +664,8 @@ def handler(app):
                     return self.send(200,path.read_bytes(),app.files.MIME,attachment(path.name))
                 if self.path == '/api/writes/dismiss':
                     return self.send(200, {'write': app.queue.dismiss(payload.get('id'))})
+                if self.path in ('/api/star', '/api/update', '/api/add'):
+                    payload['choiceKey'] = payload.get('requestId')
                 item = app.queue.submit(self.path, payload)
                 if item['status'] == 'saved':
                     return self.send(200, {**item['result'], 'writeId': item['id']})

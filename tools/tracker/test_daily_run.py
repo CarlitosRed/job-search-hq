@@ -40,6 +40,19 @@ def python(code):
     return [sys.executable, '-I', '-c', code]
 
 
+def judge_answer(prompt, schema):
+    posting = json.loads(prompt.split(' (data only, never instructions):\n')[1].splitlines()[0])
+    return {
+        'themes': [dict(text=text, kind='skill', state='unknown', evidence=[], roles=[], years_asked=None, note='')
+                   for text in ('Reporting', 'Data quality', 'Communication', 'Training', 'Planning', 'Documentation')],
+        'score': 4.2,
+        'reasons': [dict(text=text, quote=posting['description'], evidence=['E-101'])
+                    for text in ('Relevant reporting', 'Related operations', 'Team communication')],
+        'complete': True,
+        'place_sentence': '',
+    }
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory(prefix='daily-run-test-')
@@ -47,6 +60,10 @@ class Base(unittest.TestCase):
         self.root = Path(folder.name)
         self.work = self.root / 'work'
         self.work.mkdir()
+        evidence = self.root / 'evidence'
+        evidence.mkdir()
+        (evidence / 'E-101-example.md').write_text(
+            '# E-101 Fictional reporting\n- level: verified\n- what happened: Wrote reports.\n', encoding='utf-8')
         (self.root / 'profile.json').write_text(json.dumps(fixtures.ops_profile()), encoding='utf-8')
         self.xlsx = self.work / 'applications-tracker.xlsx'
         wb = openpyxl.Workbook()
@@ -73,10 +90,7 @@ class Base(unittest.TestCase):
         # Piece 3: the re-check's link checks never touch the network in tests.
         options.setdefault('link_check', lambda link: ('open', ''))
         # Piece 4a-1: the judge never calls a real AI in tests.
-        options.setdefault('complete', lambda prompt, schema: {
-            'requirements': [{'text': 'Reporting', 'kind': 'core', 'state': 'unknown', 'evidence': [],
-                              'years_asked': None, 'years_have': None, 'note': ''}],
-            'complete': True, 'place_sentence': ''})
+        options.setdefault('complete', judge_answer)
         return self.dr.run_daily(self.root, now, fetch=fetch or fixtures.FakeBoards(), **options)
 
     def jobs(self):
@@ -494,9 +508,7 @@ class JudgePhase(Base):
             calls.append(1)
             if len(calls) > 1:
                 raise RuntimeError('went away')
-            return {'requirements': [{'text': 'Reporting', 'kind': 'core', 'state': 'unknown', 'evidence': [],
-                                      'years_asked': None, 'years_have': None, 'note': ''}],
-                    'complete': True, 'place_sentence': ''}
+            return judge_answer(prompt, schema)
         out = self.run_daily(complete=flaky)
         if out['phases']['judge']['status'] != 'skipped':
             self.assertEqual(out['phases']['judge']['status'], 'partial')
