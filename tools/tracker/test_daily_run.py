@@ -143,6 +143,11 @@ class Phases(Base):
         self.assertEqual(out['phases']['land']['status'], 'done')
         self.assertEqual(out['status'], 'done_with_warnings')
 
+    def test_run_report_shows_workday_coverage(self):
+        out = self.run_daily(fetch=fixtures.FakeBoards(broken=['myworkdayjobs']))
+        self.assertIn('Workday: 0 of 1 boards read; 1 continue tomorrow.',
+                      out['phases']['search']['detail'])
+
     def test_every_board_down_fails_and_lands_nothing(self):
         before = self.jobs()
         out = self.run_daily(fetch=fixtures.FakeBoards(broken=['greenhouse', 'lever', 'ashby', 'myworkdayjobs']))
@@ -427,6 +432,11 @@ class RecheckPhase(Base):
         self.assertEqual(out['status'], 'failed')
         self.assertNotEqual(out['phases'].get('recheck', {}).get('status'), 'done')
         self.assertEqual(self.checks(), 0)
+        with closing(sqlite3.connect(self.db_file)) as db:
+            reason, = db.execute("SELECT reason FROM board_reads WHERE run_id=? AND provider='workday'",
+                                 (out['run_id'],)).fetchone()
+        self.assertIn('Workday', reason)
+        self.assertIn('0 rows', reason)
 
     def test_preview_leaves_the_tracker_file_untouched(self):
         self.run_daily()
