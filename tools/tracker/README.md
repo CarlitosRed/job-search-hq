@@ -199,7 +199,14 @@ judgement and write `work/daily-runs/<run_id>-judge-preview.json`; `"on"` is the
 public default. Preview results are kept in
 `work/daily-runs/judge-preview-cache.json`, so a later preview only calls the AI
 for jobs it has not seen; failures are kept there too, so a failing job waits
-seven run days in previews as well. To judge one job by its database number:
+seven run days in previews as well.
+
+Set `daily_run.judge_ai` to `"claude"` to judge with the Claude Code CLI
+(`claude -p`) on your own Claude sign-in instead of Codex (`"codex"`, the
+default). Claude runs with no tools, MCP servers, skills or saved session, and
+API-key variables are removed. Each judgement saves which AI wrote it
+(`codex-cli` or `claude-cli`), and switching the AI judges a job again. The
+one-job command below uses the same setting. To judge one job by its database number:
 
 ```powershell
 python -I tools/tracker/judge.py --job 12

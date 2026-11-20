@@ -643,5 +643,112 @@ class SeamSafetyFlags(unittest.TestCase):
             self.assertIn(flag, args)
 
 
+class ClaudeOption(unittest.TestCase):
+    """Card 04c: Claude as a judge option. Written before the build; the CLI is always a fake here."""
+    SCHEMA = {'type': 'object', 'properties': {'a': {'type': 'string'}}, 'required': ['a'], 'additionalProperties': False}
+
+    def fake_claude(self, stdout, code=0):
+        from unittest import mock
+        import subprocess
+        seen = []
+
+        def fake_run(args, **kwargs):
+            seen.append(dict(args=list(args), env=kwargs.get('env'), cwd=kwargs.get('cwd'), input=kwargs.get('input')))
+            return subprocess.CompletedProcess(args, code, stdout, '')
+        patches = (mock.patch('shutil.which', return_value='claude'), mock.patch('subprocess.run', fake_run))
+        return seen, patches
+
+    def call(self, stdout, code=0, env=None):
+        from unittest import mock
+        seen, (which, run) = self.fake_claude(stdout, code)
+        with which, run, mock.patch.dict('os.environ', env or {}):
+            try:
+                return seen, seam.run_claude_cli('the prompt', self.SCHEMA), None
+            except Exception as error:
+                return seen, None, error
+
+    def test_claude_command_has_no_tools_no_mcp_no_skills_and_no_session(self):
+        seen, answer, error = self.call(json.dumps({'is_error': False, 'structured_output': {'a': 'x'}}))
+        self.assertIsNone(error)
+        self.assertEqual(answer, {'a': 'x'})
+        args = seen[0]['args']
+        self.assertEqual(args[1], '-p')
+        self.assertEqual(args[args.index('--output-format') + 1], 'json')
+        self.assertEqual(json.loads(args[args.index('--json-schema') + 1]), self.SCHEMA)
+        self.assertEqual(args[args.index('--tools') + 1], '')
+        for flag in ('--safe-mode', '--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence'):
+            self.assertIn(flag, args)
+        self.assertNotIn('the prompt', ' '.join(args), 'the prompt goes in on standard input')
+        self.assertEqual(seen[0]['input'], 'the prompt')
+        self.assertTrue(seen[0]['cwd'])
+
+    def test_claude_runs_without_api_keys(self):
+        seen, _, _ = self.call(json.dumps({'structured_output': {'a': 'x'}}),
+                               env={'ANTHROPIC_API_KEY': 'fake-key', 'ANTHROPIC_AUTH_TOKEN': 'fake-token'})
+        self.assertNotIn('ANTHROPIC_API_KEY', seen[0]['env'])
+        self.assertNotIn('ANTHROPIC_AUTH_TOKEN', seen[0]['env'])
+
+    def test_claude_errors_map_to_the_seam(self):
+        for stdout, code in ((json.dumps({'is_error': True, 'result': 'Failed to authenticate'}), 0),
+                             (json.dumps({'structured_output': {'a': 'x'}}), 1)):
+            from unittest import mock
+            seen, (which, run) = self.fake_claude(stdout, code)
+            with which, run, self.assertRaises(seam.AiUnavailable):
+                seam.complete('p', self.SCHEMA, engine='claude')
+        for stdout in (json.dumps({'is_error': False, 'result': 'plain text'}), 'not json'):
+            seen, (which, run) = self.fake_claude(stdout)
+            with which, run, self.assertRaises(seam.AiBadAnswer):
+                seam.complete('p', self.SCHEMA, engine='claude')
+
+    def test_schema_failure_is_a_bad_answer_not_an_outage(self):
+        stdout = json.dumps({'is_error': True, 'subtype': 'error_max_structured_output_retries'})
+        seen, (which, run) = self.fake_claude(stdout, 1)
+        with which, run, self.assertRaises(seam.AiBadAnswer):
+            seam.complete('p', self.SCHEMA, engine='claude')
+
+    def test_cmd_shim_refuses_shell_characters_in_the_schema(self):
+        from unittest import mock
+        import subprocess
+        risky = {'type': 'object', 'description': 'a & b', 'properties': {}, 'required': []}
+        with mock.patch('shutil.which', return_value='claude.CMD'),                 mock.patch('subprocess.run', side_effect=AssertionError('the CLI was started')):
+            with self.assertRaises(seam.AiBadAnswer):
+                seam.complete('p', risky, engine='claude')
+        seen, (which, run) = self.fake_claude(json.dumps({'structured_output': {'a': 'x'}}))
+        with mock.patch('shutil.which', return_value='claude.CMD'), run:
+            self.assertEqual(seam.run_claude_cli('p', self.SCHEMA), {'a': 'x'})
+
+    def test_missing_claude_cli_is_unavailable(self):
+        from unittest import mock
+        with mock.patch('shutil.which', return_value=None), self.assertRaises(seam.AiUnavailable):
+            seam.complete('p', self.SCHEMA, engine='claude')
+
+    def test_engine_picks_the_runner(self):
+        from unittest import mock
+        with mock.patch.object(seam, 'run_claude_cli', return_value={'a': 'c'}) as claude, \
+                mock.patch.object(seam, 'run_cli', return_value={'a': 'x'}) as codex:
+            self.assertEqual(seam.complete('p', self.SCHEMA, engine='claude'), {'a': 'c'})
+            self.assertEqual(seam.complete('p', self.SCHEMA, engine='codex'), {'a': 'x'})
+            self.assertEqual(seam.complete('p', self.SCHEMA), {'a': 'x'}, 'Codex stays the default')
+        self.assertEqual((claude.call_count, codex.call_count), (1, 2))
+        with self.assertRaises(ValueError):
+            seam.complete('p', self.SCHEMA, engine='other')
+        self.assertEqual((seam.model_label('codex'), seam.model_label('claude')), ('codex-cli', 'claude-cli'))
+
+
+class ClaudeOptionJudge(Base):
+    """Card 04c: the saved judgement names its AI, and switching the AI judges again."""
+
+    def test_model_label_is_saved_and_switching_the_ai_judges_again(self):
+        ai = FakeAI()
+        judge.judge_pending(self.storage, self.profile, EVIDENCE, TODAY, 'run-1', complete=ai, limit=20,
+                            postings=self.postings, jobs=[self.ids['Example Co']], model='claude-cli')
+        self.assertEqual(self.current('Example Co')['model'], 'claude-cli')
+        ai.calls.clear()
+        report = judge.judge_pending(self.storage, self.profile, EVIDENCE, TODAY, 'run-2', complete=ai, limit=20,
+                                     postings=self.postings, jobs=[self.ids['Example Co']], model='codex-cli')
+        self.assertEqual((report['cached'], len(ai.calls)), (0, 1))
+        self.assertEqual(self.current('Example Co')['model'], 'codex-cli')
+
+
 if __name__ == '__main__':
     unittest.main()
