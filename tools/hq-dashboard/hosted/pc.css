@@ -38,6 +38,7 @@
 
 /* Document origins in the job drawer */
 .pc-job-docs{flex:1 1 100%;min-width:0;overflow-wrap:anywhere}
+.pc-job-docs:empty{display:none}
 .pc-job-file{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0}
 .pc-job-file>span{flex:1 1 220px;min-width:0}
 .pc-job-file .btn{white-space:normal;max-width:100%}

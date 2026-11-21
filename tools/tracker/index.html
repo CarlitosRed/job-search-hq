@@ -10,7 +10,7 @@
 :root{
  --font-display:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
  --font-body:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
- --sidebar-bg:#ffffff;--bg:#f7f8fa;--card:#ffffff;--ink:#111827;--ink2:#374151;--mute:#64748b;--line:#eaedf1;--soft:#f1f3f5;--hover:#e9ecef;
+ --sidebar-bg:#ffffff;--bg:#f7f8fa;--card:#ffffff;--ink:#111827;--ink2:#374151;--mute:#334155;--line:#eaedf1;--soft:#f1f3f5;--hover:#e9ecef;
  --blue:#2563eb;--blue-ink:#1d4ed8;--blue-soft:#eff6ff;
  --green:#16a34a;--green-ink:#15803d;--green-soft:#f0fdf4;
  --amber:#d97706;--amber-ink:#b45309;--amber-soft:#fffbeb;
@@ -52,7 +52,7 @@
  --sk-tracked:var(--tc-all);--sk-wish:var(--tc-wish);--sk-ready:var(--tc-ready);--sk-applied:var(--tc-applied);--sk-skip:var(--tc-skipped);--sk-wait:var(--tc-applied);--sk-int:var(--tc-interview);--sk-rej:var(--tc-rejected);--sk-offer:var(--tc-offer);--sk-prog:var(--green);
  --av-l:24%;--av-s:36%;--av-fl:88%;--on-blue:#0b1530;--r:14px;--r-sm:9px;}
 :root[data-theme="light"]{color-scheme:light;
- --sidebar-bg:#ffffff;--bg:#f7f8fa;--card:#ffffff;--ink:#111827;--ink2:#374151;--mute:#64748b;--line:#eaedf1;--soft:#f1f3f5;--hover:#e9ecef;
+ --sidebar-bg:#ffffff;--bg:#f7f8fa;--card:#ffffff;--ink:#111827;--ink2:#374151;--mute:#334155;--line:#eaedf1;--soft:#f1f3f5;--hover:#e9ecef;
  --blue:#2563eb;--blue-ink:#1d4ed8;--blue-soft:#eff6ff;
  --rc-primary:#2563eb;--rc-secondary:#7c3aed;
  --green:#10b981;--green-ink:#059669;--green-soft:#ecfdf5;
@@ -82,10 +82,14 @@ a{color:var(--blue-ink)}
 
 /* header */
 .top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
-.top-in{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(400px,1.5fr);align-items:center;gap:16px;padding:10px 24px;max-width:1680px;margin:0 auto}
-.brand{display:flex;align-items:center;gap:11px;min-width:0;justify-self:start}
-.logo{width:36px;height:36px;border-radius:10px;background:var(--blue);color:var(--on-blue);display:grid;place-items:center;flex:none}
-.brand h1{font-family:var(--font-display);font-size:18px;margin:0;letter-spacing:-.02em;line-height:1.2;font-weight:700;white-space:nowrap}
+.top-in{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px;padding:10px 32px;width:100%;max-width:100%;box-sizing:border-box;margin:0}
+.brand{display:flex;align-items:center;gap:11px;min-width:0;justify-self:start;background:transparent;border:0;padding:2px 4px;margin:-2px -4px;border-radius:10px;cursor:pointer;text-align:left;color:inherit;font:inherit;text-decoration:none;-webkit-tap-highlight-color:transparent;transition:opacity .15s ease}
+.brand:hover{opacity:.85}
+.brand:active{transform:scale(.98)}
+.logo{width:36px;height:36px;border-radius:10px;background:var(--blue);color:var(--on-blue);display:grid;place-items:center;flex:none;transition:transform .15s ease}
+.brand:hover .logo{transform:scale(1.02)}
+.brand:active .logo{transform:scale(.96)}
+.brand h1{font-family:var(--font-display);font-size:18px;margin:0;letter-spacing:-.02em;line-height:1.2;font-weight:700;white-space:nowrap;color:var(--ink)}
 .seg{display:flex;background:transparent;border:0;border-radius:0;padding:0;gap:4px;justify-self:center;margin:0 auto}
 .seg button{box-sizing:border-box;height:36px;border:0;background:transparent;padding:7px 14px;border-radius:9px;color:var(--mute);font-weight:500;display:flex;align-items:center;gap:7px;white-space:nowrap;transition:background .15s,color .15s;position:relative}
 .seg button:hover{color:var(--ink);background:color-mix(in srgb,var(--soft) 50%,transparent)}
@@ -708,9 +712,11 @@ border-radius:24px;border:1px solid var(--line);background:var(--card);color:var
 
 /* detail */
 .detail{background:transparent!important;border:none!important;box-shadow:none!important;border-radius:0!important;padding:0 2px 32px!important;display:flex!important;flex-direction:column!important;gap:22px!important}
-.d-head{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
-.d-actions-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto;padding-top:2px}
-.d-head .t{flex:1;min-width:0}
+.d-head{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.d-actions-top{display:flex;align-items:center;justify-content:flex-end;gap:8.5px;margin-left:auto;flex-wrap:nowrap;padding-top:0}
+.d-actions-top .btn{font-size:14px;padding:8.5px 15px;gap:7.5px}
+.d-actions-top .btn svg{width:16.5px;height:16.5px}
+.d-head .t{flex:1 1 auto;min-width:min(100%,380px)}
 .d-head h2{margin:0;font-family:var(--font-display);font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink2);line-height:1.3}.d-head h2 .pl{font-family:var(--font-body);font-size:13.5px;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--mute);white-space:nowrap;vertical-align:0}.d-head h2 .flag{width:16px;height:11px}.d-head h2 svg.flag{display:inline;width:14px;height:14px;vertical-align:-2px}
 .d-head .role{color:var(--ink);font-family:var(--font-display);font-size:26px;font-weight:700;letter-spacing:-.025em;line-height:1.25;margin:4px 0 0 0}
 .d-meta{display:flex;gap:12px;flex-wrap:wrap;color:var(--mute);font-size:12.5px;align-items:center}
@@ -838,6 +844,7 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;paddi
  .actions{order:1}.search{flex-basis:100%}
  .form2{grid-template-columns:1fr}
  .detail{padding:18px 16px}
+ .d-actions-top{flex-wrap:wrap;justify-content:flex-start}
  .d-head h2{font-size:18px}
  .stepper button{font-size:10.5px}
  #drawer{--dp:8px}
@@ -845,7 +852,7 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;paddi
 @media (hover:none){.search{width:clamp(150px,40vw,260px)}.search input{width:100%;color:var(--ink);cursor:text;background:var(--card);border-color:var(--line)}.search input::placeholder{color:var(--mute)}.search kbd{display:none}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 @media (pointer:coarse),(max-width:640px){
- #themeBtn,#fbtn,.top .btn.icon,.dr-close .btn.icon,#tx,.btn.quiet.icon{min-width:44px;min-height:44px}
+ #themeBtn,#fbtn,.top .btn.icon,.dr-close .btn.icon,#tx,.btn.quiet.icon,.brand{min-width:44px;min-height:44px}
  .seg button{min-height:40px}
  input,select,textarea,.inp{font-size:16px}
 }
@@ -901,8 +908,8 @@ html{overflow-y:scroll;scrollbar-gutter:stable}
 
 </style></head><body><script>try{const p=new URLSearchParams(location.search);const t=p.get("theme")||localStorage.getItem("hqTheme");if(t==="light"||t==="dark"){document.documentElement.dataset.theme=t;localStorage.setItem("hqTheme",t)}if(p.has("noanim"))document.documentElement.classList.add("no-anim")}catch(e){}</script>
 <header class="top"><div class="top-in">
- <div class="brand"><div class="logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/></svg></div>
-  <h1>Job Search HQ</h1></div>
+ <button class="brand" type="button" aria-label="Job Search HQ - Overview" title="Go to Overview"><div class="logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/></svg></div>
+  <h1>Job Search HQ</h1></button>
  <nav class="seg" role="tablist" aria-label="Views">
   <button role="tab" data-v="overview" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 19V10M10 19V5M16 19v-6M22 19H2"/></svg><span class="l">Overview</span></button>
   <button role="tab" data-v="list" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 4v16M13.5 9H18M13.5 13H18"/></svg><span class="l">List</span></button>
@@ -1865,6 +1872,7 @@ function closeDrawers(){const dirty=$("#drawer textarea[data-dirty='1']");if(dir
  return true}
 
 /* ---------- events ---------- */
+$(".brand")?.addEventListener("click",()=>{const b=$(".seg button[data-v='overview']");if(b)b.click();else{S.view="overview";render()}window.scrollTo({top:0,behavior:"instant"})});
 $$(".seg button").forEach(b=>b.onclick=()=>{S.view=b.dataset.v;render()});
 $(".seg").addEventListener("keydown",e=>{if(!["ArrowLeft","ArrowRight"].includes(e.key))return;const bs=$$(".seg button");const i=bs.findIndex(b=>b.dataset.v===S.view);const n=bs[(i+(e.key==="ArrowRight"?1:bs.length-1))%bs.length];S.view=n.dataset.v;render();n.focus()});
 let qT;const onQ=e=>{clearTimeout(qT);const v=e.target.value;if(!v.trim()){S.q="";render();return}qT=setTimeout(()=>{S.q=$("#q").value;render()},120)};
