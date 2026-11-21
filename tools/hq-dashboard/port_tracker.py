@@ -91,9 +91,11 @@ def main():
 
     # Views
     h = sub(h, 'function renderInner(){const js=filtered();$$(".seg button").forEach(b=>b.setAttribute("aria-selected",b.dataset.v===S.view));\n'
+               ' document.body.dataset.view=document.documentElement.dataset.view=S.view;\n'
                ' const ac=activeCount();$("#fcount").hidden=!ac;$("#fcount").textContent=ac;$("#fbtn").hidden=S.view==="contacts";\n'
                ' activebar();const m=$("#main");',
             'function renderInner(){const js=filtered();$$(".seg button").forEach(b=>b.setAttribute("aria-selected",b.dataset.v===S.view));\n'
+            ' document.body.dataset.view=document.documentElement.dataset.view=S.view;\n'
             ' viewShown();const tool=TOOL_VIEWS.includes(S.view);$("#main").hidden=tool;$("#v-search").hidden=S.view!=="search";$("#v-review").hidden=S.view!=="review";$(".search").hidden=tool;\n'
             ' const ac=activeCount();$("#fcount").hidden=!ac;$("#fcount").textContent=ac;$("#fbtn").hidden=S.view==="contacts"||tool;\n'
             ' activebar();if(tool||!READY){save();return}const m=$("#main");')
