@@ -735,7 +735,10 @@ border-radius:24px;border:1px solid var(--line);background:var(--card);color:var
 .gd-notes-card h4{font-size:16px;font-weight:700;color:var(--ink);margin:0 0 12px 0}
 .split{display:grid;grid-template-columns:250px minmax(330px,410px) minmax(0,1fr);gap:16px;align-items:start}
 .split.noside{grid-template-columns:minmax(330px,410px) minmax(0,1fr)}
-.listcol{gap:10px;min-width:0}
+.listcol{position:sticky;top:80px;max-height:calc(100vh - 96px);overflow-y:auto;overflow-x:hidden;gap:10px;min-width:0;padding:0 4px 32px 0;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.listcol::-webkit-scrollbar{width:5px}
+.listcol::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+.listcol::-webkit-scrollbar-track{background:transparent}
 .list-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .list-h h2{font-size:15px;margin:0 auto 0 0}
 .list-h h2 span{color:var(--mute);font-weight:500}
@@ -746,10 +749,15 @@ border-radius:24px;border:1px solid var(--line);background:var(--card);color:var
 .lcard{cursor:pointer}
 .lcard .card-top{align-items:center}
 .lcard .st{font-size:11.5px}
-.detail-wrap{position:sticky;top:80px;max-height:calc(100vh - 96px);overflow-y:auto;background:transparent!important;border:none!important;box-shadow:none!important;border-radius:0!important;padding:0 6px 0 0}
+.detail-wrap{position:sticky;top:80px;max-height:calc(100vh - 96px);overflow-y:auto;background:transparent!important;border:none!important;box-shadow:none!important;border-radius:0!important;padding:0 6px 0 0;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.detail-wrap::-webkit-scrollbar{width:5px}
+.detail-wrap::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+.detail-wrap::-webkit-scrollbar-track{background:transparent}
 
 /* detail */
 .detail{background:transparent!important;border:none!important;box-shadow:none!important;border-radius:0!important;padding:0 2px 32px!important;display:flex!important;flex-direction:column!important;gap:22px!important}
+.detail-wrap .d-head{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:none;padding:12px 0 16px;margin-bottom:4px}
+.detail-wrap .d-head::after{content:"";position:absolute;bottom:-32px;left:0;right:0;height:32px;background:linear-gradient(to bottom,var(--bg) 0%,color-mix(in srgb,var(--bg) 60%,transparent) 55%,transparent 100%);pointer-events:none;z-index:10}
 .d-head{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .d-actions-top{display:flex;align-items:center;justify-content:flex-end;gap:8.5px;margin-left:auto;flex-wrap:nowrap;padding-top:0}
 .d-actions-top .btn{font-size:14px;padding:8.5px 15px;gap:7.5px}
@@ -879,6 +887,7 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;paddi
  main{padding:14px 16px 50px}
  .split,.split.noside{grid-template-columns:1fr}
  .split .detail-wrap{display:none}
+ .listcol{position:static;max-height:none;overflow:visible;padding-right:0}
  .board{width:100%}
  .search kbd{display:none}
 }
@@ -912,7 +921,16 @@ html{overflow-y:scroll;scrollbar-gutter:stable}
 .bcard-round{font-size:11px;font-weight:600;color:var(--amber-ink);background:var(--amber-soft);padding:1px 6px;border-radius:6px;display:inline-block;margin-top:3px}
 
 /* Desktop stage tiles share one row, including Other when present. */
-@media (min-width:901px){.ov-tiles{grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);grid-template-columns:none}}
+@media (min-width:901px){
+ .ov-tiles{grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);grid-template-columns:none}
+ html[data-view="list"],body[data-view="list"]{height:100vh!important;overflow:hidden!important}
+ body[data-view="list"] #main{flex:1 1 0!important;min-height:0!important;height:auto!important;max-height:none!important;padding:10px 32px 0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important}
+ body[data-view="list"] .list-view-wrap{display:flex!important;flex-direction:column!important;flex:1 1 0!important;min-height:0!important;overflow:hidden!important}
+ body[data-view="list"] .pref-bar{flex:none!important}
+ body[data-view="list"] #split{flex:1 1 0!important;min-height:0!important;height:100%!important;overflow:hidden!important;align-items:stretch!important}
+ body[data-view="list"] .listcol{position:static!important;height:100%!important;max-height:100%!important;overflow-y:auto!important;overflow-x:hidden!important;padding:0 4px 32px 0!important}
+ body[data-view="list"] .detail-wrap{position:static!important;height:100%!important;max-height:100%!important;overflow-y:auto!important;padding:0 6px 32px 0!important}
+}
 .tile b{position:relative;display:block;height:36px;line-height:1;perspective:600px;transform-style:preserve-3d}
 .tile b .num,.tile b .pct{position:absolute;left:0;top:0;width:100%;height:100%;display:flex;align-items:center;letter-spacing:-.02em;font-variant-numeric:tabular-nums;transform-style:preserve-3d;backface-visibility:hidden;will-change:transform,opacity}
 .tile b .num{font-size:28px;font-weight:700;line-height:1;color:var(--tc,var(--ink));z-index:2;transform-origin:50% 100%;transform:translateZ(10px) rotateX(0deg);transition:transform .42s cubic-bezier(0.2,0.8,0.2,1),opacity .32s ease}
@@ -1828,9 +1846,10 @@ function render(){const keep=$$("textarea[data-note][data-dirty='1']").map(t=>[t
  keep.forEach(([k,v,f,pos])=>{$$(`[data-k="${CSS.escape(k)}"] textarea[data-note]`).forEach(t=>{t.value=v;noteState(t);if(f){t.focus();t.setSelectionRange(pos,pos)}})});
  rounds.forEach(([k,id,field,v,f,start,end,direction])=>{$$(`[data-k="${CSS.escape(k)}"] .round[data-id="${CSS.escape(id)}"] input[data-field="${CSS.escape(field)}"]`).forEach(t=>{t.value=v;if(f){t.focus();if(start!==null)t.setSelectionRange(start,end,direction)}})})}
 function renderInner(){const js=filtered();$$(".seg button").forEach(b=>b.setAttribute("aria-selected",b.dataset.v===S.view));
+ document.body.dataset.view=document.documentElement.dataset.view=S.view;
  const ac=activeCount();$("#fcount").hidden=!ac;$("#fcount").textContent=ac;$("#fbtn").hidden=S.view==="contacts";
  activebar();const m=$("#main");
- const scroll=$(".board-cols")?.scrollLeft;
+ const scroll=$(".board-cols")?.scrollLeft,listScroll=$(".listcol")?.scrollTop;
  if(S.view==="overview"&&(!D.jobs.length||js.length))m.innerHTML=overview(js);
  else if(!D.jobs.length&&S.view!=="contacts")m.innerHTML=emptyBox("No jobs yet","Add your first lead, or let the daily rerun fill the spreadsheet.",`<button class="btn" data-act="add">Add a lead</button>`)+(S.view==="board"?board(js):"");
  else if(S.view==="overview")m.innerHTML=noMatch();
@@ -1840,6 +1859,7 @@ function renderInner(){const js=filtered();$$(".seg button").forEach(b=>b.setAtt
  if(["overview","board","list"].includes(S.view)&&D.daily_run){const tone=["a","n"].includes(D.daily_run.tone)?" "+D.daily_run.tone:"";const stale=D.stale_boards||[];m.insertAdjacentHTML("afterbegin",`<div class="banner${tone}" role="status" style="margin-bottom:10px">${esc(D.daily_run.message)}</div>${stale.length?`<div class="banner n" style="margin-bottom:10px">${esc(stale.map(b=>`${b.board}: not fully read since ${new Date(b.since+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}${b.reason?" ("+b.reason+")":""}`).join("; "))}</div>`:""}`)}
  if(usesJobView())m.insertAdjacentHTML("afterbegin",jobViews());
  if(scroll&&$(".board-cols"))$(".board-cols").scrollLeft=scroll;
+ if(listScroll!=null&&$(".listcol"))$(".listcol").scrollTop=listScroll;
  const sp=$("#split");if(sp&&!sp.querySelector(".side"))sp.classList.add("noside");
  if($("#sort"))$("#sort").value=S.sort;if($("#group"))$("#group").value=S.group;
  if($("#fdrawer").classList.contains("on"))$("#fdrawer").innerHTML=sidebar(true);
