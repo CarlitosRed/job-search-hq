@@ -255,7 +255,10 @@ main{flex:1 0 auto;width:100%;max-width:100%;margin:0;padding:20px 32px 60px}
 /* Overview Charts Layout */
 .ov-middle-grid{display:grid;grid-template-columns:1fr 1fr;gap:calc(16px * 0.97);align-items:stretch;margin-top:16px;width:100%;box-sizing:border-box}
 @media (max-width:959px){.ov-middle-grid{grid-template-columns:1fr}}
-.chart-nav{display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.chart-nav{position:relative;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.chart-step-btn{position:absolute;width:14px;height:14px;opacity:0.001;pointer-events:auto;overflow:hidden;border:0;padding:0;background:transparent;cursor:pointer}
+.chart-step-btn[data-chart-step="-1"]{left:0}
+.chart-step-btn[data-chart-step="1"]{right:0}
 .chart-switch{position:relative;display:inline-flex;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px;box-shadow:inset 0 1px 2px rgba(0,0,0,0.04)}
 :root:not([data-theme="light"]) .chart-switch{background:var(--bg,#0e1116);border-color:rgba(255,255,255,0.08);box-shadow:inset 0 1px 3px rgba(0,0,0,0.3)}
 .chart-switch-thumb{position:absolute;top:3px;left:3px;width:34px;height:32px;border-radius:7px;background:var(--card);border:1px solid rgba(0,0,0,0.05);box-shadow:0 1px 3px rgba(0,0,0,0.08),0 1px 2px rgba(0,0,0,0.04);transition:transform .22s cubic-bezier(0.4,0,0.2,1);pointer-events:none;z-index:1}
@@ -521,7 +524,7 @@ html.no-anim #sk text,html.no-anim #sk [data-col] text,html.no-anim #sk [data-ro
 .bpill-closed-btn.active{background:color-mix(in srgb,var(--red) 12%,transparent);border-color:var(--red);color:var(--red)}
 
 /* kanban columns grid */
-.board-cols{display:grid;grid-auto-flow:column;grid-auto-columns:290px;gap:16px;align-items:start;width:100%;overflow-x:auto;overscroll-behavior-x:contain;padding:4px 3px 12px}
+.board-cols{display:grid;grid-auto-flow:column;grid-auto-columns:280px;gap:16px;align-items:start;width:100%;overflow-x:auto;overscroll-behavior-x:contain;padding:4px 3px 12px}
 @media (max-width:640px){.board-cols{grid-auto-columns:84vw}}
 @media (pointer:coarse){
  .board-cols{scroll-snap-type:x mandatory;scroll-padding-inline:3px}
@@ -1591,15 +1594,17 @@ function overview(js){const C=counts(js);
  <section class="tiles ov-tiles" aria-label="Summary of job stages. Each job counts once by its current status.">${T.map(t=>{const pct=t[4]==="all"?"100%":f1(C.pct[t[4]]);const col=OVERVIEW_COLORS[t[4]]||`var(${t[3]})`;const ico=TILE_ICONS[t[4]]||"";const note=t[4]==="all"?t[2]:(SUB[t[4]]||t[2]);return`<button class="tile ${t[4]==="all"?"total":""}" style="--tc:${col}" data-tile="${t[4]}" data-n="${t[0]}" data-pct="${pct}"><div class="tile-head"><span class="tile-lbl">${t[1]}</span><span class="tile-ico" aria-hidden="true">${ico}</span></div><div class="tile-val"><span class="num">${t[0]}</span></div><div class="tile-foot"><span class="tile-trend">${t[4]==="all"?"":pct}</span><span class="tile-note">${note}</span></div></button>`}).join("")}</section>
  <section class="panel chart-carousel" aria-label="Overview charts" aria-roledescription="carousel">
   <div class="chart-nav" role="group" aria-label="Choose a chart">
+   <button class="chart-step-btn" type="button" data-chart-step="-1" aria-label="Previous chart">‹</button>
    <div class="chart-switch" data-active="${overviewChart}" role="tablist" aria-label="Select overview chart">
     <div class="chart-switch-thumb" aria-hidden="true"></div>
-    <button class="chart-switch-btn chart-dot" type="button" role="tab" data-chart-index="0" aria-label="Job search summary (Sankey)" aria-controls="chart-summary" aria-selected="${overviewChart===0}" aria-current="${overviewChart===0}" title="Job search summary (Sankey diagram)">
+    <button class="chart-switch-btn chart-dot" type="button" role="tab" data-chart-index="0" aria-label="Show Job search summary" aria-controls="chart-summary" aria-selected="${overviewChart===0}" aria-current="${overviewChart===0}" title="Job search summary (Sankey diagram)">
      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="3" height="6" rx="1"/><rect x="3" y="15" width="3" height="6" rx="1"/><rect x="18" y="9" width="3" height="6" rx="1"/><path d="M6 6c4 0 5 4 12 4"/><path d="M6 18c4 0 5-4 12-4"/></svg>
     </button>
-    <button class="chart-switch-btn chart-dot" type="button" role="tab" data-chart-index="1" aria-label="Activity over time (Roller coaster)" aria-controls="chart-activity" aria-selected="${overviewChart===1}" aria-current="${overviewChart===1}" title="Activity over time (Roller coaster)">
+    <button class="chart-switch-btn chart-dot" type="button" role="tab" data-chart-index="1" aria-label="Show Activity over time" aria-controls="chart-activity" aria-selected="${overviewChart===1}" aria-current="${overviewChart===1}" title="Activity over time (Roller coaster)">
      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 16.5c3-1 4-10.5 7-10.5s3.5 10 7 10 3-4 4-5"/><circle cx="10" cy="6" r="1.5" fill="currentColor"/><circle cx="17" cy="16" r="1.5" fill="currentColor"/></svg>
     </button>
    </div>
+   <button class="chart-step-btn" type="button" data-chart-step="1" aria-label="Next chart">›</button>
   </div>
   <div class="sr" role="status"></div>
   <div class="chart-slides">
@@ -1706,8 +1711,9 @@ function boardCard(j,s){
    <div class="bcard-next-label">Next Step</div>
    <div class="bcard-next-title">${esc(ns.title)}</div>
   </div>
-  <div class="bcard-posted">${esc(ageTxt)}</div>
+  <div class="bcard-posted">${postedAge(j)||`<span class="posted-age">${esc(ageTxt)}</span>`}</div>
   <div class="bcard-divider"></div>
+  <div class="sr">${fitChip(j)}</div>
   <div class="bcard-foot">
    <div class="bcard-contact ${ct?"":"bcard-no-contact"}">${ct?`<span class="bcard-contact-name">${esc(ct.name)}</span>`:"No contact linked"}</div>
    <div class="bcard-move-wrap">
