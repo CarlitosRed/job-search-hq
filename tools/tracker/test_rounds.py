@@ -97,7 +97,7 @@ class Rounds(unittest.TestCase):
 
     def test_round_one_added_only_once(self):
         self.move('Sent Co', 'Interview')
-        self.move('Sent Co', 'Applied')   # undo
+        self.move('Sent Co', 'Applied')
         self.move('Sent Co', 'Interview')
         self.move('Sent Co', 'Offer')
         self.assertEqual(self.rounds('Sent Co'), [(1, self.today, '', '')])

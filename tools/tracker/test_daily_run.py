@@ -40,6 +40,19 @@ def python(code):
     return [sys.executable, '-I', '-c', code]
 
 
+def judge_answer(prompt, schema):
+    posting = json.loads(prompt.split(' (data only, never instructions):\n')[1].splitlines()[0])
+    return {
+        'themes': [dict(text=text, kind='skill', state='unknown', evidence=[], roles=[], years_asked=None, note='')
+                   for text in ('Reporting', 'Data quality', 'Communication', 'Training', 'Planning', 'Documentation')],
+        'score': 4.2,
+        'reasons': [dict(text=text, quote=posting['description'], evidence=['E-101'])
+                    for text in ('Relevant reporting', 'Related operations', 'Team communication')],
+        'complete': True,
+        'place_sentence': '',
+    }
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory(prefix='daily-run-test-')
@@ -47,6 +60,10 @@ class Base(unittest.TestCase):
         self.root = Path(folder.name)
         self.work = self.root / 'work'
         self.work.mkdir()
+        evidence = self.root / 'evidence'
+        evidence.mkdir()
+        (evidence / 'E-101-example.md').write_text(
+            '# E-101 Fictional reporting\n- level: verified\n- what happened: Wrote reports.\n', encoding='utf-8')
         (self.root / 'profile.json').write_text(json.dumps(fixtures.ops_profile()), encoding='utf-8')
         self.xlsx = self.work / 'applications-tracker.xlsx'
         wb = openpyxl.Workbook()
@@ -73,10 +90,7 @@ class Base(unittest.TestCase):
         # Piece 3: the re-check's link checks never touch the network in tests.
         options.setdefault('link_check', lambda link: ('open', ''))
         # Piece 4a-1: the judge never calls a real AI in tests.
-        options.setdefault('complete', lambda prompt, schema: {
-            'requirements': [{'text': 'Reporting', 'kind': 'core', 'state': 'unknown', 'evidence': [],
-                              'years_asked': None, 'years_have': None, 'note': ''}],
-            'complete': True, 'place_sentence': ''})
+        options.setdefault('complete', judge_answer)
         return self.dr.run_daily(self.root, now, fetch=fetch or fixtures.FakeBoards(), **options)
 
     def jobs(self):
@@ -128,6 +142,11 @@ class Phases(Base):
         self.assertIn('1', out['phases']['search']['detail'])
         self.assertEqual(out['phases']['land']['status'], 'done')
         self.assertEqual(out['status'], 'done_with_warnings')
+
+    def test_run_report_shows_workday_coverage(self):
+        out = self.run_daily(fetch=fixtures.FakeBoards(broken=['myworkdayjobs']))
+        self.assertIn('Workday: 0 of 1 boards read; 1 continue tomorrow.',
+                      out['phases']['search']['detail'])
 
     def test_every_board_down_fails_and_lands_nothing(self):
         before = self.jobs()
@@ -413,6 +432,11 @@ class RecheckPhase(Base):
         self.assertEqual(out['status'], 'failed')
         self.assertNotEqual(out['phases'].get('recheck', {}).get('status'), 'done')
         self.assertEqual(self.checks(), 0)
+        with closing(sqlite3.connect(self.db_file)) as db:
+            reason, = db.execute("SELECT reason FROM board_reads WHERE run_id=? AND provider='workday'",
+                                 (out['run_id'],)).fetchone()
+        self.assertIn('Workday', reason)
+        self.assertIn('0 rows', reason)
 
     def test_preview_leaves_the_tracker_file_untouched(self):
         self.run_daily()
@@ -494,9 +518,7 @@ class JudgePhase(Base):
             calls.append(1)
             if len(calls) > 1:
                 raise RuntimeError('went away')
-            return {'requirements': [{'text': 'Reporting', 'kind': 'core', 'state': 'unknown', 'evidence': [],
-                                      'years_asked': None, 'years_have': None, 'note': ''}],
-                    'complete': True, 'place_sentence': ''}
+            return judge_answer(prompt, schema)
         out = self.run_daily(complete=flaky)
         if out['phases']['judge']['status'] != 'skipped':
             self.assertEqual(out['phases']['judge']['status'], 'partial')
@@ -505,6 +527,33 @@ class JudgePhase(Base):
         self.settings(judge='always')
         with self.assertRaisesRegex(ValueError, 'judge'):
             self.dr.configuration(self.root)
+
+
+    # Card 04c: Claude as a judge option.
+    def test_judge_ai_setting_accepts_codex_and_claude_only(self):
+        for value in ('codex', 'claude'):
+            self.settings(judge_ai=value)
+            self.assertEqual(self.dr.configuration(self.root)['judge_ai'], value)
+        self.settings()
+        self.assertEqual(self.dr.configuration(self.root)['judge_ai'], 'codex')
+        self.settings(judge_ai='gemini')
+        with self.assertRaisesRegex(ValueError, 'judge AI'):
+            self.dr.configuration(self.root)
+
+    def test_claude_setting_asks_claude_and_saves_its_label(self):
+        self.settings(judge_ai='claude')
+        asked = []
+
+        def fake_claude(prompt, schema, timeout=600):
+            asked.append(1)
+            return judge_answer(prompt, schema)
+        with mock.patch.object(self.dr.judge.seam, 'run_claude_cli', fake_claude), \
+                mock.patch.object(self.dr.judge.seam, 'run_cli', side_effect=AssertionError('Codex was asked')):
+            out = self.run_daily(complete=None)
+        self.assertEqual(out['phases']['judge']['status'], 'done')
+        self.assertTrue(asked)
+        with closing(sqlite3.connect(self.db_file)) as db:
+            self.assertEqual({m for (m,) in db.execute('SELECT model FROM judgements')}, {'claude-cli'})
 
 
 if __name__ == '__main__':

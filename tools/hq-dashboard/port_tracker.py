@@ -67,8 +67,8 @@ def main():
     h = sub(h, 'title="Reload from the spreadsheet" aria-label="Reload from the spreadsheet"', 'title="Reload" aria-label="Reload"')
     h = sub(h, "<dt><kbd>1</kbd>–<kbd>4</kbd></dt><dd>Overview, List, Board, Contacts</dd>",
             "<dt><kbd>1</kbd>–<kbd>6</kbd></dt><dd>Overview, List, Board, Contacts, Search, CVs</dd>")
-    h = sub(h, "<p>Every change saves straight into the spreadsheet and can be undone from the message at the bottom. This page only records; it never applies or sends anything.</p>",
-            "<p>Every change saves online at once and reaches the spreadsheet at the daily {{SCAN_TIME}} sync. Undo from the message at the bottom. This page only records and drafts; it never applies or sends anything.</p>")
+    h = sub(h, "<p>Every change saves straight into the spreadsheet. This page only records; it never applies or sends anything.</p>",
+            "<p>Every saved change goes straight into your spreadsheet. This page only records and drafts; it never applies or sends anything.</p>")
     h = sub(h, "<p class=\"sub\">Adds a new row to the spreadsheet. It's recorded only; applying stays yours.</p>",
             "<p class=\"sub\">Saved here now and added to the spreadsheet at the next {{SCAN_TIME}} sync. It's recorded only; applying stays yours.</p>")
     h = sub(h, 'id="addSave" type="button">Add to spreadsheet</button>', 'id="addSave" type="button">Add lead</button>')
@@ -81,8 +81,6 @@ def main():
     h = sub(h, 'S.q="";S.view="list";S.attention=false;',
             'S.q="";S.view="list";S.attention=false;{const v=location.hash.slice(1);if(["overview","list","board","contacts","search","review"].includes(v))S.view=v}')
     h = sub(h, "const p={sheet:j._sheet,row:j._row,status:s,expect:{Company:j.Company,Role:j.Role}};", "const p={id:j._id,sheet:j._sheet,status:s};")
-    h = sub(h, 'post("/api/update",{sheet:j._sheet,row:j._row,status:e.status,date:e.date,expect:{Company:j.Company,Role:j.Role}})',
-            'post("/api/update",{id:j._id,sheet:j._sheet,status:e.status,date:e.date})')
     h = sub(h, 'post("/api/update",{sheet:j._sheet,row:j._row,note:txt,expect:{Company:j.Company,Role:j.Role}})', 'post("/api/update",{id:j._id,sheet:j._sheet,note:txt})')
     h = sub(h, "if(ok){j.Notes=txt;j._noteSaved=true;", "if(ok){j.Notes=txt;j._noteSaved=true;NOTED.add(j._id);{const c=byKey(j._id);if(c){c.Notes=txt;c._noteSaved=true}}")
     h = sub(h, 'const p={sheet:"Contacts",row:c._row,status:t.value,expect:{Person:c.Person}};', 'const p={id:c._id,sheet:"Contacts",status:t.value};')
@@ -122,7 +120,7 @@ def main():
     # The viewer never shows confirm(): a second close discards unsaved notes instead.
     h = sub(h, "let lastFocus=null;", "let lastFocus=null,discardArm=false;")
     h = sub(h, """if(dirty&&!confirm("Discard unsaved notes?"))return false;""",
-            """if(dirty&&!discardArm){discardArm=true;setTimeout(()=>discardArm=false,6000);toast("Unsaved notes. Save them, or close again to discard.",null,true);return false}discardArm=false;""")
+            """if(dirty&&!discardArm){discardArm=true;setTimeout(()=>discardArm=false,6000);toast("Unsaved notes. Save them, or close again to discard.",true);return false}discardArm=false;""")
 
     # Phone interaction adjustments.
     # Drawer: warn before notes are lost; a dirty note or focused field stays put while the rest refreshes; focus lands on Close.
@@ -130,22 +128,20 @@ def main():
     h = sub(h, """const dr=$("#drawer");const ta=dr.querySelector("textarea[data-dirty='1']");if(ta&&dr.dataset.k===key(j))return;""", """const dr=$("#drawer");if(keepLive(dr,j))return;""")
     h = sub(h, """setTimeout(()=>$("#drawer .dr-close button")?.focus(),50)""", """setTimeout(()=>$('#drawer [data-act="close"]')?.focus(),50)""")
     # Toast: touch never holds it open (sticky :hover); dismissing drops focus so the next one can hide.
-    h = sub(h, 'b.onclick=undo?()=>{t.classList.remove("on");undo()}:null;', "b.onclick=undo?()=>{tOff();undo()}:null;")
     h = sub(h, '$("#tx").onclick=()=>{clearTimeout(tT);t.classList.remove("on")};', '$("#tx").onclick=tOff;')
-    h = sub(h, 'tMs=undo?10000:err?7000:3200;if(!t.matches(":hover,:focus-within"))tHide();else clearTimeout(tT)}',
-            "tMs=undo?(wide()?10000:7000):err?7000:3200;if(tHold)clearTimeout(tT);else tHide()}")
+    h = sub(h, 'tMs=err?7000:3200;if(!t.matches(":hover,:focus-within"))tHide();else clearTimeout(tT)}',
+            "tMs=err?7000:3200;if(tHold)clearTimeout(tT);else tHide()}")
     h = sub(h, '$("#toast").addEventListener("mouseenter",()=>clearTimeout(tT));$("#toast").addEventListener("mouseleave",tHide);\n'
                '$("#toast").addEventListener("focusin",()=>clearTimeout(tT));$("#toast").addEventListener("focusout",tHide);',
             'let tHold=false;const tOff=()=>{clearTimeout(tT);tHold=false;const t=$("#toast");t.classList.remove("on");if(t.contains(document.activeElement))document.activeElement.blur()};\n'
             '$("#toast").addEventListener("pointerenter",e=>{if(e.pointerType==="mouse"){tHold=true;clearTimeout(tT)}});$("#toast").addEventListener("pointerleave",e=>{if(e.pointerType==="mouse"){tHold=false;tHide()}});\n'
             '$("#toast").addEventListener("focusin",e=>{if(e.target.matches(":focus-visible")){tHold=true;clearTimeout(tT)}});$("#toast").addEventListener("focusout",()=>{if(tHold){tHold=false;tHide()}});')
     # Status: a second pick during a save runs right after it; the date field has one rule and refuses the future.
-    h = sub(h, "const k=key(j);if(PENDING.has(k))return;\n", 'const k=key(j);if(PENDING.has(k)){if(date===undefined&&!undoing)NEXT.set(k,s);else{toast("Still saving the last change. Try again in a moment.");render()}return}\n')
+    h = sub(h, "const k=key(j);if(PENDING.has(k))return;\n", 'const k=key(j);if(PENDING.has(k)){if(date===undefined)NEXT.set(k,s);else{toast("Still saving the last change. Try again in a moment.");render()}return}\n')
     h = sub(h, 'if(!ok){cur["My status"]=prev.status;cur["Date applied"]=prev.date;render();return}\n const msg=', 'if(!ok){NEXT.delete(k);cur["My status"]=prev.status;cur["Date applied"]=prev.date;render();return}\n const msg=')
-    h = sub(h, "pushUndo({k,company:j.Company,role:j.Role,status:prev.status,date:prev.date,msg});toast(msg,undoLast)}", "pushUndo({k,company:j.Company,role:j.Role,status:prev.status,date:prev.date,msg});toast(msg,undoLast);if(NEXT.has(k)){const n=NEXT.get(k);NEXT.delete(k);setStatus(cur,n)}}")
+    h = sub(h, " toast(msg);\n}", " toast(msg);\n if(NEXT.has(k)){const n=NEXT.get(k);NEXT.delete(k);setStatus(cur,n)}\n}")
     h = sub(h, "const PENDING=new Set();", "const PENDING=new Set(),NEXT=new Map();")
     h = sub(h, 'if(t.hasAttribute("data-date")){const j=byKey(t.closest("[data-k]").dataset.k);setStatus(j,j["My status"],{date:t.value});return}', 'if(t.hasAttribute("data-date")){dateChanged(t);return}')
-    h = sub(h, 'bad.push("a score like 3.6");', 'bad.push("a score like 3.6");if(p["Date applied"]>D.today)bad.push("a date applied that isn\'t in the future");')
     # Board: a direct way to move a card by touch, and wording that fits the device.
     h = sub(h, 'Also in ${j._sib.length} place${j._sib.length>1?"s":""}</span>`:""}</div></div>', 'Also in ${j._sib.length} place${j._sib.length>1?"s":""}</span>`:""}</div>${opts.drag?moveSel(j):""}</div>')
     h = sub(h, '<div class="col-empty">${s.id==="tracked"?"No saved jobs":"Drag a card here"}</div>', '<div class="col-empty">${s.id==="tracked"?"No saved jobs":`<span class="h-desk">Drag a card here</span><span class="h-touch">Nothing here yet</span>`}</div>')
@@ -156,21 +152,11 @@ def main():
             '<div id="help" popover><h2 class="h-desk">Shortcuts</h2><h2 class="h-touch">Help</h2><p class="h-touch">Tap a job to open it. Change its status there, or with Move… on the Board. Scrolled down? Tap the open tab to go back up.</p><dl class="h-desk">')
     h = sub(h, "it never applies or sends anything.</p></div>", 'it never applies or sends anything.</p><button class="btn ghost h-touch" type="button" popovertarget="help" popovertargetaction="hide">Close</button></div>')
     # Add lead: the right message before data is in, no keyboard on open on a phone, and the real reason inside the dialog (the toast is behind it).
-    h = sub(h, 'return toast("No job sheets found in the spreadsheet",null,true);', 'return toast(READY?"No job lists found.":$("#sync").textContent==="Not signed in"?"Not signed in. Reload and sign in.":"Still loading your jobs. Try again in a moment.",null,true);')
+    h = sub(h, 'return toast("No job sheets found in the spreadsheet",true);', 'return toast(READY?"No job lists found.":$("#sync").textContent==="Not signed in"?"Not signed in. Reload and sign in.":"Still loading your jobs. Try again in a moment.",true);')
     h = sub(h, '$("#addDlg").showModal();f.Company.focus()}', '$("#addDlg").showModal();if(wide())f.Company.focus();else{const d=$("#addDlg");d.tabIndex=-1;d.focus();d.scrollTop=0}}')
     h = sub(h, 'err.textContent="Not saved. See the message at the bottom of the screen."', 'err.textContent=$("#tmsg").textContent||"Not saved. Try again in a moment.";err.scrollIntoView({block:"center"})')
     h = sub(h, 'err.textContent="Please add "+bad.join(", ")+".";return}', 'err.textContent="Please add "+bad.join(", ")+".";err.scrollIntoView({block:"center"});return}')
-    h = sub(h, "\nboot();\n</script>", "\n" + read("lead-policy.js").rstrip() + "\n" + read("tools.js").rstrip() + "\n\nboot();\n</script>")
-    # Lanes use existing Verdict,
-    # preserving legacy history and the workbook schema. Never hand-edit generated pages.
-    h = sub(h, 'const VERD={', 'const VERD={READY:["Ready","g"],STRETCH:["Stretch","b"],VERIFY:["Verify","a"],MONITOR:["Monitor",""],ARCHIVE:["Archive",""],')
-    h = sub(h, 'function fitText(sc,v){', 'function fitText(sc,v){if(["READY","STRETCH","VERIFY","MONITOR","ARCHIVE"].includes(v.key))return VERD[v.key][0];')
-    h = sub(h, '<option>APPLY</option>', '<option>Ready</option><option>Stretch</option><option>Verify</option><option>Monitor</option><option>Archive</option><option>APPLY</option>')
-    h = sub(h, 'function ring(sc,size=38){', 'function ring(sc,size=38,v={key:"NONE"}){')
-    h = sub(h, 'ring(j._sc,opts.list?40:36)', 'ring(j._sc,opts.list?40:36,j._v)')
-    h = sub(h, 'ring(sc,52)', 'ring(sc,52,v)')
-    h = sub(h, 'function boardCard(j,s){', 'function boardCard(j,s){const v=j._v;')
-    h = sub(h, 'Fit score ${esc(sc.raw)} of 5', '${["READY","STRETCH","VERIFY","MONITOR","ARCHIVE"].includes(v.key)?"Attainability":"Previous fit score"} ${esc(sc.raw)} of 5', count=4)
+    h = sub(h, "\nboot();\n</script>", "\n" + read("tools.js").rstrip() + "\n\nboot();\n</script>")
 
     local_checks = h.replace(read('pc-data.js'), '')
     for bad in ("fetch(", "confirm(", "/api/data", "/api/version", "await load("):
@@ -179,8 +165,6 @@ def main():
     target = OUT
     if args.backend == 'pc':
         h = sub(h, '<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>\n', '')
-        h = h.replace('Every change saves online at once and reaches the spreadsheet at the daily {{SCAN_TIME}} sync.',
-                      'Every saved change goes straight into your spreadsheet.')
         h = h.replace('Saved here now and added to the spreadsheet at the next {{SCAN_TIME}} sync.', 'Adds a row directly to your spreadsheet.')
         h = h.replace('Saved online at once; the spreadsheet catches up at {{SCAN_TIME}}.', 'Saved straight into your spreadsheet.')
         h = h.replace('Saved · syncs at {{SCAN_TIME}}', 'Saved to spreadsheet')
@@ -201,8 +185,8 @@ def main():
                 '  <article id="report-view" class="report" hidden></article></div>')
         h = sub(h, '<button class="btn ghost" data-act="review"', '${pcJobDocs(j)}<button class="btn ghost" data-act="review"')
         h = sub(h, '</style>', read('pc.css') + '</style>')
-        h = h.replace('Claude reads it, scores it against your evidence bank and shows the fit.',
-                      'Codex reads it, scores it against your evidence bank and shows the fit.')
+        h = h.replace('The assistant reads it and compares its requirements with your evidence bank.',
+                      'Codex reads it and compares its requirements with your evidence bank.')
         h = h.replace('They stay drafts until the {{SCAN_TIME}} truth review.',
                       'They stay drafts until a separate truth reviewer checks them.')
         # PC Search uses live public company boards; the hosted daily-request form stays unchanged.

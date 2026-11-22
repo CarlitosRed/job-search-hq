@@ -15,7 +15,7 @@
 | POST `/api/login` | Local sign-in; form `password=<entered locally>` → 303 to `/`, session cookie. Failure: 401; throttled: 429. |
 | POST `/api/logout` | End session; `{}` → 200 `{"ok":true}`, cleared cookie. |
 | GET `/api/data` | Tracker snapshot; no body → 200 `{"jobs":[{"Company":"Example Cloud Co","Role":"Workflow Automation Analyst","_sheet":"Jobs","_row":2,"_id":"Jobs|2"}],"version":"V","store":"sqlite"}`. |
-| GET `/api/version` | Refresh token; no body → 200 `{"version":"V"}`. |
+| GET `/api/version` | Refresh tokens for tracker and Fit. Example response `{"version":"V","fitVersion":12}`. |
 | GET `/api/writes` | Recent saves; no body → 200 `{"writes":[]}`. |
 | GET `/api/health` | Local status; no body → 200 `{"server":"running","workbookAvailable":true,"pendingWrites":0,"scan":{"state":"unknown"}}`. |
 | GET `/api/ai/state` | Task/posting state; no body → 200 `{"rubric_version":<current value>,"tasks":[],"postings":[]}`. |
@@ -29,6 +29,7 @@
 | GET `/api/reports/K/docx` | Converted report; no body → 200 Word bytes. |
 | POST `/api/add` | Add lead; `{"requestId":"R","version":"V","sheet":"Jobs","Company":"Example Cloud Co","Role":"Workflow Automation Analyst"}` → 200 `{"ok":true,"row":5,"id":"Jobs|5","saved":{"My status":"Tracked"},"version":"V2","writeId":"R"}`. Row 5 is the first add in a fresh demo; use returned values afterward. |
 | POST `/api/update` | Edit row; `{"requestId":"R","version":"V","sheet":"Jobs","row":2,"expect":{"Company":"Example Cloud Co","Role":"Workflow Automation Analyst"},"note":"Saved fictional note"}` → 200 `{"ok":true,"version":"V2","writeId":"R"}`. |
+| POST `/api/star` | Set `starred` to a boolean using the same request ID, version, sheet, row and identity fields as update. SQLite returns `{"ok":true,"starred":true,"choice":1,"version":"V2","writeId":"R"}`. To unstar, send `starred:false` with a fresh request ID and current version. |
 | POST `/api/rounds` | Add round (after moving that job to Interview): `{"requestId":"R","version":"V","sheet":"Jobs","row":3,"expect":{"Company":"Sample Data Inc","Role":"Operations Analyst"},"action":"add"}` → 200 `{"ok":true,"version":"V2","writeId":"R"}`. First POST `/api/update` with the same sheet/row/expect and `status:"Interview"`, its own fresh `R` and current `V`; refresh `V` before adding the round. Requires SQLite. |
 | POST `/api/writes/dismiss` | Resolve inspected pending edit; `{"id":"R"}` → 200 `{"write":{"id":"R","status":"cancelled"}}`. This dismisses a save, not a job. |
 | POST `/api/search/submit` | Start manual search; `{"requestId":"R","query":"Workflow Automation Analyst","location":"","remote":true}` → 202 `{"id":"R"}`. |
@@ -40,13 +41,13 @@
 
 **Now:** `/api/data` also returns `sheets` (`name`, `columns`), `statuses`, `today`, `file`, `mirrorWarning`. Preserve workbook column names. Add requires Company/Role; omitted status becomes Tracked.
 
-**Now:** Preserve returned metadata, including `_sheet`, `_row`, `_id`, `_check`, `_checkdate`, `_rounds`. Browser-only `_open`, `_sc`, `_v` are not write fields.
+**Now:** Preserve returned metadata, including `_sheet`, `_row`, `_id`, `_check`, `_checkdate` and `_rounds`. A job has `starred` and a nullable `judgement` with `score`, `action`, `reasons`, `notes` and `requirements`. Each reason has `text`, `quote` and `evidenceTitles`. Each requirement has `text`, `state` and `evidenceTitles`, with `years` and `note` when available. `canStar` tells the page whether SQLite is available.
 
 **Now:** The Contacts view reads `Person`, `Where now`, `How you know them`, `Status`, `Date sent`, `Reply`, `Notes`; Board cards also read a contact's `Company` and `Role`. The bundled `Contacts` sheet has only `Person`, `Company`, `Role`, `Channel`, `Status`, `Notes`, so its card looks sparse and choosing Sent fails because `Date sent` is missing. The fictional contact may appear in screenshots.
 
 **Now:** Update accepts `status`, `date`, `note`: jobs map to `My status`, `Date applied`, `Notes`; contacts to `Status`, `Date sent`, `Notes`. Contacts use `sheet:"Contacts"` and `expect.Person` read from demo data. Update/rounds require row, sheet, current version and matching expect. Rounds edit uses `action:"edit"`, round `id`, optional ISO `date`, `type` (60 characters), `note` (280). Only adding requires Interview.
 
-**Now:** Add/update/rounds may return 202 queued; poll writes. Version/identity conflict or `needs_check` returns 409: inspect before retry/dismiss. Queue states: `waiting`, `applying`, `saved`, `conflict`, `needs_check`, `failed`, `cancelled`. One unresolved edit blocks another. Queued is not saved.
+**Now:** Add, update, star and rounds may return 202 queued. Poll writes for the result. Version or identity conflicts and `needs_check` return 409. Inspect the change before retrying or dismissing it. Queue states are `waiting`, `applying`, `saved`, `conflict`, `needs_check`, `failed` and `cancelled`. One unresolved edit blocks another.
 
 **Now:** After analysis, AI submit also accepts `kind:"cv"` or `kind:"letter"` with `postingId`, `requestId`; letters need `sentiment` or `withoutSentiment:true`. Analyze allows `posting.jobId` and up to five base64 JPEG/PNG images. Task and posting ids differ. Search accepts only `requestId`, `query`, `location`, `remote`.
 

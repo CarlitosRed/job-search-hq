@@ -4,6 +4,7 @@ async function pcState(){
  const data=await pcFetch('/api/ai/state');
  // Refuse a stale server/page pair.
  if(data.rubric_version!==RUBRIC_VERSION)throw Error('Rubric version mismatch: restart HQ with the matching page and worker.');
+ EVIDENCE_TITLES=data.evidence_titles||{};
  gotPostings(data.postings||[]);
  if(CUR){const fresh=POSTINGS.find(p=>p._id===CUR._id);if(fresh){CUR=fresh;renderResult(CUR)}}return data;
 }
@@ -20,7 +21,7 @@ async function pcInit(){
  await pcSearchState();
  setInterval(()=>{if(!document.hidden&&(S.view==='search'||PC_SEARCHES.some(s=>['queued','running'].includes(s.status))))pcSearchState()},2500);
  const active=state.tasks.find(t=>['queued','running'].includes(t.status));
- if(active)pcResume(active.id,active.kind).catch(e=>toast(e.message,null,true));
+ if(active)pcResume(active.id,active.kind).catch(e=>toast(e.message,true));
 }
 function pcPause(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 async function pcResume(id,kind){
@@ -52,7 +53,7 @@ analyze=async function(){
 makeDoc=async function(kind,sentiment=''){
  if(OP||!CUR)return;startOp(kind,CUR._id,null);
  try{await pcSubmit({kind,postingId:CUR._id,sentiment,withoutSentiment:kind==='letter'&&!sentiment.trim()});if(kind==='letter')SENT.id='';renderResult(CUR)}
- catch(e){toast(e.message,null,true)}finally{if(OP)endOp()}
+ catch(e){toast(e.message,true)}finally{if(OP)endOp()}
 };
 /* Downloads stay on the page: fetch, then save the blob. A failure shows a message; the page never navigates away. */
 const PCDL=new Set();
@@ -60,7 +61,7 @@ async function pcDownload(url,fallback,button){if(PCDL.has(url))return;PCDL.add(
  try{const r=await fetch(url,{cache:'no-store'});if(r.status===401){location.assign('/login');return}
   if(!r.ok)throw Error(r.status===404?'That file is not available. Reload the page; if it persists, HQ on the PC may need a restart.':'Could not download this file. Try again.');
   const blob=await r.blob(),href=URL.createObjectURL(blob),a=document.createElement('a');a.href=href;a.download=(/filename="([^"]+)"/.exec(r.headers.get('Content-Disposition')||'')||[])[1]||fallback;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(href),30000)}
- catch(x){toast(x.message||'Could not download this file.',null,true)}finally{PCDL.delete(url);if(button)button.disabled=false}}
+ catch(x){toast(x.message||'Could not download this file.',true)}finally{PCDL.delete(url);if(button)button.disabled=false}}
 downloadCv=async function(id){return pcDownload('/api/cvs/'+encodeURIComponent(id),'CV.docx',null)};
 /* "Check fit and create CV" never inherits a pending "Write a cover letter". */
 const pcReviewFromJob=reviewFromJob;reviewFromJob=function(j){PC_LETTER='';return pcReviewFromJob(j)};
@@ -70,7 +71,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-pc-d
  if(!r.ok){const error=await r.json().catch(()=>({}));throw Error(error.error||'Could not export this draft. Sign in again if your session ended.')}
  const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=(/filename="([^"]+)"/.exec(r.headers.get('Content-Disposition')||'')||[])[1]||'HQ_DRAFT.docx';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
  pcDocs(await pcFetch('/api/docs'));
- }catch(x){toast(x.message,null,true)}finally{b.disabled=false}},true);
+ }catch(x){toast(x.message,true)}finally{b.disabled=false}},true);
 /* ---------- Documents tab: CVs, cover letters, reports. Claude · HQ Builder (Opus), 2026-11-05. ----------
    Lists come from /api/docs (allowlisted files in work/). Downloads are fetched and saved as blobs; a report is
    read as data blocks and built here with textContent only, never innerHTML of file content. */
@@ -84,7 +85,7 @@ function pcDocs(data){
  const notes=Array.isArray(data.evidence_notes)?data.evidence_notes:[],box=$('#evidence-notes');
  const stamp=JSON.stringify([CVS,CLS,REPORTS,notes]);if(stamp===PC_DOC_STAMP)return;PC_DOC_STAMP=stamp;
  box.replaceChildren();box.hidden=!notes.length;
- if(notes.length){const h=document.createElement('b');h.textContent='Evidence that needs fixing';box.append(h);const list=document.createElement('ul');for(const note of notes){const li=document.createElement('li');li.textContent=String(note.id||'')+': '+String(note.note||'');list.append(li)}box.append(list)}
+ if(notes.length){const h=document.createElement('b');h.textContent='Evidence that needs fixing';box.append(h);const list=document.createElement('ul');for(const note of notes){const li=document.createElement('li');li.textContent=String(note.title||'Evidence entry')+': '+evidenceText(note.note);list.append(li)}box.append(list)}
  $('#cvs').innerHTML=CVS.length?`<ul class="cvl">${CVS.map(d=>{const rationale=REPORTS.find(r=>r.cv_id===d.id);const row=pcDocRow(d,'cl');return rationale?row.replace('</li>',`<button class="btn ghost pc-dl" type="button" data-pc-report="${esc(rationale.id)}" data-fmt="md" aria-label="Download rationale notes for ${esc(d.title)}">${IC.dl}<span>Notes .md</span></button></li>`):row}).join('')}</ul>`:'<p class="mut">No CV files yet.</p>';
  $('#cls').innerHTML=CLS.length?`<ul class="cvl">${CLS.map(d=>pcDocRow(d,'cv')).join('')}</ul>`:'<p class="mut">No cover letter files yet.</p>';
  $('#reports').innerHTML=REPORTS.length?`<ul class="cvl">${REPORTS.map(r=>`<li><span class="t"><b>${esc(r.title)}</b><small>${esc(pcDate(r.updated))}</small></span><span class="pc-acts"><button class="btn" type="button" data-pc-read="${esc(r.id)}">Read</button><button class="btn ghost pc-dl" type="button" data-pc-report="${esc(r.id)}" data-fmt="md">${IC.dl}<span>.md</span></button><button class="btn ghost pc-dl" type="button" data-pc-report="${esc(r.id)}" data-fmt="docx">${IC.dl}<span>.docx</span></button></span></li>`).join('')}</ul>`:'<p class="mut">No reports yet.</p>';
@@ -121,7 +122,7 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-pc-f
  if(t.dataset.pcReport){const f=t.dataset.fmt==='docx'?'docx':'md';return pcDownload('/api/reports/'+encodeURIComponent(t.dataset.pcReport)+'/'+f,'report.'+f,t)}
  if(t.dataset.pcClose){$('#report-view').hidden=true;return}
  if(t.dataset.pcLetter){const j=byKey(t.dataset.pcLetter);if(j)pcWriteLetter(j);return}
- t.disabled=true;try{pcReport(await pcFetch('/api/reports/'+encodeURIComponent(t.dataset.pcRead)))}catch(x){toast(x.message,null,true)}finally{t.disabled=false}},true);
+ t.disabled=true;try{pcReport(await pcFetch('/api/reports/'+encodeURIComponent(t.dataset.pcRead)))}catch(x){toast(x.message,true)}finally{t.disabled=false}},true);
 /* On-demand discovery is separate from document tasks. Results never enter the workbook until the owner saves a lead. */
 let PC_SEARCHES=[],PC_SEARCH_BUSY=false,PC_SEARCH_FETCH=false,PC_SEARCH_STAMP='';
 function pcSearchLink(value){try{const u=new URL(String(value||''));return u.protocol==='https:'&&!u.username&&!u.password?u.href:''}catch{return ''}}
@@ -143,7 +144,7 @@ function pcRenderSearch(data){
    ${Number.isInteger(s.sourcesChecked)&&Number.isInteger(s.sourcesTotal)?`<p class="mut">Company boards checked: ${s.sourcesChecked} of ${s.sourcesTotal}.</p>`:''}
    ${errors.length?'<p class="banner a">Some company boards could not be checked. These results cover only the boards that responded; try again later.</p>':''}
    ${s.truncated?'<p class="banner a">Only the first matching jobs are shown. Add a more specific role keyword or location to narrow your search.</p>':''}
-   ${results.length?`<p class="mut">${results.length} result${results.length===1?'':'s'} · No fit score yet. Check each posting for eligible countries and requirements.</p><ul class="pc-results">${results.map(r=>{const job=pcSearchJob(r),link=pcSearchLink(r.link);return `<li><div class="pc-result-head"><div class="t"><h4>${esc(r.role||'Role not listed')}</h4><p><b>${esc(r.company||'Company not listed')}</b>${r.location?' · '+esc(r.location):''}</p></div>${job?'<span class="chip g">In your tracker</span>':''}</div>
+   ${results.length?`<p class="mut">${results.length} result${results.length===1?'':'s'} · Check each posting for eligible countries and requirements.</p><ul class="pc-results">${results.map(r=>{const job=pcSearchJob(r),link=pcSearchLink(r.link);return `<li><div class="pc-result-head"><div class="t"><h4>${esc(r.role||'Role not listed')}</h4><p><b>${esc(r.company||'Company not listed')}</b>${r.location?' · '+esc(r.location):''}</p></div>${job?'<span class="chip g">In your tracker</span>':''}</div>
     ${r.summary?`<p class="pc-result-summary">${esc(r.summary)}</p>`:''}<p class="mut pc-result-source">Source: ${esc(r.source||'Company job board')}${r.checkedAt?' · Checked '+esc(pcDate(r.checkedAt)):''}</p>
     <div class="pc-result-actions">${link?`<a class="btn ghost" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open posting<span class="sr"> (opens a new tab)</span></a>`:'<span class="mut">Posting link unavailable</span>'}<button class="btn" type="button" data-pc-search="${esc(s.id)}" data-pc-result="${esc(r.id)}"${!link?' disabled':''}>${job?'View in tracker':'Add to tracker'}</button></div></li>`}).join('')}</ul>`:s.status==='completed'?'<p class="mut">No matching jobs on these boards. Try fewer role keywords, clear the location, or turn off Remote only.</p>':''}
    ${['failed','interrupted'].includes(s.status)?`<button class="btn ghost" type="button" data-pc-retry="${esc(s.id)}">Use this search again</button>`:''}</article>`}).join(''):'<p class="mut">No searches yet. Search now to check the listed company boards; results stay here until you choose to add a lead.</p>';
@@ -165,8 +166,8 @@ $('#requests').setAttribute('aria-live','polite');
 $('#requests').addEventListener('click',e=>{const retry=e.target.closest('[data-pc-retry]');if(retry){const s=PC_SEARCHES.find(x=>x.id===retry.dataset.pcRetry);if(s){$('#s-what').value=s.query||'';$('#s-where').value=s.location||'';$('#s-remote').checked=!!s.remote;$('#s-msg').textContent='Search loaded. Tap Search now to run it again.';$('#f-search').scrollIntoView({block:'start'})}return}
  const b=e.target.closest('[data-pc-result]');if(!b)return;const s=PC_SEARCHES.find(x=>x.id===b.dataset.pcSearch),r=s?.results?.find(x=>x.id===b.dataset.pcResult);if(!r)return;
  const job=pcSearchJob(r);if(job){openJob(job._id);return}
- if(!READY||!D.sheets.length){toast('Your job lists are not available yet. Reload the spreadsheet first.',null,true);return}
- if(PC_WAITING){toast('An edit is waiting. Check the save message at the top before adding another lead.',null,true);return}
+ if(!READY||!D.sheets.length){toast('Your job lists are not available yet. Reload the spreadsheet first.',true);return}
+ if(PC_WAITING){toast('An edit is waiting. Check the save message at the top before adding another lead.',true);return}
  openAdd();if(!$('#addDlg').open)return;const f=$('#addForm'),put=(name,value)=>{const el=f.elements.namedItem(name);if(el)el.value=String(value||'')};
  put('Company',r.company);put('Role',r.role);put('Where',r.location);put('Link',pcSearchLink(r.link));put('Source',r.source||'Company job board');
  put('My status',STAGE_DATA.new_row);

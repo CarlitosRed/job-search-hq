@@ -135,6 +135,12 @@ def stale_boards(storage, today, days=3, current=None):
     return result
 
 
+def record_board_reads(db, run_id, today, read_at, reads):
+    db.executemany('INSERT INTO board_reads(run_id,date,provider,board,read,rows,reason,read_at) VALUES (?,?,?,?,?,?,?,?)',
+                   [(run_id, today, row['provider'], row['board'], row['read'],
+                     row['rows'], row.get('reason', '')[:200], read_at) for row in reads])
+
+
 def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=False, budget_seconds=600):
     deadline = time.monotonic() + budget_seconds
     today = snapshot['metadata']['date']
@@ -154,6 +160,10 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
 
     for source in snapshot.get('boards', []):
         key = (source['provider'], source['board'])
+        source = dict(source)
+        if (source['provider'] == 'workday' and source['read'] == 'complete'
+                and (source.get('full_read') is False or source.get('skipped_rows', 0))):
+            source.update(read='partial', reason=source.get('reason') or 'Workday coverage was incomplete.')
         if key not in boards:
             boards[key] = dict(source, seen=list(source['seen']))
         else:
@@ -170,8 +180,12 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
             state, reason = 'partial', 'Lever returned 500 or more rows.'
         if state == 'complete' and (not count or previous and count < previous['rows'] / 2):
             state, reason = 'partial', 'No information: zero rows or fewer than half the previous rows were read.'
+            if provider == 'workday' and 'page' in board:
+                reason = (f"Workday returned zero rows or fewer than half the previous rows after page "
+                          f"{board['page']}. HTTP 200. {count} rows read.")
         board.update(read=state, reason=reason[:200])
-        duplicate = db.execute('SELECT 1 FROM board_reads WHERE provider=? AND board=? AND date=?', (provider, label, today)).fetchone()
+        duplicate = db.execute("SELECT 1 FROM board_reads WHERE provider=? AND board=? AND date=? AND read='complete'",
+                               (provider, label, today)).fetchone()
         board['duplicate'] = bool(duplicate)
         if state != 'complete':
             report['no_information'].append(dict(board=label, reason=reason[:200] or 'The board was not fully read.'))
@@ -301,9 +315,7 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
                 record(job_id, pid, 'link', observation, detail, state)
             return observation, detail, state
 
-        for (provider, label), board in boards.items():
-            db.execute('INSERT INTO board_reads(run_id,date,provider,board,read,rows,reason,read_at) VALUES (?,?,?,?,?,?,?,?)',
-                       (run_id, today, provider, label, board['read'], board['rows'], board['reason'], read_at))
+        record_board_reads(db, run_id, today, read_at, boards.values())
         for post, action, seen, board in plans:
             job_id, pid = post['job_id'], post['id']
             if not valid(job_id, post, seen):

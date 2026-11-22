@@ -91,12 +91,15 @@ def configuration(root):
     config = settings.load(root, defaults_root=settings.app_root())['daily_run']
     if not isinstance(config, dict):
         raise ValueError('Daily settings must be an object.')
-    config = {'at': '06:00', 'before': [], 'copies': [], 'recheck': 'on', 'judge': 'on', **config}
+    config = {'at': '06:00', 'before': [], 'copies': [], 'recheck': 'on', 'judge': 'on', 'judge_ai': 'codex', **config}
     if config['recheck'] not in ('on', 'preview'):
         raise ValueError('The daily recheck setting must be on or preview.')
     # Card 04a: qualification judge.
     if config['judge'] not in ('on', 'preview'):
         raise ValueError('The daily judge setting must be on or preview.')
+    # Card 04c: Claude as a judge option.
+    if config['judge_ai'] not in ('codex', 'claude'):
+        raise ValueError('The daily judge AI setting must be codex or claude.')
     try:
         at = config['at']
         if not isinstance(at, str) or time.fromisoformat(at).strftime('%H:%M') != at:
@@ -150,7 +153,7 @@ def run_daily(root, now, fetch=None, force=False, trigger='scheduled', link_chec
     try:
         with run_lock(root):
             return run_locked(root, now, fetch or daily_search.boards.fetch_json, force, trigger, config, slot,
-                              link_check or recheck.link_status, complete or judge.seam.complete)
+                              link_check or recheck.link_status, complete)
     except RunBusy:
         return empty
 
@@ -185,8 +188,7 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
             saved = json.loads(snapshot.read_text(encoding='utf-8'))
             if not isinstance(saved, dict) or not isinstance(saved.get('source_errors'), list):
                 saved = None
-            elif saved['source_errors'] and len(saved['source_errors']) == len(
-                    daily_search.profiles.load(root / 'profile.json')['search']['companies']):
+            elif saved['source_errors'] and not daily_search.boards_read(saved):
                 saved = None
         except (OSError, ValueError):
             saved = None
@@ -242,8 +244,20 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                 temp.replace(snapshot)
             total = len(profile['search']['companies'])
             failed = len(result['source_errors'])
-            detail = f'{total - failed} of {total} job boards read; {failed} could not be checked.'
-            return ('failed' if failed == total else 'partial' if failed else 'done'), detail
+            detail = f'{total - failed} of {total} job boards read; {failed} could not be checked completely.'
+            workday = result['metadata'].get('workday', {})
+            if workday.get('total'):
+                detail += (f" Workday: {workday['read']} of {workday['total']} boards read; "
+                           f"{workday['continue_tomorrow']} continue tomorrow.")
+            if not daily_search.boards_read(result):
+                # An outage skips closing, but its readings are still useful.
+                tracker = work / 'applications-tracker.sqlite3'
+                if config['recheck'] == 'on' and tracker.is_file():
+                    with closing(land_search.store.Store(tracker)) as storage, storage.db:
+                        recheck.record_board_reads(storage.db, run_id, slot.isoformat(),
+                                                   result['metadata']['read_at'], result['boards'])
+                return 'failed', detail
+            return ('partial' if failed else 'done'), detail
 
         def land():
             report = land_search.land(work / 'applications-tracker.xlsx', snapshot, backlog,
@@ -294,19 +308,23 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                         for _, _, step in land_search.store.migrations.STEPS:
                             step(storage.db)
                 waiting = judge.pending_jobs(storage, json.loads(snapshot.read_text(encoding='utf-8')))
-                report = judge.judge_pending(storage, profile, evidence, now.date(), run_id, complete,
+                # Card 04c: tests pass their own AI; otherwise the setting picks Codex or Claude.
+                engine = config['judge_ai']
+                ask = complete or (lambda prompt, schema: judge.seam.complete(prompt, schema, engine=engine))
+                report = judge.judge_pending(storage, profile, evidence, now.date(), run_id, ask,
                                              profile['search']['judge_budget'], dry_run=preview, jobs=waiting,
                                              deadline=clock.monotonic() + 30 * 60, backlog=backlog,
                                              # Previews run on a copy, so the real usage file is named here.
                                              usage=work / 'ai-usage.sqlite3',
-                                             preview_cache=snapshot.with_name('judge-preview-cache.json'))
+                                             preview_cache=snapshot.with_name('judge-preview-cache.json'),
+                                             model=judge.seam.model_label(engine))
             if preview:
                 target = snapshot.with_name(run_id + '-judge-preview.json')
                 temporary = target.with_suffix('.tmp')
                 temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
                 temporary.replace(target)
             if report['ai_unavailable'] and not report['judged']:
-                return 'skipped', 'AI unavailable; Fit stays pending.'
+                return 'skipped', 'AI unavailable. Jobs without a score are still unscored.'
 
             def count(n):
                 return f"{n} {'job' if n == 1 else 'jobs'}"
@@ -316,12 +334,15 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                 detail = 'Preview: ' + detail + ' Nothing was saved.'
             if report['failed']:
                 detail += f" {count(len(report['failed']))} could not be judged."
-            if report['skipped']:
-                detail += f" {count(report['skipped'])} without posting text yet."
+            no_text = sum(item['reason'] == judge.NO_TEXT for item in report['skipped_jobs'])
+            if no_text:
+                detail += f" {count(no_text)} without posting text yet."
+            if any(item['reason'] == judge.NOT_ENOUGH for item in report['skipped_jobs']):
+                detail += ' ' + judge.NOT_ENOUGH + '.'
             if report['backed_off']:
                 detail += f" {count(report['backed_off'])} failed recently and will be tried again later."
             if report['ai_unavailable']:
-                return 'partial', detail + ' The AI became unavailable; Fit stays pending for the rest.'
+                return 'partial', detail + ' The AI became unavailable; the remaining jobs keep their current scores.'
             return 'done', detail
 
         for step in config['before']:
@@ -396,7 +417,7 @@ def status(record_path, now, at='06:00'):
                 if phases.get('recheck', {}).get('status') == 'partial':
                     warnings.append(last_output_line(phases['recheck']['detail']))
                 if phases.get('judge', {}).get('status') == 'partial':
-                    warnings.append('the AI became unavailable while judging; Fit stays pending for the rest')
+                    warnings.append('the AI became unavailable while judging; the remaining jobs keep their current scores')
                 if warnings:
                     message = prefix + ' finished, but ' + '; '.join(warnings)
                     result.update(state='warning', tone='a', message=message if message.endswith('.') else message + '.')

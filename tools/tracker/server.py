@@ -42,6 +42,7 @@ _stage_spec = importlib.util.spec_from_file_location('tracker_stages', HERE / 's
 stages = importlib.util.module_from_spec(_stage_spec)
 _stage_spec.loader.exec_module(stages)
 STATUSES = stages.NAMES
+REJECTED_STAGE = stages.NAME_BY_ID['rejected']
 ADD_FIELDS = ("Company", "Role", "Where", "Posted", "Score", "Verdict", "My status", "Date applied", "CV used", "Source", "Link", "Notes")
 
 
@@ -232,28 +233,63 @@ def expect_row(ws, head, row, p):
 
 
 @contextmanager
-def editing_workbook():
+def editing_workbook(*, with_store=False, after_rows=None):
     if sqlite_mode():
         storage = store.Store(store.db_path(XLSX))
         try:
             backup_database(storage)
-            with storage.edit() as wb:
-                yield wb
+            with storage.edit(after_rows=after_rows) as wb:
+                yield (wb, storage) if with_store else wb
         finally:
             storage.close()
         store.rebuild_mirror(XLSX)
     else:
         wb = openpyxl.load_workbook(XLSX)
         try:
-            yield wb
+            yield (wb, None) if with_store else wb
             save(wb)
         finally:
             wb.close()
 
 
 def update(p):
-    with editing_workbook() as wb:
+    with editing_workbook(with_store=True) as (wb, storage):
+        job_id = None
+        if storage is not None and p.get('choiceKey') and p['sheet'] not in ('Contacts', 'Old'):
+            job_id = storage.job_ref(f"{p['sheet']}|{p['row']}")
+            if job_id is not None:
+                old = storage.db.execute('SELECT status FROM jobs WHERE id=?', (job_id,)).fetchone()[0]
         update_row(p, wb)
+        status = p.get('status')
+        if job_id is not None and status and status != old and status != REJECTED_STAGE:
+            kind = stage_choice_kind(status)
+            if kind == 'apply' and (old == REJECTED_STAGE or old in stages.DATA['rejected_from']):
+                kind = 'move'
+            return storage.record_site_choice(job_id, p['choiceKey'], kind, status,
+                                              reason=p.get('reason'))
+
+
+def stage_choice_kind(status):
+    return {stages.NAME_BY_ID['skipped']: 'skip', stages.NAME_BY_ID['applied']: 'apply'}.get(status, 'move')
+
+
+def star(p):
+    if not sqlite_mode():
+        raise ValueError('Stars are saved once the tracker uses the database.')
+    if type(p.get('starred')) is not bool:
+        raise ValueError('Choose a star state.')
+    with editing_workbook(with_store=True) as (wb, storage):
+        sheet, row = p['sheet'], int(p['row'])
+        if sheet == 'Old' or sheet not in wb.sheetnames:
+            raise ValueError('Unknown tracker entry.')
+        job_id = storage.job_ref(f'{sheet}|{row}')
+        if job_id is None:
+            raise ValueError('Unknown tracker entry.')
+        ws = wb[sheet]
+        expect_row(ws, header(ws), row, p)
+        signal = storage.record_site_choice(job_id, p['choiceKey'], 'star', str(int(p['starred'])),
+                                            reason=p.get('reason'))
+        return bool(storage.db.execute('SELECT starred FROM jobs WHERE id=?', (job_id,)).fetchone()[0]), signal
 
 
 def rounds(p):
@@ -288,7 +324,7 @@ def rounds(p):
                 raise ValueError('bad row')
             values = {'date': date.today().isoformat(), 'type': '', 'note': ''}
             if p['action'] == 'add':
-                if job['status'] != 'Interview':
+                if job['status'] != stages.NAME_BY_ID['interview']:
                     raise ValueError('Add a round while the job is in Interview.')
             else:
                 old = storage.db.execute('SELECT date, type, note FROM interview_rounds WHERE id=? AND job_id=?',
@@ -354,7 +390,14 @@ def update_row(p, wb):
 
 
 def add(p):
-    with editing_workbook() as wb:
+    def record_initial_stage(storage):
+        row, saved = result
+        status = saved.get('My status')
+        if p['sheet'] != 'Old' and status and status not in (stages.NEW_ROW, REJECTED_STAGE):
+            job_id = storage.job_ref(f"{p['sheet']}|{row}")
+            storage.record_site_choice(job_id, p['choiceKey'], stage_choice_kind(status), status)
+
+    with editing_workbook(after_rows=record_initial_stage if p.get('choiceKey') else None) as wb:
         result = add_row(p, wb)
     return result
 

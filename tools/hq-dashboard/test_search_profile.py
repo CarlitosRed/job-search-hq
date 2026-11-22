@@ -55,6 +55,20 @@ class ProfileLoader(unittest.TestCase):
         self.assertTrue(caught.exception.problems, 'problems must be listed')
         self.assertIn(words.lower(), ' '.join(caught.exception.problems).lower())
 
+    def test_workday_settings_default_and_reject_invalid_values(self):
+        search = sp.load(self.write(minimal()))['search']
+        self.assertEqual([search[k] for k in ('workday_page_pause_seconds', 'workday_board_budget_seconds',
+                                               'workday_run_budget_seconds')], [1.5, 360, 1500])
+        for key, value in [('workday_page_pause_seconds', -1), ('workday_board_budget_seconds', True),
+                           ('workday_run_budget_seconds', float('inf'))]:
+            data = minimal()
+            data['search'][key] = value
+            self.assert_problem(data, key)
+        data = minimal()
+        data['search']['companies'][0].update(provider='workday', host='example.wd1.myworkdayjobs.com',
+                                              site='Careers', newest_first='yes')
+        self.assert_problem(data, 'newest_first')
+
     def test_missing_and_wrong_fields_are_listed_plainly(self):
         no_lanes = minimal(); no_lanes['goals']['lanes'] = []
         self.assert_problem(no_lanes, 'lane')

@@ -153,7 +153,7 @@ class StageList(unittest.TestCase):
             self.assertFalse(stages.allowed(before, 'Rejected'), before)
         for before in ('Applied', 'Interview', 'Offer'):
             self.assertTrue(stages.allowed(before, 'Rejected'), before)
-        # Going back one stage (undo) is always possible, also out of a closed stage.
+        # Going back one stage is always possible, also out of a closed stage.
         for before, after in (('Review', 'Tracked'), ('Apply', 'Review'), ('Applied', 'Apply'), ('Interview', 'Applied'),
                               ('Offer', 'Interview'), ('Rejected', 'Applied'), ('Rejected', 'Interview'),
                               ('Rejected', 'Offer'), ('Skipped', 'Apply'), ('Skipped', 'Review'), ('Skipped', 'Tracked')):
@@ -231,7 +231,7 @@ class ServerRules(unittest.TestCase):
         self.assertEqual(self.status('Fit Co'), 'Review')
         self.move('Sent Co', 'Rejected')
         self.assertEqual(self.status('Sent Co'), 'Rejected')
-        self.move('Sent Co', 'Applied')  # undo
+        self.move('Sent Co', 'Applied')
         self.assertEqual(self.status('Sent Co'), 'Applied')
 
     def test_old_status_names_refused(self):

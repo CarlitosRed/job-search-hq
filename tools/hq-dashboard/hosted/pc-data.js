@@ -87,14 +87,14 @@ async function reloadJobs(silent=false){
  D.jobs.forEach(j=>{enrich(j);if(NOTED.has(j._id))j._noteSaved=true});
  linkSiblings();READY=true;fillAdd();render();syncLabel();
  if(!silent)toast('Reloaded from your spreadsheet');
- }catch(e){$('#sync').textContent='Connection lost. Your unsaved edits are still here.';if(!silent)toast(e.message,null,true)}
+ }catch(e){$('#sync').textContent='Connection lost. Your unsaved edits are still here.';if(!silent)toast(e.message,true)}
 }
 function syncLabel(){ $('#sync').textContent=`${D.jobs.length} jobs · spreadsheet connected`; }
 async function boot(){
  $('#requests').textContent='Search automation is awaiting setup. Your existing daily scan stays in place.';
  /* Load documents before jobs draw; older servers still provide the CV list. */
  try{pcDocs(await pcFetch('/api/docs').catch(()=>pcFetch('/api/cvs').then(d=>({cvs:d.files}))))}
- catch(e){toast(e.message,null,true)}
+ catch(e){toast(e.message,true)}
  await reloadJobs(true);
  await pcWrites();
  await pcHealth();
@@ -102,20 +102,34 @@ async function boot(){
  const b=document.createElement('button');b.className='btn ghost';b.textContent='Sign out';
  b.onclick=async()=>{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),3000);try{await pcFetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:controller.signal})}catch{}finally{clearTimeout(timer);location.assign('/login')}};
  $('#sync').parentNode.append(b);
- setInterval(async()=>{if(busy||document.hidden)return;await pcWrites();await pcHealth();try{const d=await pcFetch('/api/version');if(d.version!==D.version)await reloadJobs(true)}catch{}},5000);
+ setInterval(async()=>{if(busy||document.hidden)return;await pcWrites();await pcHealth();try{const d=await pcFetch('/api/version');if(d.version!==D.version||d.fitVersion!==D.fitVersion)await reloadJobs(true)}catch{}},5000);
+}
+async function waitForChoiceSave(id){
+ for(;;){
+  await new Promise(resolve=>setTimeout(resolve,5000));
+  const {writes}=await pcFetch('/api/writes');
+  const edit=writes.find(item=>item.id===id);
+  if(edit?.status==='saved')return edit.result;
+  if(!edit||!['waiting','applying'].includes(edit.status))throw Error(edit?.message||'Reload to check whether the change saved.');
+ }
 }
 async function post(url,p){
  try{
- if(PC_WAITING){toast('An edit is waiting. Check the save message at the top first.',null,true);return null}
+ if(PC_WAITING){toast('An edit is waiting. Check the save message at the top first.',true);return null}
  const j=p.id?(p.sheet==='Contacts'?D.contacts:D.jobs).find(j=>j._id===p.id):null;
  const payload={...p,version:D.version,requestId:crypto.randomUUID()};
  if(j){payload.row=j._row;payload.expect=p.sheet==='Contacts'?{Person:j.Person}:{Company:j.Company,Role:j.Role}}
- const d=await pcFetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
- if(d.queued){await pcWrites();toast('Your edit is waiting for Excel. It is not saved to the spreadsheet yet.',null,true);return null}
+ let d=await pcFetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ if(d.queued){
+  await pcWrites();
+  const stageChange=url==='/api/update'&&p.sheet!=='Contacts'&&Object.hasOwn(p,'status');
+  if(url!=='/api/star'&&!stageChange){toast('Your edit is waiting for Excel. It is not saved to the spreadsheet yet.',true);return null}
+  d=await waitForChoiceSave(d.write.id);
+ }
  D.version=d.version;
  await pcWrites();
  if(url==='/api/add')await reloadJobs(true);
  return d;
- }catch(e){await pcWrites();toast(e.message,null,true);return null}
+ }catch(e){await pcWrites();toast(e.message,true);return null}
 }
 function openSoon(id){if(byKey(id))openJob(id)}

@@ -42,8 +42,15 @@ counts in desktop and compact layouts. Counts come from `bucket()`.
 The board order is Tracked, Review, Apply, Skipped, Applied, Interview, Offer,
 Rejected, defined only in `stages.json`. All eight columns remain visible. Offer
 is green, Rejected red, and the other six share one gray. Other status appears
-only when unknown rows exist. Check a move from Review to Apply and Undo, then
-Applied to Rejected. Review must not offer Rejected; Applied must not offer
-Skipped on the board. The server allows backward moves, including out of closed
+only when unknown rows exist. Move a job from Review to Apply, then move it
+back to Review. Check a move from Applied to Rejected on another job. On the
+board, Review must not offer Rejected and Applied must not offer Skipped.
+The server allows backward moves, including out of closed
 stages. Repeat on a phone viewport and check drawer steps, filters, status
 selection, Add lead, and horizontal scrolling within the board.
+
+On the PC page, check a fictional judged job for a score and action on its card
+and in its drawer. The reasons show posting quotes and evidence titles. Expand
+Main requirements and check the states and any years shown. A job with only a
+workbook Verdict shows Not scored yet. On Overview, check the Score actions
+chart against the jobs in the current view.

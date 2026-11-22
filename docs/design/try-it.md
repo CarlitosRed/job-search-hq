@@ -65,4 +65,4 @@ python -I tools/tracker/test_land_search.py
 
 **Now:** Capture page content only, using fictional demo records, including the fictional contact. The built-in public board names are allowed; personal or real tracker data never may appear. Exclude browser address bars, private paths, passwords and machine details. Attach screenshots to a small public PR against `main`, fill in the repository PR template and include build/test output. Say which checks were not run. The owner reviews and merges; see [contribution guidance](../../CONTRIBUTING.md).
 
-**Coming:** Profile switching, CV onboarding, provider settings, sent history, card fit updates and the activity chart need later implementation; screenshots of mockups must be labelled Coming.
+**Coming:** Profile switching, CV onboarding, provider settings, sent history and the activity chart need later implementation. Label screenshots of those mockups Coming.
