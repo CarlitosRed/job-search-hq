@@ -1595,12 +1595,12 @@ function overview(js){const C=counts(js);
  <section class="panel chart-carousel" aria-label="Overview charts" aria-roledescription="carousel">
   <div class="chart-nav" role="group" aria-label="Choose a chart">
    <button class="chart-step-btn" type="button" data-chart-step="-1" aria-label="Previous chart">‹</button>
-   <div class="chart-switch" data-active="${overviewChart}" role="tablist" aria-label="Select overview chart">
+   <div class="chart-switch" data-active="${overviewChart}" role="group" aria-label="Select overview chart">
     <div class="chart-switch-thumb" aria-hidden="true"></div>
-    <button class="chart-switch-btn chart-dot" type="button" role="tab" data-chart-index="0" aria-label="Show Job search summary" aria-controls="chart-summary" aria-selected="${overviewChart===0}" aria-current="${overviewChart===0}" title="Job search summary (Sankey diagram)">
+    <button class="chart-switch-btn chart-dot" type="button" data-chart-index="0" aria-label="Show Job search summary" aria-controls="chart-summary" aria-selected="${overviewChart===0}" aria-current="${overviewChart===0}" title="Job search summary (Sankey diagram)">
      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="3" height="6" rx="1"/><rect x="3" y="15" width="3" height="6" rx="1"/><rect x="18" y="9" width="3" height="6" rx="1"/><path d="M6 6c4 0 5 4 12 4"/><path d="M6 18c4 0 5-4 12-4"/></svg>
     </button>
-    <button class="chart-switch-btn chart-dot" type="button" role="tab" data-chart-index="1" aria-label="Show Activity over time" aria-controls="chart-activity" aria-selected="${overviewChart===1}" aria-current="${overviewChart===1}" title="Activity over time (Roller coaster)">
+    <button class="chart-switch-btn chart-dot" type="button" data-chart-index="1" aria-label="Show Activity over time" aria-controls="chart-activity" aria-selected="${overviewChart===1}" aria-current="${overviewChart===1}" title="Activity over time (Roller coaster)">
      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 16.5c3-1 4-10.5 7-10.5s3.5 10 7 10 3-4 4-5"/><circle cx="10" cy="6" r="1.5" fill="currentColor"/><circle cx="17" cy="16" r="1.5" fill="currentColor"/></svg>
     </button>
    </div>
