@@ -477,8 +477,8 @@ def fetch_status_text(link, timeout=None):
     return code, text
 
 
-def fetch_posting_text(link, *, with_status=False):
+def fetch_posting_text(link, *, with_status=False, timeout=None):
     """Return useful posting text, optionally accompanied by its reader status."""
-    code, text = fetch_status_text(link)
+    code, text = fetch_status_text(link, timeout=timeout)
     text = text if code == 200 and (len(text) >= MIN_USEFUL or _closed(text)) else None
     return (code, text) if with_status else text

@@ -592,6 +592,10 @@ def safe_link(value):
     return value
 
 
+def remote_location(location):
+    return bool(re.search(r'\b(remote|anywhere|distributed)\b', location, re.I))
+
+
 def normalize(source, raw, checked):
     if not isinstance(raw, dict):
         return None
@@ -645,7 +649,7 @@ def normalize(source, raw, checked):
     description = raw.get('content') if source['provider'] == 'greenhouse' else raw.get('descriptionPlain') if source['provider'] in ('lever', 'ashby') else raw.get('description')
     return {'id': key, 'company': source['label'], 'role': role, 'location': location or 'Not specified',
             'provider': source['provider'], 'posting_id': str(posting_id) if posting_id is not None else link,
-            'remote': bool(re.search(r'\b(remote|anywhere|distributed)\b', location, re.I)),
+            'remote': remote_location(location),
             'description': clean_text(description, 20000),
             'postedOn': posted, 'dateSource': date_source,
             'link': link, 'source': source['label'] + ' (' + source['provider'].title() + ')', 'checkedAt': checked,
