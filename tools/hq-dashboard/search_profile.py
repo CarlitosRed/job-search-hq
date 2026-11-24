@@ -1,7 +1,7 @@
 """Read and check the portable, version-one search profile.
 
-Workday boards are read newest first by default. Set newest_first to false
-on a Workday company to read its entire listing.
+Daily Workday searches use the profile's home and authorized countries.
+Set newest_first to false on a Workday company to read past the date cutoff.
 """
 from datetime import date
 import importlib.util
@@ -16,6 +16,15 @@ WORKDAY_DEFAULTS = {'workday_page_pause_seconds': 1.5,
                     'workday_board_budget_seconds': 360,
                     'workday_run_budget_seconds': 1500}
 PROVIDERS = ('greenhouse', 'lever', 'ashby', 'workday')
+
+
+def workday_countries(profile):
+    rules = profile['work_rules']
+    countries = {}
+    for name in [rules['home_country'], *rules['authorized_countries']]:
+        name = name.strip()
+        countries.setdefault(name.casefold(), name)
+    return countries
 
 
 def default_path():

@@ -248,8 +248,8 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
             detail = f'{total - failed} of {total} job boards read; {failed} could not be checked completely.'
             workday = result['metadata'].get('workday', {})
             if workday.get('total'):
-                detail += (f" Workday: {workday['read']} of {workday['total']} boards read; "
-                           f"{workday['continue_tomorrow']} continue tomorrow.")
+                country = profile['work_rules']['home_country'].strip()
+                detail += f" Workday: {workday['read']} of {workday['total']} boards read for {country}."
             if not daily_search.boards_read(result):
                 # An outage skips closing, but its readings are still useful.
                 tracker = work / 'applications-tracker.sqlite3'

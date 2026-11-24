@@ -251,9 +251,109 @@ def workday_date(value, today):
     return (today - timedelta(days=count)).isoformat()
 
 
+def country_facet(facets, countries):
+    """Return the advertised country filter and the profile countries it covers."""
+    def groups(value, nested=False):
+        if isinstance(value, dict):
+            name, choices = value.get('facetParameter'), value.get('values')
+            if isinstance(name, str) and isinstance(choices, list):
+                country = 'country' in name.casefold()
+                if country or nested and 'location' in name.casefold():
+                    yield name, choices, country
+            for child in value.values():
+                yield from groups(child, nested or isinstance(name, str))
+        elif isinstance(value, list):
+            for child in value:
+                yield from groups(child, nested)
+
+    matches = []
+    for name, choices, country in groups(facets):
+        ids, covered = {}, set()
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            token, label = choice.get('id'), choice.get('descriptor')
+            if isinstance(token, str) and token and isinstance(label, str):
+                label = label.strip().casefold()
+                if label in countries:
+                    ids[token] = None
+                    covered.add(label)
+        if country or ids:
+            matches.append((name, list(ids), country, covered))
+    if not matches:
+        return None, set()
+    name, ids, _, covered = max(matches, key=lambda match: (match[2], len(match[3]), len(match[1])))
+    return ({name: ids} if ids else {}), covered
+
+
+class WorkdayQueue:
+    """Allow another host to run when a Workday read is asked to wait."""
+    def __init__(self, run_deadline):
+        self.run_deadline = run_deadline
+        self.host_ready = {}
+        self.shared_ready = 0
+        self.succeeded()
+
+    def succeeded(self):
+        self.cooldown = 30
+        self.last_limited = ''
+
+    def limited(self, host, seconds):
+        now = time.monotonic()
+        self.last_limited = host
+        if seconds is None:
+            self.shared_ready = now + self.cooldown
+            self.cooldown = min(self.cooldown * 2, 240)
+        else:
+            self.host_ready[host] = now + seconds
+
+    def read(self, tasks):
+        pending = [(key, host.lower(), start, None, self.run_deadline) for key, host, start in tasks]
+        worldwide = []
+        while pending or worldwide:
+            if not pending:
+                pending, worldwide = worldwide, []
+            now = time.monotonic()
+
+            def ready_at(host):
+                return max(now, self.shared_ready, self.host_ready.get(host, 0))
+
+            def priority(task):
+                _, host, _, _, deadline = task
+                ready = ready_at(host)
+                # Finish reads that run out of time and give another ready host the next turn.
+                return min(ready, max(now, deadline)), host == self.last_limited
+
+            index = min(range(len(pending)), key=lambda i: priority(pending[i]))
+            key, host, start, reader, deadline = pending.pop(index)
+            ready = ready_at(host)
+            allowed = ready < deadline
+            if allowed and ready > now:
+                time.sleep(ready - now)
+            now = time.monotonic()
+            acquired = allowed and now < deadline and _WORKDAY_SLOT.acquire(timeout=deadline - now)
+            try:
+                if reader is None:
+                    reader = start(self.run_deadline if acquired else now)
+                    deadline, defer = next(reader)
+                else:
+                    deadline, defer = reader.send(acquired)
+            except StopIteration as result:
+                finished = result.value
+            except Exception as error:
+                finished = error
+            else:
+                (worldwide if defer else pending).append((key, host, start, reader, deadline))
+                continue
+            finally:
+                if acquired:
+                    _WORKDAY_SLOT.release()
+            yield key, finished
+
+
 def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_first=None, *,
                start_offset=0, page_pause=None, board_budget=None, run_deadline=None, known_links=None,
-               detail_first=False, failed_details=None):
+               detail_first=False, failed_details=None, countries=None, saved_facets=None, queue=None):
     """Shared board adapters; detail_match gates the bounded Workday detail reads."""
     url = source_url(source)
     provider = source['provider']
@@ -271,15 +371,27 @@ def board_rows(source, fetch=fetch_json, detail_match=None, today=None, home_fir
             page_pause = defaults['workday_page_pause_seconds']
         if board_budget is None:
             board_budget = defaults['workday_board_budget_seconds']
+    reader = workday_rows(source, url, fetch, detail_match, today, home_first,
+                          start_offset, page_pause, board_budget, run_deadline, known_links,
+                          detail_first, failed_details, countries, saved_facets, queue)
+    if queue is not None:
+        return reader
     with _WORKDAY_SLOT:
-        return workday_rows(source, url, fetch, detail_match, today, home_first,
-                            start_offset, page_pause, board_budget, run_deadline, known_links,
-                            detail_first, failed_details)
+        try:
+            next(reader)
+        except StopIteration as result:
+            return result.value
 
 
 def workday_rows(source, url, fetch, detail_match, today, home_first,
-                 start_offset, page_pause, board_budget, run_deadline, known_links=None,
-                 detail_first=False, failed_details=None):
+                 start_offset, page_pause, board_budget, run_deadline, known_links,
+                 detail_first, failed_details, countries, saved_facets, queue):
+    # Legacy entries only contain IDs. Discover again unless the cache proves coverage.
+    if not (countries and saved_facets and saved_facets.get('countries') == sorted(countries)
+            and saved_facets.get('filter')):
+        saved_facets = None
+    if saved_facets:
+        start_offset, detail_first = 0, False
     rows, offset, total = BoardRows(), start_offset, None
     known_links = known_links or {}
     today = today or date.today()
@@ -293,6 +405,10 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
     rows.attempted = False
     rows.pages_read = rows.rows_read = rows.skipped_rows = 0
     rows.skipped_details = 0
+    rows.country_scoped = bool(saved_facets)
+    rows.saved_facets = saved_facets
+    rows.start_offset = start_offset
+    rows.started_with_details = detail_first
     rows.failed_details = {link: day for link, day in (failed_details or {}).items() if day >= cutoff}
     rows.page = start_offset // WORKDAY_PAGE_SIZE
     problem = None
@@ -302,6 +418,11 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
     matches = []
     detail_problem = None
     detail_slots = details_read = 0
+    applied = saved_facets['filter'] if saved_facets else {}
+    discover_country = bool(countries and not saved_facets)
+    rediscovery_error = None
+    list_finished = False
+    no_country_jobs = False
 
     def budget_error(status=None):
         return WorkdayReadLimit(f'reached the {budget} time budget', status)
@@ -311,6 +432,18 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
             raise budget_error(status)
         if seconds:
             time.sleep(seconds)
+
+    def defer_worldwide():
+        nonlocal budget, deadline
+        deferred_at = time.monotonic()
+        if not (yield queue.run_deadline, True):
+            deadline, budget = time.monotonic(), 'run'
+            return False
+        if budget == 'board':
+            deadline += time.monotonic() - deferred_at
+            if queue.run_deadline <= deadline:
+                deadline, budget = queue.run_deadline, 'run'
+        return True
 
     def request(method, target, body=None, *, posting_detail=False):
         for delay in (5, 15, 45, None):
@@ -327,6 +460,14 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
                 failure = board_failure(error)
                 if posting_detail and 300 <= status < 500 and status not in (408, 429):
                     raise WorkdayPostingError(failure.explanation, status) from None
+                if status == 429 and queue is not None:
+                    queue.limited(source['host'].lower(), seconds)
+                    if delay is None:
+                        raise failure from None
+                    if not (yield deadline, False):
+                        raise budget_error(status)
+                    pause(0, status)
+                    continue
                 if status not in (429, 503) or delay is None:
                     raise failure from None
                 pause(delay if seconds is None else seconds, status)
@@ -338,13 +479,15 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
                     raise WorkdayPostingError(error.explanation, error.status) from None
                 raise board_failure(error) from None
             else:
+                if queue is not None:
+                    queue.succeeded()
                 if time.monotonic() >= deadline:
                     raise budget_error(200)
                 return data
 
     def read_detail(raw):
         pause(page_pause)
-        detail = request('GET', url.rsplit('/', 1)[0] + raw['externalPath'], posting_detail=True)
+        detail = yield from request('GET', url.rsplit('/', 1)[0] + raw['externalPath'], posting_detail=True)
         info = detail.get('jobPostingInfo') if isinstance(detail, dict) else None
         if not isinstance(info, dict):
             raise WorkdayPostingError('returned invalid job details', 200)
@@ -411,7 +554,7 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
             detail_slots += 1
             try:
                 if link not in probed_details:
-                    probed_details[link] = read_detail(raw)
+                    probed_details[link] = yield from read_detail(raw)
             except WorkdayPostingError:
                 record_failure(raw)
                 continue
@@ -421,22 +564,67 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
             apply_detail(raw, probed_details[link])
 
     while True:
+        defer_fallback = False
         try:
             if rows.rows_read >= MAX_POSTINGS:
                 raise WorkdayReadLimit('reached the posting limit for this read', 200)
-            if rows.pages_read:
+            if rows.pages_read and rediscovery_error is None:
                 pause(page_pause)
-            data = request('POST', url, {'appliedFacets': {}, 'limit': WORKDAY_PAGE_SIZE,
-                                         'offset': offset, 'searchText': ''})
+            try:
+                data = yield from request('POST', url, {'appliedFacets': applied, 'limit': WORKDAY_PAGE_SIZE,
+                                                        'offset': 0 if discover_country else offset, 'searchText': ''})
+            except BoardReadError as error:
+                if error.status != 400 or not applied:
+                    raise
+                rows.saved_facets = None
+                if not saved_facets or not countries:
+                    raise
+                rediscovery_error = error
+                saved_facets = None
+                applied, discover_country = {}, True
+                offset = rows.start_offset = 0
+                total = None
+                detail_first = rows.started_with_details = False
+                pause(page_pause)
+                continue
             if not isinstance(data, dict) or not isinstance(data.get('jobPostings'), list):
                 raise BoardReadError('returned an invalid posting list', 200)
             reported, page = data.get('total'), data['jobPostings']
             if type(reported) is not int or reported < 0 or len(page) > WORKDAY_PAGE_SIZE:
                 raise BoardReadError('returned an invalid posting count', 200)
-            total = reported if total is None else max(total, reported)
+            if discover_country:
+                discover_country = False
+                selected, covered = country_facet(data.get('facets'), countries)
+                if not selected and rediscovery_error and rows.rows_read:
+                    raise rediscovery_error
+                rows.country_scoped = selected is not None
+                if selected is not None:
+                    offset = rows.start_offset = 0
+                    detail_first = rows.started_with_details = False
+                    if not rows.rows_read:
+                        rows.page = 0
+                    if not selected:
+                        no_country_jobs = True
+                        break
+                    applied = selected
+                    if covered == countries.keys():
+                        rows.saved_facets = {'filter': selected, 'countries': sorted(covered)}
+                    pause(page_pause)
+                    continue
+                if offset:
+                    # The first page was a facet probe. Resume the existing worldwide read.
+                    if queue is not None and not (yield from defer_worldwide()):
+                        raise budget_error()
+                    continue
+                defer_fallback = queue is not None
+            rediscovery_error = None
+            if not reported and rows.start_offset:
+                total = None
+            elif reported or not offset:
+                total = reported if total is None else max(total, reported)
             if rows.rows_read + len(page) > MAX_POSTINGS:
                 raise WorkdayReadLimit('reached the posting limit for this read', 200)
-            if not page and offset < total:
+            if not page and total is not None and offset < total:
                 raise BoardReadError('returned an empty page before the end', 200)
         except BoardReadError as error:
             problem = error
@@ -470,18 +658,25 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
             rows.append(raw)
             collect_match(raw)
         offset += len(page)
+        list_finished = len(page) < WORKDAY_PAGE_SIZE if total is None else offset >= total
+        if defer_fallback and (not list_finished or matches):
+            # Put off further requests after recording the page we already have.
+            if not (yield from defer_worldwide()):
+                if not list_finished:
+                    problem = budget_error()
+                break
         if detail_first and rows.pages_read == 1:
             # Enrich the replayed page before paging consumes the day's budget.
             # Previously failed postings wait for untried matches on later pages.
-            enrich([raw for raw in matches if raw['_link'] not in rows.failed_details])
+            yield from enrich([raw for raw in matches if raw['_link'] not in rows.failed_details])
             if detail_problem:
-                if offset < total:
+                if not list_finished:
                     problem = detail_problem
                 break
-        if offset >= total:
+        if list_finished:
             break
         # A skipped row leaves the page's newest date uncertain.
-        if newest_first and len(rows) - page_start == len(page):
+        if total is not None and newest_first and len(rows) - page_start == len(page):
             page_rows = rows[page_start:]
             dates = [raw['_posted'] for raw in page_rows]
             newest = max(dates) if all(dates) else ''
@@ -492,7 +687,7 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
                         continue
                     info = probed_details.get(last['_link'])
                     if info is None:
-                        info = read_detail(last)
+                        info = yield from read_detail(last)
                 except WorkdayPostingError:
                     record_failure(last)
                     continue
@@ -511,7 +706,7 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
         if problem and not (isinstance(problem, WorkdayReadLimit) and problem.status in (None, 200)):
             # A board-wide error stops further requests. Already-read probes are usable.
             pending_matches = [raw for raw in pending_matches if raw['_link'] in probed_details]
-        enrich(pending_matches)
+        yield from enrich(pending_matches)
     # A cutoff probe may already have a newer answer for a cached or deferred match.
     for raw in rows:
         if ((raw.get('_details_pending') or raw.get('_details_cached'))
@@ -522,14 +717,14 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
     pending_offsets = [raw['_page_offset'] for raw in matches if raw.get('_details_pending')]
     pending = len(pending_offsets)
     limited = isinstance(problem or detail_problem, WorkdayReadLimit)
-    rows.full_read = not (problem or start_offset or date_limited)
+    rows.full_read = not (problem or rows.start_offset or date_limited or rows.country_scoped)
     rows.next_offset = min(pending_offsets, default=offset) if problem else 0
     rows.detail_first = detail_first and not rows.pages_read
     if limited:
         if detail_first and rows.rows_read:
             # Alternate a detail-first replay with forward paging so a tight budget
             # can neither pin the cursor nor spend every morning on list requests.
-            rows.next_offset = 0 if date_limited or offset >= total else offset
+            rows.next_offset = 0 if date_limited or list_finished else offset
         elif pending:
             rows.next_offset = min(pending_offsets)
             rows.detail_first = True
@@ -542,7 +737,9 @@ def workday_rows(source, url, fetch, detail_match, today, home_first,
         reasons.append(read_reason('Workday', problem.explanation, problem.status, rows.page, total_pages, rows.rows_read))
     elif date_limited:
         reasons.append(f'Workday: finished postings from the last {SEARCH_WINDOW_DAYS} days after page {rows.page} of {total_pages}.')
-    elif start_offset and not pending:
+    elif no_country_jobs:
+        reasons.append(f'No postings listed for {next(iter(countries.values()))}.')
+    elif rows.start_offset and not pending:
         reasons.append(read_reason('Workday', 'finished a resumed read', 200, rows.page, total_pages, rows.rows_read))
     if pending and problem:
         resume = 'continue paging on the next read' if limited and detail_first else 'resume at the earliest pending page'

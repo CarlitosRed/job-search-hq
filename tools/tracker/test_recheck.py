@@ -607,6 +607,52 @@ class LinkStatus(unittest.TestCase):
 
 
 class WorkdayCoverage(Base):
+    def test_home_place_identifies_a_repost_with_a_worldwide_summary(self):
+        old_link = self.storage.postings_for(self.ids['Partner Lead'])[0]['link']
+        new_link = 'https://example.org/new'
+        links = Links({old_link: ('gone', 'Gone.')})
+        home = dict(board([['NEW', new_link, 'Partner Lead', 'Remote']],
+                          company='Big Example', provider='workday'), full_read=False)
+        worldwide = dict(board([['LIST', new_link, 'Partner Lead', '2 Locations']],
+                               company='Big Example', provider='workday'), full_read=True)
+        result = self.run_check(DAY1, [dict(home, worldwide=worldwide)], links=links)
+        self.assertEqual((result['seen'], result['missed'], self.state('Partner Lead')), (1, 0, 'open'))
+        self.assertEqual(self.storage.job_for_posting(PROFILE, 'workday', 'Big Example', 'NEW'),
+                         self.ids['Partner Lead'])
+        self.assertNotIn(old_link, links.calls)
+
+    def test_home_sighting_resets_workday_miss_history(self):
+        link = self.storage.postings_for(self.ids['Partner Lead'])[0]['link']
+        absent = dict(board([read('OTHER', title='Example Clerk')], company='Big Example', provider='workday'),
+                      full_read=True)
+        home = dict(board([['R100', link, 'Partner Lead', 'Remote']], company='Big Example', provider='workday'),
+                    full_read=False)
+        outcomes = []
+        for days, source in enumerate((absent, home, absent)):
+            result = self.run_check(DAY1 + timedelta(days=days), [source])
+            outcomes.append((result['seen'], result['missed'], self.state('Partner Lead')))
+        self.assertEqual(outcomes, [(0, 1, 'open'), (1, 0, 'open'), (0, 1, 'open')])
+
+    def test_worldwide_list_id_does_not_hide_home_requisition_id(self):
+        old_link = 'https://bigex.wd1.myworkdayjobs.com/Careers/job/Remote/Partner-Lead_R100'
+        new_link = 'https://bigex.wd1.myworkdayjobs.com/Careers/job/Remote/Updated-Lead_R100'
+        links = Links({old_link: ('gone', 'Gone.')})
+        home = dict(board([['R100', new_link, 'Updated Lead']], company='Big Example', provider='workday'),
+                    full_read=False)
+        worldwide = dict(board([['LIST', new_link, 'Updated Lead']], company='Big Example', provider='workday'),
+                         full_read=True)
+        result = self.run_check(DAY1, [dict(home, worldwide=worldwide)], links=links)
+        self.assertEqual((result['seen'], result['missed'], self.state('Partner Lead')), (1, 0, 'open'))
+        self.assertNotIn(old_link, links.calls)
+
+    def test_full_worldwide_second_pass_can_check_an_absent_posting(self):
+        link = 'https://bigex.wd1.myworkdayjobs.com/Careers/job/Remote/Partner-Lead_R100'
+        links = Links({link: ('gone', 'Gone.')})
+        home = dict(board([read('R99')], company='Big Example', provider='workday'), full_read=False)
+        worldwide = dict(board([read('R98')], company='Big Example', provider='workday'), full_read=True)
+        self.run_check(DAY1, [dict(home, worldwide=worldwide)], links=links)
+        self.assertIn(link, links.calls)
+
     def test_unidentifiable_workday_rows_cannot_close_an_absent_posting(self):
         link = 'https://bigex.wd1.myworkdayjobs.com/Careers/job/Remote/Partner-Lead_R100'
         links = Links({link: ('gone', 'Gone.')})
