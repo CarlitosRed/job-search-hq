@@ -153,7 +153,7 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
     jobs = {r['id']: dict(r) for r in db.execute('SELECT * FROM jobs')}
     posts = [dict(r) for r in db.execute('SELECT * FROM postings WHERE profile_id=?', (profile,))]
     before = {key: posting_status(storage, key) for key in jobs}
-    touched, usable, plans, boards = set(), {}, [], {}
+    touched, observed, plans, boards = set(), {}, [], {}
 
     def named(job_id, reason):
         return dict(job_id=job_id, company=jobs[job_id]['company'], role=jobs[job_id]['role'], reason=reason[:200])
@@ -161,6 +161,13 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
     for source in snapshot.get('boards', []):
         key = (source['provider'], source['board'])
         source = dict(source)
+        worldwide = source.get('worldwide')
+        if (source['provider'] == 'workday' and worldwide and worldwide['read'] == 'complete'
+                and worldwide.get('full_read') is True and not worldwide.get('skipped_rows')):
+            # Prefer home details for a URL the worldwide pass also found.
+            seen = {(row[0], row[1]) for row in source['seen']}
+            source = dict(worldwide, seen=source['seen'] + [
+                row for row in worldwide['seen'] if (row[0], row[1]) not in seen])
         if (source['provider'] == 'workday' and source['read'] == 'complete'
                 and (source.get('full_read') is False or source.get('skipped_rows', 0))):
             source.update(read='partial', reason=source.get('reason') or 'Workday coverage was incomplete.')
@@ -189,16 +196,32 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
         board['duplicate'] = bool(duplicate)
         if state != 'complete':
             report['no_information'].append(dict(board=label, reason=reason[:200] or 'The board was not fully read.'))
-            continue
-        usable[(provider, label)] = board
+            if provider != 'workday' or not board['seen']:
+                continue
+        observed[(provider, label)] = board
         tracked = [p for p in posts if (p['provider'], p['board']) == (provider, label)]
         matches, owned = {}, set()
-        for post in tracked:
+        by_id, by_link = {}, {}
+        if provider == 'workday':
+            # Two IDs for the same URL can both establish presence, but describe one repost candidate.
             for index, seen in enumerate(board['seen']):
-                if (seen[0] and str(seen[0]) == post['posting_id']) or same_link(seen[1], post['link']):
-                    matches[post['id']] = index
-                    owned.add(index)
-                    break
+                if seen[0]:
+                    by_id.setdefault(str(seen[0]), index)
+                url = link_key(seen[1])
+                if url:
+                    by_link.setdefault(url, index)
+        for post in tracked:
+            index = by_id.get(post['posting_id'])
+            if index is None:
+                index = next((i for i, seen in enumerate(board['seen'])
+                              if (seen[0] and str(seen[0]) == post['posting_id'])
+                              or same_link(seen[1], post['link'])), None)
+            if index is not None:
+                matches[post['id']] = index
+                owned.add(index)
+                canonical = by_link.get(link_key(board['seen'][index][1]))
+                if canonical is not None:
+                    owned.add(canonical)
         missing = [p for p in tracked if p['id'] not in matches]
 
         def compatible(post, seen):
@@ -208,6 +231,7 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
             return bool(title_key(seen[2])) and title_key(seen[2]) == title_key(post.get('title') or job['role']) and (not place or not other or title_key(place) == title_key(other))
 
         candidates = {p['id']: [i for i, s in enumerate(board['seen']) if i not in owned and
+                      (not by_link or by_link.get(link_key(s[1]), i) == i) and
                       not storage.job_for_posting(profile, provider, label, str(s[0])) and compatible(p, s)] for p in missing}
         for post in tracked:
             pid = post['id']
@@ -220,7 +244,7 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
                     continue
             if pid in matches:
                 plans.append((post, 'seen', board['seen'][matches[pid]], board))
-            elif post['state'] != 'closed' and not db.execute(
+            elif state == 'complete' and post['state'] != 'closed' and not db.execute(
                     "SELECT 1 FROM checks WHERE posting_row=? AND kind='board' AND date=?",
                     (pid, today)).fetchone():
                 plans.append((post, 'missed', None, board))
@@ -360,14 +384,14 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
             with closing(sqlite3.connect(Path(backlog).resolve().as_uri() + '?mode=ro', uri=True)) as queue:
                 for identity, body in queue.execute('SELECT identity,body FROM search_backlog WHERE profile_id=? AND landed=0', (profile,)):
                     job = json.loads(body)
-                    board = usable.get((job['provider'], job['company']))
+                    board = observed.get((job['provider'], job['company']))
                     if not board:
                         continue
                     seen = any((s[0] and str(s[0]) == str(job['posting_id'])) or same_link(s[1], job.get('link')) for s in board['seen'])
                     if seen:
                         job.update(gone=False, missed_days=[])
                         job.pop('missed_at', None)
-                    elif not board['duplicate']:
+                    elif board['read'] == 'complete' and not board['duplicate']:
                         last = job.get('missed_at')
                         if not last or observed_at - datetime.fromisoformat(last) >= timedelta(hours=18):
                             job['missed_days'] = sorted(set(job.get('missed_days', [])) | {today})

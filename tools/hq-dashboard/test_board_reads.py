@@ -14,6 +14,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 from urllib.error import HTTPError
@@ -200,6 +201,7 @@ class WorkdayReads(Base):
         self.profile['search']['companies'] = [self.company]
         self.calls, self.waits, self.failures, self.request_time = [], [], {}, {}
         self.details = {}
+        self.facets, self.filtered, self.requests = {}, {}, []
         self.elapsed = 0
         self.wall = datetime(2026, 3, 10, tzinfo=timezone.utc).timestamp()
         self.listings = [fx.WorkdayHomeFirst.listing(n, 'Exampleland') for n in range(41)]
@@ -220,8 +222,11 @@ class WorkdayReads(Base):
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 offset = body['offset']
-                self.reply(offset, {'total': len(owner.listings),
-                                    'jobPostings': owner.listings[offset:offset + body['limit']]})
+                applied = body['appliedFacets']
+                owner.requests.append((self.path, applied, offset, owner.elapsed))
+                listings = owner.filtered.get(self.path, []) if applied else owner.listings
+                self.reply(offset, {'total': len(listings), 'facets': owner.facets.get(self.path, []),
+                                    'jobPostings': listings[offset:offset + body['limit']]})
 
             def do_GET(self):
                 info = {'location': 'Exampleland', **owner.details.get(self.path, {})}
@@ -443,13 +448,13 @@ class WorkdayReads(Base):
         self.assertEqual(self.offsets(), [0, 20, 20, 40])
         self.assertEqual(self.waits[:3], [1.5, 7, 1.5])
 
-    def test_429_without_header_retries_three_times_and_keeps_rows(self):
+    def test_429_without_header_backs_off_and_keeps_rows(self):
         self.enrich_first_page_yesterday()
         self.failures[20] = [(429, {})] * 4
         result = self.run_search()
         read = result['boards'][0]
         self.assertEqual(self.offsets(), [0, 20, 20, 20, 20])
-        self.assertEqual(self.waits[:4], [1.5, 5, 15, 45])
+        self.assertEqual(self.waits[:4], [1.5, 30, 60, 120])
         self.assertEqual((read['read'], read['rows']), ('partial', 20))
         self.assertEqual(self.saved_offsets(), (0, 20))
         self.assertNotIn('next_offset', read)
@@ -480,17 +485,27 @@ class WorkdayReads(Base):
         self.assertIn('HTTP 429', read['reason'])
 
     def test_run_budget_defers_other_workday_boards_and_rotates_next_day(self):
-        self.profile['search']['companies'].append(dict(self.company, label='Second Example', board='second'))
+        first, second = self.country_boards()
+        # Give both boards the same last-read date so the first board starts today.
+        self.run_search(fx.TODAY - timedelta(days=1))
+        self.requests.clear()
+        self.filtered[first] = [dict(fx.WorkdayHomeFirst.listing(n, 'Exampleland'), title='Example Clerk')
+                                for n in range(41)]
+        self.profile['search']['workday_page_pause_seconds'] = 1.5
         self.profile['search']['workday_run_budget_seconds'] = 2
         self.request_time[20] = 0.5
-        first, second = self.run_search()['boards']
-        self.assertEqual(self.offsets(), [0, 20])
-        self.assertIn('run time budget', first['reason'])
-        self.assertIn('run time budget', second['reason'])
-        self.assertEqual(second['rows'], 0)
-        self.calls.clear()
+        first_read, second_read = self.run_search()['boards']
+        home = {'Location_Country': ['home-id', 'other-id']}
+        self.assertEqual([request[:3] for request in self.requests],
+                         [(first, home, 0), (first, home, 20)])
+        self.assertEqual((first_read['read'], first_read['rows']), ('partial', 20))
+        self.assertIn('run time budget', first_read['reason'])
+        self.assertIn('run time budget', second_read['reason'])
+        self.assertEqual(second_read['rows'], 0)
+        self.requests.clear()
         self.run_search(fx.TODAY + timedelta(days=1))
-        self.assertIn('/second/', self.calls[0][0])
+        self.assertEqual([request[:3] for request in self.requests[:2]], [
+            (second, {}, 0), (second, {'Country_and_Jurisdiction': ['second-id']}, 0)])
 
     def test_next_day_resumes_then_starts_fresh_without_relanding(self):
         self.enrich_first_page_yesterday()
@@ -500,7 +515,7 @@ class WorkdayReads(Base):
         self.assertTrue(landed)
         self.calls.clear()
         second = self.run_search(fx.TODAY + timedelta(days=1), mark_landed=True)
-        self.assertEqual(self.offsets(), [20, 40])
+        self.assertEqual(self.offsets(), [0, 20, 40])
         self.assertEqual(second['boards'][0]['read'], 'complete')
         self.assertFalse(second['boards'][0]['full_read'])
         self.calls.clear()
@@ -554,7 +569,7 @@ class WorkdayReads(Base):
         self.waits.clear()
         self.failures[None] = [(429, {'Retry-After': '7'})]
         read = self.run_search(fx.TODAY + timedelta(days=1))['boards'][0]
-        self.assertEqual(self.offsets(), [20])
+        self.assertEqual(self.offsets(), [0, 20])
         self.assertEqual([path for path, offset in self.calls if offset is None], [probe, probe])
         self.assertEqual(self.waits, [1.5, 7])
         self.assertEqual(read['read'], 'complete')
@@ -639,6 +654,314 @@ class WorkdayReads(Base):
         self.failures[20] = [(503, {})] * 4
         self.assertEqual(self.run_search()['metadata']['workday'],
                          {'read': 0, 'total': 1, 'continue_tomorrow': 1})
+
+    @staticmethod
+    def facet(name, *values):
+        return {'facetParameter': name, 'values': [{'descriptor': label, 'id': token} for label, token in values]}
+
+    def country_boards(self):
+        self.listings = [dict(row, title='Example Clerk') for row in self.listings[:1]]
+        self.profile['search']['workday_page_pause_seconds'] = 0
+        first = '/wday/cxs/bigex/Careers/jobs'
+        second = '/wday/cxs/second/Careers/jobs'
+        self.profile['search']['companies'].append(dict(
+            self.company, label='Second Example', board='second', host='second.wd1.myworkdayjobs.com'))
+        self.profile['work_rules']['authorized_countries'].append('Otherland')
+        self.facets[first] = [self.facet('Location', ('Exampleland', 'city-id')),
+                              {'facetParameter': 'locationMainGroup', 'values': [
+                                  self.facet('Location_Country', ('EXAMPLELAND', 'home-id'),
+                                             ('Otherland', 'other-id'), ('New Exampleland', 'wrong-id'))]}]
+        self.facets[second] = [self.facet('Country_and_Jurisdiction', ('Otherland', 'second-id'))]
+        self.filtered.update({first: self.listings, second: self.listings})
+        return first, second
+
+    def test_country_facets_page_first_and_worldwide_runs_after_both_boards(self):
+        first, second = self.country_boards()
+        self.filtered[first] = [dict(row, title='Example Clerk')
+                                for row in [fx.WorkdayHomeFirst.listing(n, 'Exampleland') for n in range(21)]]
+        result = self.run_search()
+        home = {'Location_Country': ['home-id', 'other-id']}
+        self.assertEqual([request[:3] for request in self.requests], [
+            (first, {}, 0), (first, home, 0), (first, home, 20),
+            (second, {}, 0), (second, {'Country_and_Jurisdiction': ['second-id']}, 0),
+            (first, {}, 0), (second, {}, 0)])
+        read = result['boards'][0]
+        self.assertEqual((read['read'], read['rows'], read['full_read']), ('complete', 21, False))
+        self.assertEqual(read['worldwide']['rows'], 1)
+
+    def test_saved_country_facets_skip_discovery_and_400_rediscover_once(self):
+        first, _ = self.country_boards()
+        self.profile['search']['companies'] = [self.company]
+        self.run_search()
+        cold_requests = len(self.requests)
+        self.requests.clear()
+        self.run_search(fx.TODAY + timedelta(days=1))
+        self.assertEqual(len(self.requests), cold_requests - 1)
+        self.assertEqual(self.requests[0][1], {'Location_Country': ['home-id', 'other-id']})
+        self.requests.clear()
+        self.facets[first] = [self.facet('locationCountry', ('Exampleland', 'new-id'))]
+        self.failures[0] = [(400, {}), (200, {}), (400, {})]
+        read = self.run_search(fx.TODAY + timedelta(days=2))['boards'][0]
+        self.assertEqual([applied for _, applied, _, _ in self.requests],
+                         [{'Location_Country': ['home-id', 'other-id']}, {}, {'locationCountry': ['new-id']}])
+        self.assertEqual((read['read'], read['http_status']), ('failed', 400))
+        self.requests.clear()
+        self.run_search(fx.TODAY + timedelta(days=3))
+        self.assertEqual(self.requests[0][1], {})
+
+    def test_partial_saved_country_filter_discovers_newly_listed_home_country(self):
+        _, second = self.country_boards()
+        self.profile['search']['companies'] = [self.profile['search']['companies'][1]]
+        other = dict(fx.WorkdayHomeFirst.listing(1, 'Otherland'), title='Example Clerk')
+        self.filtered[second] = self.listings = [other]
+        first_day = self.run_search()['boards'][0]
+        self.assertEqual([row[0] for row in first_day['seen']], ['R1'])
+        self.facets[second][0]['values'].insert(0, {'descriptor': 'Exampleland', 'id': 'new-home'})
+        home = dict(fx.WorkdayHomeFirst.listing(0, 'Exampleland'), title='Example Clerk')
+        self.filtered[second] = self.listings = [home, other]
+
+        def fetch(method, url, body):
+            if method == 'POST' and body['appliedFacets'] == {'Country_and_Jurisdiction': ['second-id']}:
+                return {'total': 1, 'jobPostings': [other], 'facets': self.facets[second]}
+            return ds.boards.fetch_json(method, url, body)
+
+        result = ds.run(self.profile, fetch, self.backlog, fx.TODAY + timedelta(days=1))
+        read = result['boards'][0]
+        self.assertEqual((read['read'], [row[0] for row in read['seen']]), ('complete', ['R0', 'R1']))
+
+    def test_failed_country_rediscovery_keeps_rows_from_saved_filter(self):
+        first, _ = self.country_boards()
+        countries = {'exampleland': 'Exampleland', 'otherland': 'Otherland'}
+        saved = ds.boards.board_rows(self.company, countries=countries, page_pause=0).saved_facets
+        self.filtered[first] = [fx.WorkdayHomeFirst.listing(n, 'Exampleland') for n in range(21)]
+        self.failures[20] = [(400, {})]
+        self.failures[0] = [(200, {}), (500, {})]
+        rows = ds.boards.board_rows(
+            self.company, countries=countries, saved_facets=saved,
+            page_pause=0)
+        self.assertEqual((rows.read, rows.rows_read, len(rows), rows.http_status), ('partial', 20, 20, 500))
+        self.assertIsNone(rows.saved_facets)
+        self.assertFalse(rows.full_read)
+
+    def test_multiple_ids_for_one_country_do_not_make_a_full_filter(self):
+        _, second = self.country_boards()
+        company = self.profile['search']['companies'][1]
+        self.profile['search']['companies'] = [company]
+        self.facets[second][0]['values'].append({'descriptor': 'OTHERLAND', 'id': 'another-id'})
+        other = [dict(fx.WorkdayHomeFirst.listing(n, 'Otherland'), title='Example Clerk') for n in (1, 2)]
+        self.filtered[second] = self.listings = other
+        self.run_search()
+        self.facets[second][0]['values'].append({'descriptor': 'Exampleland', 'id': 'home-id'})
+        home = dict(fx.WorkdayHomeFirst.listing(0, 'Exampleland'), title='Example Clerk')
+        self.filtered[second] = self.listings = [home, *other]
+
+        def fetch(method, url, body):
+            if method == 'POST' and body['appliedFacets'] == {'Country_and_Jurisdiction': ['second-id', 'another-id']}:
+                return {'total': 2, 'jobPostings': other, 'facets': self.facets[second]}
+            return ds.boards.fetch_json(method, url, body)
+
+        read = ds.run(self.profile, fetch, self.backlog, fx.TODAY + timedelta(days=1))['boards'][0]
+        self.assertEqual((read['read'], [row[0] for row in read['seen']]), ('complete', ['R0', 'R1', 'R2']))
+
+    def test_successful_country_rediscovery_keeps_rows_from_saved_filter(self):
+        first, _ = self.country_boards()
+        countries = {'exampleland': 'Exampleland', 'otherland': 'Otherland'}
+        saved = ds.boards.board_rows(self.company, countries=countries, page_pause=0).saved_facets
+        old_filter = {'Location_Country': ['home-id', 'other-id']}
+        new_facets = [self.facet('locationCountry', ('Exampleland', 'new-home'), ('Otherland', 'new-other'))]
+        listings = [fx.WorkdayHomeFirst.listing(n, 'Exampleland') for n in range(21)]
+
+        def fetch(method, url, body):
+            if body['appliedFacets'] == old_filter:
+                if body['offset']:
+                    raise HTTPError(url, 400, 'fixture', {}, None)
+                return {'total': 21, 'jobPostings': listings[:20], 'facets': self.facets[first]}
+            return {'total': 1, 'jobPostings': listings[20:], 'facets': new_facets}
+
+        rows = ds.boards.board_rows(self.company, fetch, countries=countries, saved_facets=saved, page_pause=0)
+        self.assertEqual((rows.read, rows.rows_read, [row['bulletFields'][0] for row in rows]),
+                         ('complete', 21, [f'R{n}' for n in range(21)]))
+
+    def test_cold_facet_discovery_starts_at_zero_with_a_worldwide_cursor(self):
+        self.listings = self.listings[:1]
+        path = '/wday/cxs/bigex/Careers/jobs'
+        self.facets[path] = [self.facet('locationCountry', ('Exampleland', 'home-id'))]
+        self.filtered[path] = self.listings
+
+        def fetch(method, url, body):
+            if body['offset']:
+                return {'total': 0, 'jobPostings': [], 'facets': []}
+            return ds.boards.fetch_json(method, url, body)
+
+        rows = ds.boards.board_rows(self.company, fetch, countries={'exampleland': 'Exampleland'},
+                                    start_offset=20, page_pause=0)
+        self.assertEqual([request[:3] for request in self.requests], [
+            (path, {}, 0), (path, {'locationCountry': ['home-id']}, 0)])
+        self.assertEqual((rows.read, [row['bulletFields'][0] for row in rows]), ('complete', ['R0']))
+
+    def test_finished_fallback_page_survives_the_other_home_read(self):
+        self.listings = self.listings[:1]
+        queue = ds.boards.WorkdayQueue(10)
+
+        def fallback(deadline):
+            return ds.boards.board_rows(self.company, detail_match=lambda title, text: True,
+                                        countries={'exampleland': 'Exampleland'},
+                                        run_deadline=deadline, page_pause=0, queue=queue)
+
+        def other(deadline):
+            self.assertEqual(self.offsets(), [0])
+            self.elapsed = 11
+            yield from ()
+
+        results = dict(queue.read([(0, self.company['host'], fallback), (1, 'other.example', other)]))
+        self.assertIsNone(results[1])
+        rows = results[0]
+        self.assertEqual((rows.read, [row['bulletFields'][0] for row in rows]), ('complete', ['R0']))
+        self.assertTrue(rows.full_read)
+        self.assertEqual([offset for _, offset in self.calls], [0])
+
+    def test_workday_queue_stops_waiting_while_shared_lock_is_held(self):
+        lock = threading.Lock()
+        lock.acquire()
+        self.addCleanup(lock.release)
+        with mock.patch.object(ds.boards, '_WORKDAY_SLOT', lock), mock.patch.object(
+                ds.boards.time, 'monotonic', time.monotonic):
+            released = threading.Event()
+
+            def release():
+                lock.release()
+                released.set()
+
+            timer = threading.Timer(0.4, release)
+            timer.start()
+            try:
+                queue = ds.boards.WorkdayQueue(ds.boards.time.monotonic() + 0.05)
+                fetch = mock.Mock(side_effect=AssertionError('The board was requested after the deadline'))
+
+                def read(deadline):
+                    return ds.boards.board_rows(self.company, fetch, run_deadline=deadline, queue=queue)
+
+                [(index, rows)] = list(queue.read([(0, self.company['host'], read)]))
+                self.assertFalse(released.is_set())
+                self.assertEqual((index, rows.read, rows.attempted), (0, 'failed', False))
+                fetch.assert_not_called()
+            finally:
+                timer.cancel()
+                timer.join()
+                if released.is_set():
+                    lock.acquire()
+
+    def test_resumed_zero_total_keeps_paging_until_a_short_or_empty_page(self):
+        def fetch(method, url, body):
+            offset = body['offset']
+            self.calls.append((url, offset))
+            return {'total': 0, 'jobPostings': self.listings[offset:offset + body['limit']]}
+
+        for count in (41, 40):
+            with self.subTest(count=count):
+                self.listings = self.listings[:count]
+                self.calls.clear()
+                rows = ds.boards.board_rows(self.company, fetch, start_offset=20, page_pause=0)
+                self.assertEqual((self.offsets(), rows.read, rows.rows_read), ([20, 40], 'complete', count - 20))
+                self.assertFalse(rows.full_read)
+                self.assertNotIn('of 0', rows.reason)
+
+    def test_saved_country_filter_ignores_a_saved_worldwide_offset(self):
+        first, _ = self.country_boards()
+        self.profile['search']['companies'] = [self.company]
+        self.run_search()
+        with closing(sqlite3.connect(self.backlog)) as db, db:
+            db.execute('UPDATE workday_progress SET next_offset=20')
+        self.requests.clear()
+        read = self.run_search(fx.TODAY + timedelta(days=1))['boards'][0]
+        self.assertEqual(self.requests[0][:3], (first, {'Location_Country': ['home-id', 'other-id']}, 0))
+        self.assertEqual((read['read'], read['rows']), ('complete', 1))
+
+    def test_country_filtered_posting_keeps_place_text_and_passes_place_rule(self):
+        first, _ = self.country_boards()
+        self.profile['search']['companies'] = [self.company]
+        self.filtered[first] = [fx.WorkdayHomeFirst.listing(0, 'EXL-Central')]
+        detail_path = first.rsplit('/', 1)[0] + self.filtered[first][0]['externalPath']
+        self.details[detail_path] = {'location': 'EXL-Central'}
+        result = self.run_search()
+        job = next(job for job in result['landing'] if job['posting_id'] == 'R0')
+        self.assertEqual(job['place_text'], 'EXL-Central')
+        self.assertEqual((job['place'], job['place_sentence']), ('ok', 'EXL-Central'))
+
+    def test_nested_location_facet_can_supply_a_country_filter(self):
+        first, _ = self.country_boards()
+        self.profile['search']['companies'] = [self.company]
+        self.facets[first] = [{'facetParameter': 'locationMainGroup', 'values': [
+            self.facet('locations', (' ExampleLAND ', 'home-id'), ('New Exampleland', 'wrong-id'))]}]
+        read = self.run_search()['boards'][0]
+        self.assertEqual(self.requests[1][:3], (first, {'locations': ['home-id']}, 0))
+        self.assertEqual((read['read'], read['rows'], read['full_read']), ('complete', 1, False))
+
+    def test_worldwide_fallback_pages_after_other_boards_finish_their_home_read(self):
+        first, second = self.country_boards()
+        self.facets[first] = []
+        self.listings = [dict(fx.WorkdayHomeFirst.listing(n, 'Exampleland'), title='Example Clerk')
+                         for n in range(41)]
+        self.run_search()
+        self.assertEqual([request[:3] for request in self.requests[:5]], [
+            (first, {}, 0), (second, {}, 0), (second, {'Country_and_Jurisdiction': ['second-id']}, 0),
+            (first, {}, 20), (first, {}, 40)])
+
+    def test_country_facet_with_no_whole_match_completes_with_zero_home_rows(self):
+        first, _ = self.country_boards()
+        self.profile['search']['companies'] = [self.company]
+        self.facets[first] = [self.facet('locationCountry', ('New Exampleland', 'wrong-id')),
+                              self.facet('Location', ('Exampleland', 'city-id'))]
+        read = self.run_search()['boards'][0]
+        self.assertEqual((read['read'], read['rows'], read['full_read']), ('complete', 0, False))
+        self.assertEqual(read['reason'], 'No postings listed for Exampleland.')
+        self.assertEqual([applied for _, applied, _, _ in self.requests], [{}, {}])
+
+    def test_no_country_facet_uses_the_first_worldwide_page(self):
+        first, _ = self.country_boards()
+        self.profile['search']['companies'] = [self.company]
+        self.facets[first] = [self.facet('Location', ('Exampleland', 'city-id'))]
+        read = self.run_search()['boards'][0]
+        self.assertEqual((read['read'], read['rows'], read['full_read']), ('complete', 1, True))
+        self.assertEqual(len(self.requests), 1)
+
+    def test_worldwide_failure_preserves_home_result(self):
+        first, _ = self.country_boards()
+        self.profile['search']['companies'] = [self.company]
+        self.failures[first] = [(200, {}), (200, {}), (500, {})]
+        result = self.run_search()
+        read = result['boards'][0]
+        self.assertEqual((read['read'], read['rows'], read['full_read']), ('complete', 1, False))
+        self.assertEqual(read['worldwide']['read'], 'failed')
+        self.assertEqual(result['source_errors'], [])
+
+    def test_429_rotates_hosts_doubles_cooldown_and_success_resets_it(self):
+        first, second = self.country_boards()
+        self.failures[first] = [(429, {}), (200, {}), (200, {}), (429, {})]
+        self.failures[second] = [(429, {}), (200, {}), (200, {})]
+        self.run_search()
+        self.assertEqual([(path, at) for path, _, _, at in self.requests], [
+            (first, 0), (second, 30), (first, 90), (first, 90),
+            (second, 90), (second, 90), (first, 90), (second, 120), (first, 120)])
+
+    def test_retry_after_delays_that_host_without_delaying_the_other(self):
+        first, second = self.country_boards()
+        self.failures[first] = [(429, {'Retry-After': '50'})]
+        self.run_search()
+        self.assertEqual([(path, at) for path, _, _, at in self.requests[:4]], [
+            (first, 0), (second, 0), (second, 0), (first, 50)])
+
+    def test_cooldown_cannot_use_up_run_budget_or_start_worldwide_pass(self):
+        first, second = self.country_boards()
+        self.profile['search']['workday_run_budget_seconds'] = 25
+        self.failures[first] = [(429, {})]
+        result = self.run_search()
+        self.assertEqual([path for path, _, _, _ in self.requests], [first])
+        self.assertFalse(any('worldwide' in board for board in result['boards']))
+        self.assertLess(self.elapsed, 25)
+        self.requests.clear()
+        self.run_search(fx.TODAY + timedelta(days=1))
+        self.assertEqual(self.requests[0][0], second)
 
 
 if __name__ == '__main__':

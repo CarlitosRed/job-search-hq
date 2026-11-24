@@ -58,6 +58,9 @@ def place_facts(profile, job):
     location, description = job['place_text'], job['description']
     authorized = rules['authorized_countries']
     countries = [rules['home_country'], *authorized]
+    scope = job.get('workday_country_scope')
+    if scope and scope == json.dumps(sorted(profiles.workday_countries(profile))):
+        return 'ok', location
     if any(boards.phrase_matches(country, location) for country in countries):
         return 'ok', location
     sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+|[\r\n]+', description) if s.strip()]
@@ -234,11 +237,10 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
             time.sleep(wait)
             return fetch(method, url, body)
 
-    # Card 06-1d: home-country reads first, place from the job page
+    countries = profiles.workday_countries(profile)
+
     def home_first(text):
-        rules = profile['work_rules']
-        return any(boards.phrase_matches(country, text)
-                   for country in [rules['home_country'], *rules['authorized_countries']])
+        return any(boards.phrase_matches(country, text) for country in countries.values())
 
     companies = profile['search']['companies']
     if not 1 <= len(companies) <= 300:
@@ -247,9 +249,15 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
     workday = [i for i, company in enumerate(companies) if company['provider'] == 'workday']
     progress = workday_progress(backlog, profile['id']) if workday else {}
     known_workday_links = {}
+    country_key = json.dumps(sorted(countries))
     with connect(backlog) as db, db:
         db.execute('CREATE TABLE IF NOT EXISTS search_backlog (profile_id TEXT NOT NULL, identity TEXT NOT NULL, first_seen TEXT NOT NULL, body TEXT NOT NULL, landed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (profile_id, identity))')
         if workday:
+            db.execute('''CREATE TABLE IF NOT EXISTS workday_country_facets (
+                profile_id TEXT NOT NULL, board_key TEXT NOT NULL, countries TEXT NOT NULL,
+                facets TEXT NOT NULL, run_date TEXT NOT NULL, PRIMARY KEY (profile_id, board_key))''')
+            saved_facets = {key: (scope, json.loads(facets)) for key, scope, facets in db.execute(
+                'SELECT board_key,countries,facets FROM workday_country_facets WHERE profile_id=?', (profile['id'],))}
             db.execute('''CREATE TABLE IF NOT EXISTS workday_detail_progress (
                 profile_id TEXT NOT NULL, board_key TEXT NOT NULL, run_date TEXT NOT NULL,
                 started_with_details INTEGER NOT NULL, resume_with_details INTEGER NOT NULL,
@@ -266,40 +274,77 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
                     cache_day = job.get('workday_details_read_on', first_seen)
                     expired = not landed and cache_day < refresh_before and not too_old(job, today)
                     known_workday_links.setdefault(job['company'], {})[job['link']] = job, expired
-    updates, detail_updates, run_deadline = [], [], None
+    updates, detail_updates, facet_updates = [], [], []
     policy = {**profiles.WORKDAY_DEFAULTS, **profile['search']}
     workday.sort(key=lambda i: progress.get(workday_key(companies[i]), ('', 0, 0))[0])
     board_reads = [None] * len(companies)
-    for index in ordinary + workday:
+
+    def attempts():
+        for index in ordinary:
+            yield index, None, False
+        if not workday:
+            return
+        queue = boards.WorkdayQueue(time.monotonic() + policy['workday_run_budget_seconds'])
+
+        def tasks(indices, worldwide=False):
+            for index in indices:
+                company = companies[index]
+                key = workday_key(company)
+                scope, facets = saved_facets.get(key, (country_key, None))
+                prior_day, prior_start, prior_next = progress.get(key, ('', 0, 0))
+                started, resume, failed_details = detail_progress.get(key, (False, False, {}))
+                if worldwide or scope != country_key:
+                    prior_day, prior_start, prior_next = '', 0, 0
+                    facets = None
+                # A same-day retry replays the segment so it can rebuild a lost snapshot.
+                start = prior_next if prior_day < day else prior_start if prior_day == day else 0
+                detail_first = started if prior_day == day else prior_day < day and resume
+                known = known_workday_links.get(company['label'], {})
+
+                def detail_match(title, text, company=company):
+                    return (not exclusion_reason(profile, {'company': company['label'], 'title': title})
+                            and boards.profile_posting_matches(profile, title, text))
+
+                options = dict(home_first=home_first, start_offset=start,
+                               page_pause=policy['workday_page_pause_seconds'],
+                               board_budget=policy['workday_board_budget_seconds'],
+                               known_links={link: None if expired else job.get('workday_list_fingerprint')
+                                            for link, (job, expired) in known.items()},
+                               detail_first=detail_first, failed_details=failed_details,
+                               countries=None if worldwide else countries, saved_facets=facets, queue=queue)
+
+                def read(deadline, company=company, detail_match=detail_match, options=options):
+                    return boards.board_rows(company, fetch, detail_match, today, run_deadline=deadline, **options)
+
+                yield index, company['host'], read
+
+        reached, scoped = 0, set()
+        for index, rows in queue.read(tasks(workday)):
+            if isinstance(rows, boards.BoardRows) and rows.attempted:
+                reached += 1
+                if rows.country_scoped and rows.read == 'complete':
+                    scoped.add(index)
+            yield index, rows, False
+        if reached == len(workday):
+            for index, rows in queue.read(tasks([i for i in workday if i in scoped], worldwide=True)):
+                if isinstance(rows, boards.BoardRows) and rows.attempted:
+                    yield index, rows, True
+
+    for index, rows, worldwide in attempts():
         company = companies[index]
         is_workday = company['provider'] == 'workday'
         retried = False
         reading = dict(provider=company['provider'], board=company['label'], read='failed',
                        reason='', rows=0, seen=[])
-        board_reads[index] = reading
+        if worldwide:
+            board_reads[index]['worldwide'] = reading
+        else:
+            board_reads[index] = reading
         try:
             if is_workday:
+                if isinstance(rows, Exception):
+                    raise rows
                 known = known_workday_links.get(company['label'], {})
-
-                def detail_match(title, text):
-                    return (not exclusion_reason(profile, {'company': company['label'], 'title': title})
-                            and boards.profile_posting_matches(profile, title, text))
-
-                if run_deadline is None:
-                    run_deadline = time.monotonic() + policy['workday_run_budget_seconds']
-                key = workday_key(company)
-                prior_day, prior_start, prior_next = progress.get(key, ('', 0, 0))
-                # A same-day retry replays the segment so it can rebuild a lost snapshot.
-                start = prior_next if prior_day < day else prior_start if prior_day == day else 0
-                started_with_details, resume_with_details, failed_details = detail_progress.get(key, (False, False, {}))
-                detail_first = started_with_details if prior_day == day else prior_day < day and resume_with_details
-                rows = boards.board_rows(company, fetch, detail_match, today, home_first=home_first,
-                                         start_offset=start, page_pause=policy['workday_page_pause_seconds'],
-                                         board_budget=policy['workday_board_budget_seconds'], run_deadline=run_deadline,
-                                         known_links={link: None if expired else job.get('workday_list_fingerprint')
-                                                      for link, (job, expired) in known.items()},
-                                         detail_first=detail_first,
-                                         failed_details=failed_details)
                 reading.update(read=rows.read, reason=rows.reason, rows=rows.rows_read,
                                page=rows.page, pages_read=rows.pages_read, http_status=rows.http_status,
                                full_read=rows.full_read, elapsed_seconds=rows.elapsed_seconds,
@@ -333,9 +378,11 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
                             continue
                         if raw.get('_details_pending') or raw.get('_details_failed'):
                             continue
+                        job['workday_country_scope'] = country_key if rows.country_scoped else None
                         job['workday_list_fingerprint'] = raw.get('_list_fingerprint')
                         if raw.get('_details_read'):
                             job['workday_details_read_on'] = day
+                            known_workday_links.setdefault(company['label'], {})[job['link']] = job, False
                     found.append(job)
                 else:
                     raw = raw if isinstance(raw, dict) else {}
@@ -348,16 +395,19 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
                             company['provider'].title(), 'returned a row with no posting id or link', 200,
                             reading.get('page', 1), None, reading['rows']))
             fetched.extend(found)
-            if is_workday and rows.attempted:
-                updates.append((profile['id'], key, day, start, rows.next_offset))
-                detail_updates.append((profile['id'], key, day, detail_first, rows.detail_first,
+            if is_workday and rows.attempted and not worldwide:
+                key = workday_key(company)
+                updates.append((profile['id'], key, day, rows.start_offset, rows.next_offset))
+                detail_updates.append((profile['id'], key, day, rows.started_with_details, rows.detail_first,
                                        json.dumps(rows.failed_details)))
+                if rows.saved_facets or key in saved_facets:
+                    facet_updates.append((profile['id'], key, country_key, json.dumps(rows.saved_facets), day))
         except Exception as error:
             problem = boards.board_failure(error)
             reading.update(read='failed', http_status=problem.status, reason=boards.read_reason(
                 company['provider'].title() if not is_workday else 'Workday', problem.explanation,
                 problem.status, reading.get('page', 0), None, reading['rows']))
-        if reading['read'] != 'complete':
+        if reading['read'] != 'complete' and not worldwide:
             errors.append({'company': company['label'], 'message': reading['reason']})
 
     with connect(backlog) as db, db:
@@ -428,6 +478,7 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
                            (json.dumps(ranked, ensure_ascii=False), profile['id'], identity(job)))
         landing = landing_set(profile, [job for job in waiting if identity(job) in seen])
         for job in landing:
+            job.pop('workday_country_scope', None)
             job.pop('workday_list_fingerprint', None)
             job.pop('workday_details_read_on', None)
             job.pop('workday_earliest_posted_on', None)
@@ -445,6 +496,11 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
                     started_with_details=excluded.started_with_details, resume_with_details=excluded.resume_with_details,
                     failed_details=excluded.failed_details
                 WHERE excluded.run_date >= workday_detail_progress.run_date''', detail_updates)
+        if facet_updates:
+            db.executemany('''INSERT INTO workday_country_facets VALUES (?,?,?,?,?)
+                ON CONFLICT(profile_id, board_key) DO UPDATE SET countries=excluded.countries,
+                    facets=excluded.facets, run_date=excluded.run_date
+                WHERE excluded.run_date >= workday_country_facets.run_date''', facet_updates)
     workday_read = sum(board_reads[i]['read'] == 'complete' for i in workday)
     return {'metadata': {'date': day, 'read_at': datetime.now().isoformat(timespec='minutes'), 'profile_id': profile['id'],
                          'profile_revision': profile['revision'], 'counts': counts,

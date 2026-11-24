@@ -145,7 +145,7 @@ class Phases(Base):
 
     def test_run_report_shows_workday_coverage(self):
         out = self.run_daily(fetch=fixtures.FakeBoards(broken=['myworkdayjobs']))
-        self.assertIn('Workday: 0 of 1 boards read; 1 continue tomorrow.',
+        self.assertIn('Workday: 0 of 1 boards read for Exampleland.',
                       out['phases']['search']['detail'])
 
     def test_every_board_down_fails_and_lands_nothing(self):
