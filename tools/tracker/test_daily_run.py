@@ -86,12 +86,14 @@ class Base(unittest.TestCase):
         (self.root / 'settings.json').write_text(json.dumps({'daily_run': {'at': '06:00', 'before': [], 'copies': [],
                                                                            **daily_run}}), encoding='utf-8')
 
-    def run_daily(self, now=MORNING, fetch=None, **options):
+    def run_daily(self, now=MORNING, fetch=None, posting_reader=None, **options):
         # Piece 3: the re-check's link checks never touch the network in tests.
         options.setdefault('link_check', lambda link: ('open', ''))
         # Piece 4a-1: the judge never calls a real AI in tests.
         options.setdefault('complete', judge_answer)
-        return self.dr.run_daily(self.root, now, fetch=fetch or fixtures.FakeBoards(), **options)
+        reader = posting_reader or (lambda *args, **kwargs: (None, None))
+        with mock.patch.object(self.dr, 'link_fetch', mock.Mock(fetch_posting_text=reader), create=True):
+            return self.dr.run_daily(self.root, now, fetch=fetch or fixtures.FakeBoards(), **options)
 
     def jobs(self):
         with closing(sqlite3.connect(self.db_file)) as db:
@@ -554,6 +556,132 @@ class JudgePhase(Base):
         self.assertTrue(asked)
         with closing(sqlite3.connect(self.db_file)) as db:
             self.assertEqual({m for (m,) in db.execute('SELECT model FROM judgements')}, {'claude-cli'})
+
+
+class JudgePostingReads(Base):
+    text = 'Own reporting and document data quality. ' * 12
+
+    def add_jobs(self, rows):
+        with closing(store.Store(self.db_file)) as storage, storage.db:
+            for number, stage, seen, link in rows:
+                storage.put_row('jobs', 'Jobs', number + 1, HEAD,
+                                [number, 'Example Co', 'Example Analyst', 'Exampleland', None, None, None,
+                                 stage, None, link, None, None])
+                storage.db.execute('UPDATE jobs SET first_seen=? WHERE link=?', (seen, link))
+
+    def score_for(self, link):
+        with closing(sqlite3.connect(self.db_file)) as db:
+            return db.execute('''SELECT score FROM judgements JOIN jobs ON jobs.id=judgements.job_id
+                                 WHERE jobs.link=? AND current=1''', (link,)).fetchone()
+
+    def test_missing_text_is_read_unlocked_and_scores_refresh_when_inputs_change(self):
+        link = 'https://example.com/manual'
+        self.add_jobs([(2, 'Apply', '2026-03-10', link)])
+        events = []
+
+        def read(url, *, timeout, with_status):
+            self.assertTrue(with_status)
+            with closing(sqlite3.connect(self.db_file, timeout=0)) as db:
+                db.execute('BEGIN IMMEDIATE')
+                db.rollback()
+            events.append(('read', url))
+            return 200, self.text
+
+        def complete(prompt, schema):
+            if self.text in prompt:
+                events.append(('judge', link))
+            return judge_answer(prompt, schema)
+
+        first = self.run_daily(posting_reader=read, complete=complete)
+        self.assertEqual(events, [('read', link), ('judge', link)])
+        self.assertEqual(self.score_for(link), (4.2,))
+        self.assertIn('1 posting read', first['phases']['judge']['detail'])
+
+        events.clear()
+        self.run_daily(MORNING.replace(day=11), posting_reader=read, complete=complete)
+        self.assertEqual(events, [])
+
+        profile_file = self.root / 'profile.json'
+        posting_file = self.work / 'judge-posting-cache.json'
+        evidence_file = self.root / 'evidence' / 'E-101-example.md'
+        with self.subTest(change='profile'):
+            profile = json.loads(profile_file.read_text(encoding='utf-8'))
+            profile['revision'] += 1
+            profile_file.write_text(json.dumps(profile), encoding='utf-8')
+            self.run_daily(MORNING.replace(day=12), posting_reader=read, complete=complete)
+            self.assertEqual(events, [('judge', link)])
+        events.clear()
+        with self.subTest(change='posting'):
+            postings = json.loads(posting_file.read_text(encoding='utf-8'))
+            postings[link]['text'] += 'Prepare weekly summaries.'
+            posting_file.write_text(json.dumps(postings), encoding='utf-8')
+            self.run_daily(MORNING.replace(day=13), posting_reader=read, complete=complete)
+            self.assertEqual(events, [('judge', link)])
+        events.clear()
+        with self.subTest(change='evidence'):
+            evidence_file.write_text(
+                '# E-101 Fictional reporting\n- level: verified\n- what happened: Wrote weekly reports.\n',
+                encoding='utf-8')
+            self.run_daily(MORNING.replace(day=14), posting_reader=read, complete=complete)
+            self.assertEqual(events, [('judge', link)])
+
+    def test_unreadable_and_expired_links_are_reported_and_back_off_seven_days(self):
+        blocked = 'https://example.com/blocked'
+        expired = 'https://example.com/expired'
+        self.add_jobs([(2, 'Apply', '2026-03-10', blocked), (3, 'Apply', '2026-03-10', expired)])
+        reader = mock.Mock(side_effect=lambda link, **_: (403, None) if link == blocked else
+                           (200, 'This job has expired.'))
+        out = self.run_daily(posting_reader=reader)
+        self.assertEqual([call.args[0] for call in reader.call_args_list], [blocked, expired])
+        self.assertIn('403', out['phases']['judge']['detail'])
+        self.assertIn('expired', out['phases']['judge']['detail'])
+        for link in (blocked, expired):
+            self.assertIsNone(self.score_for(link))
+        with closing(sqlite3.connect(self.db_file)) as db:
+            self.assertEqual(db.execute("SELECT status FROM jobs WHERE link IN (?,?) ORDER BY id",
+                                        (blocked, expired)).fetchall(), [('Apply',), ('Apply',)])
+        self.run_daily(MORNING.replace(day=16), posting_reader=reader)
+        self.assertEqual(reader.call_count, 2)
+        self.run_daily(MORNING.replace(day=17), posting_reader=reader)
+        self.assertEqual(reader.call_count, 4)
+
+    def test_reads_ten_in_stage_then_newest_order(self):
+        links = [f'https://example.com/manual/{i}' for i in range(12)]
+        self.add_jobs([(i + 2, 'Apply' if i < 9 else 'Review' if i == 9 else 'Tracked',
+                        f'2026-03-{i + 1:02}', link) for i, link in enumerate(links)])
+        reader = mock.Mock(return_value=(200, self.text))
+        out = self.run_daily(posting_reader=reader)
+        self.assertEqual([call.args[0] for call in reader.call_args_list], links[:9][::-1] + [links[9]])
+        self.assertIn('10 postings read', out['phases']['judge']['detail'])
+
+    def test_reader_and_judge_share_the_deadline(self):
+        links = ['https://example.com/first', 'https://example.com/second']
+        self.add_jobs([(i + 2, 'Apply', '2026-03-10', link) for i, link in enumerate(links)])
+        tick = mock.Mock(return_value=100)
+
+        def read(link, *, with_status, timeout):
+            self.assertEqual(timeout, 30 * 60)
+            tick.return_value += timeout
+            return 200, self.text
+
+        reader = mock.Mock(side_effect=read)
+        complete = mock.Mock(side_effect=judge_answer)
+        with mock.patch.object(self.dr, 'clock', mock.Mock(monotonic=tick)), \
+                mock.patch.object(self.dr.judge, 'time', mock.Mock(monotonic=tick)):
+            out = self.run_daily(posting_reader=reader, complete=complete)
+        reader.assert_called_once()
+        complete.assert_not_called()
+        self.assertIn('1 posting read', out['phases']['judge']['detail'])
+
+    def test_read_text_survives_an_ai_outage(self):
+        link = 'https://example.com/later'
+        self.add_jobs([(2, 'Apply', '2026-03-10', link)])
+        reader = mock.Mock(return_value=(200, self.text))
+        self.run_daily(posting_reader=reader, complete=mock.Mock(side_effect=RuntimeError('AI unavailable')))
+        self.assertIsNone(self.score_for(link))
+        self.run_daily(MORNING.replace(day=11), posting_reader=reader)
+        reader.assert_called_once()
+        self.assertEqual(self.score_for(link), (4.2,))
 
 
 if __name__ == '__main__':

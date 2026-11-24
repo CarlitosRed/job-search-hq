@@ -5,10 +5,13 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sqlite3
+import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import openpyxl
 
@@ -314,7 +317,7 @@ class CacheAndLimits(Base):
 
     def test_daily_limit_persists_and_counts_retries(self):
         ai = FakeAI(fail=('Sample Labs posting',))
-        report = self.run_judge(ai=ai, limit=3)
+        report = self.run_judge(ai=ai, limit=3, jobs=list(self.ids.values()))
         self.assertEqual(report['judged'], 1)
         # Example Co, Sample Labs twice (one retry), Demo AI not reached: limit 3 counts attempts.
         self.assertEqual(len(ai.calls), 3)
@@ -748,6 +751,68 @@ class ClaudeOptionJudge(Base):
                                      postings=self.postings, jobs=[self.ids['Example Co']], model='codex-cli')
         self.assertEqual((report['cached'], len(ai.calls)), (0, 1))
         self.assertEqual(self.current('Example Co')['model'], 'codex-cli')
+
+
+class PendingOrder(Base):
+    def test_order_uses_failure_judgement_stage_place_star_recency_and_id(self):
+        profile = fixtures.ops_profile()
+        profile['work_rules'].update(authorized_countries=['Sampleland'], remote_regions=['Example Region'])
+        rows = [
+            (101, 'Review', 'Exampleland', 1, '2026-03-10'),
+            (102, 'Apply', 'Remote', 1, '2026-03-10'),
+            (103, 'Apply', 'Sampleland', 0, '2026-03-01'),
+            (104, 'Apply', 'Exampleland', 0, '2026-03-02'),
+            (105, 'Apply', 'Exampleland', 1, '2026-03-01'),
+            (106, 'Apply', 'Exampleland', 0, '2026-03-02'),
+            (107, 'Apply', 'Remote', 1, '2026-03-10'),
+            (108, 'Apply', 'Exampleland', 1, '2026-03-10'),
+            (109, 'Apply', 'Exampleland', 1, '2026-03-10'),
+            (110, 'Tracked', 'Exampleland', 1, '2026-03-10'),
+            (111, 'Apply', 'Remote Example Region', 0, '2026-03-01'),
+            (112, 'Apply', 'Remote', 0, '2026-03-02'),
+            (113, 'Applied', 'Exampleland', 1, '2026-03-10'),
+            (114, 'Apply', 'Example Region', 0, '2026-03-03'),
+            (115, 'Apply', 'Example Region', 0, '2026-03-05'),
+            (116, 'Apply', 'Example Region', 0, '2026-03-04'),
+        ]
+        backlog = self.work / 'search-backlog.sqlite3'
+        regional_jobs = [
+            (114, 'This role is fully remote.'),
+            (115, 'This role is on-site only. Remote work is not available.'),
+            (116, 'On-site role maintaining distributed systems.'),
+        ]
+        link_reads = {}
+        db = self.storage.db
+        with db, closing(sqlite3.connect(backlog)) as queue, queue:
+            db.execute("UPDATE jobs SET status='Applied'")
+            db.executemany('INSERT INTO jobs (id, status, place, starred, first_seen) VALUES (?,?,?,?,?)', rows)
+            for job_id, description in regional_jobs:
+                link = f'https://example.com/regional/{job_id}'
+                link_reads[link] = {'text': description}
+                db.execute('UPDATE jobs SET link=? WHERE id=?', (link, job_id))
+            db.executemany('INSERT INTO judgements (job_id, current, score, error) VALUES (?,?,?,?)',
+                           [(108, 1, 4.2, None), (109, 0, None, 'Failed')])
+            queue.execute('CREATE TABLE search_backlog (profile_id, identity, body)')
+            for job_id, description in [(107, 'No visa sponsorship.'), (112, 'Remote worldwide.')]:
+                self.storage.link_posting(job_id, profile['id'], 'greenhouse', 'example', str(job_id))
+                queue.execute('INSERT INTO search_backlog VALUES (?,?,?)',
+                              (profile['id'], json.dumps(['greenhouse', 'example', str(job_id)]),
+                               json.dumps(dict(place_text='Remote', description=description, remote=True))))
+        self.assertEqual(judge.pending_jobs(self.storage, {}, profile, link_reads=link_reads),
+                         [105, 104, 106, 103, 114, 112, 111, 102, 115, 116, 107, 101, 110, 108, 109])
+
+    def test_cli_loads_profile_without_a_profile_argument(self):
+        root = self.work.parent
+        profile = fixtures.ops_profile()
+        (root / 'profile.json').write_text(json.dumps(profile), encoding='utf-8')
+        job_id = self.ids['Example Co']
+        with mock.patch.dict(os.environ, {'JOB_SEARCH_HQ_DATA': str(root)}), \
+                mock.patch.object(sys, 'argv', ['judge.py', '--job', str(job_id)]), \
+                mock.patch.object(judge, 'judge_pending', return_value=dict(
+                    results=[], skipped_jobs=[], failed=[], ai_unavailable=False, pending=0)) as run:
+            self.assertEqual(judge.main(), 1)
+        self.assertEqual(run.call_args.args[1]['id'], profile['id'])
+        self.assertEqual(run.call_args.kwargs['jobs'], [job_id])
 
 
 if __name__ == '__main__':

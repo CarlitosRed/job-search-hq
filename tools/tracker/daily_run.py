@@ -26,6 +26,7 @@ land_search = load_component('land_search', HERE)
 recheck = load_component('recheck', HERE)
 # Card 04a: qualification judge.
 judge = load_component('judge', HERE)
+link_fetch = load_component('link_fetch', HERE.parent / 'hq-dashboard')
 daily_search = land_search.daily_search
 settings = daily_search.settings
 SUCCESS = ('done', 'done_with_warnings')
@@ -307,31 +308,34 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                     with storage.db:
                         for _, _, step in land_search.store.migrations.STEPS:
                             step(storage.db)
-                waiting = judge.pending_jobs(storage, json.loads(snapshot.read_text(encoding='utf-8')))
                 # Card 04c: tests pass their own AI; otherwise the setting picks Codex or Claude.
                 engine = config['judge_ai']
                 ask = complete or (lambda prompt, schema: judge.seam.complete(prompt, schema, engine=engine))
                 report = judge.judge_pending(storage, profile, evidence, now.date(), run_id, ask,
-                                             profile['search']['judge_budget'], dry_run=preview, jobs=waiting,
+                                             profile['search']['judge_budget'], dry_run=preview,
                                              deadline=clock.monotonic() + 30 * 60, backlog=backlog,
                                              # Previews run on a copy, so the real usage file is named here.
                                              usage=work / 'ai-usage.sqlite3',
                                              preview_cache=snapshot.with_name('judge-preview-cache.json'),
-                                             model=judge.seam.model_label(engine))
+                                             model=judge.seam.model_label(engine),
+                                             read_link=link_fetch.fetch_posting_text)
             if preview:
                 target = snapshot.with_name(run_id + '-judge-preview.json')
                 temporary = target.with_suffix('.tmp')
                 temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
                 temporary.replace(target)
-            if report['ai_unavailable'] and not report['judged']:
-                return 'skipped', 'AI unavailable. Jobs without a score are still unscored.'
-
             def count(n):
                 return f"{n} {'job' if n == 1 else 'jobs'}"
+            read = report['postings_read']
+            read_detail = f" {read} {'posting' if read == 1 else 'postings'} read from links."
+            if report['posting_read_issues']:
+                read_detail += ' ' + ' '.join(report['posting_read_issues'])
+            if report['ai_unavailable'] and not report['judged']:
+                return 'skipped', 'AI unavailable. Jobs without a score are still unscored.' + read_detail
             detail = (f"{count(report['judged'])} {'would be ' if preview else ''}judged; "
-                      f"{report['pending']} waiting for tomorrow.")
+                      f"{report['pending']} waiting for tomorrow." + read_detail)
             if preview:
-                detail = 'Preview: ' + detail + ' Nothing was saved.'
+                detail = 'Preview: ' + detail + ' No judgements were saved.'
             if report['failed']:
                 detail += f" {count(len(report['failed']))} could not be judged."
             no_text = sum(item['reason'] == judge.NO_TEXT for item in report['skipped_jobs'])

@@ -25,6 +25,8 @@ def component(name, folder=HERE):
 
 
 seam = component('ai_seam', HERE.parent / 'hq-dashboard')
+daily_search = component('daily_search', HERE.parent / 'hq-dashboard')
+recheck = component('recheck')
 stages = component('stages')
 
 MODEL = 'codex-cli'
@@ -40,6 +42,7 @@ STATES = ('supported', 'adjacent', 'gap', 'unknown')
 TEXT_FIELDS = ('title', 'company', 'place', 'description')
 OPEN_STAGES = ('Tracked', 'Review', 'Apply')
 BACK_OFF_DAYS = 7
+POSTING_READ_LIMIT = 10
 FAILED_RECENTLY = 'The last try failed; it will be tried again in a week.'
 
 SCHEMA = {
@@ -369,6 +372,8 @@ def backlog_posting(storage, job_id, profile_id, backlog):
     if not backlog or not Path(backlog).is_file():
         return None
     posts = [post for post in storage.postings_for(job_id) if post['profile_id'] == profile_id]
+    if not posts:
+        return None
     posts.sort(key=lambda post: post['state'] == 'closed')
     try:
         with closing(sqlite3.connect(Path(backlog).resolve().as_uri() + '?mode=ro', uri=True)) as queue:
@@ -381,6 +386,7 @@ def backlog_posting(storage, job_id, profile_id, backlog):
                     return {'title': body.get('title') or post['title'] or '', 'company': body.get('company') or '',
                             'place': body.get('place_text') or post['place'] or '',
                             'description': body['description'],
+                            'remote': body.get('remote'),
                             'place_status': body.get('place') if body.get('place') in ('ok', 'check', 'out') else 'ok',
                             'place_sentence': str(body.get('place_sentence') or ''), 'posting_row': post['id']}
     except (sqlite3.Error, ValueError):
@@ -394,28 +400,81 @@ def open_stage(status):
     return status in OPEN_STAGES or stages.DATA['legacy'].get(status) in OPEN_STAGES
 
 
-def pending_jobs(storage, snapshot=None):
-    """Open jobs in judging order.
+def posting_paths(db, backlog):
+    db_file = db.execute('PRAGMA database_list').fetchone()[2]
+    if backlog is None and db_file:
+        backlog = Path(db_file).with_name('search-backlog.sqlite3')
+    return backlog, Path(backlog).with_name('judge-posting-cache.json') if backlog else None
 
-    Jobs without a judgement come first (the landing's judge picks, then oldest first), then judged jobs,
-    which are only called again when their posting, place, profile or evidence changed. Jobs whose last
-    try failed come last.
-    """
+
+def saved_link_reads(path):
+    if path and path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+            if isinstance(data, dict):
+                return {link: item for link, item in data.items() if isinstance(item, dict)}
+        except (OSError, ValueError):
+            pass
+    return {}
+
+
+def place_input(posting):
+    place, description = posting['place'], posting['description']
+    remote = posting.get('remote')
+    if remote is None:
+        sentences = re.split(r'(?<=[.!?])\s+|[\r\n]+', description)
+        remote = (not REFUSAL.search(place) and daily_search.boards.remote_location(place)) or any(
+            re.fullmatch(r'(?:(?:this|the) (?:role|job|position) is )?fully remote[.!]?', sentence.strip(), re.I)
+            for sentence in sentences
+        )
+    return dict(place_text=place, description=description, remote=remote)
+
+
+def saved_posting(storage, job, profile, backlog, link_reads):
+    posting = backlog_posting(storage, job['id'], profile['id'], backlog)
+    if posting is not None:
+        return posting
+    text = link_reads.get(job['link'], {}).get('text')
+    if text:
+        return dict(title=job['role'] or '', company=job['company'] or '',
+                    place=job['place'] or '', description=text)
+    return None
+
+
+def pending_jobs(storage, snapshot=None, profile=None, *, backlog=None, link_reads=None):
+    """Order all open jobs. Keep the snapshot argument for callers that pass it."""
     db = storage.db
-    rows = [row for row in db.execute('SELECT id, status, agent_notes, first_seen FROM jobs ORDER BY id')
+    rows = [row for row in db.execute('SELECT id, status, place, role, company, link, starred '
+                                     'FROM jobs ORDER BY first_seen DESC, id')
             if open_stage(row['status'])]
     judged = {row[0] for row in db.execute('SELECT job_id FROM judgements WHERE pass=? AND current=1', (PASS,))}
     failed = {row[0] for row in db.execute('''SELECT job_id FROM judgements WHERE error IS NOT NULL AND id IN
         (SELECT MAX(id) FROM judgements WHERE pass=? GROUP BY job_id)''', (PASS,))}
-    if snapshot is not None:
-        meta = snapshot['metadata']
-        flagged = {storage.job_for_posting(meta['profile_id'], job['provider'], job['company'], job['posting_id'])
-                   for job in snapshot.get('landing', []) if job.get('judge')}
-    else:
-        # The landing writes its judge pick at the end of the agent notes.
-        flagged = {row['id'] for row in rows if re.search(r'\bjudge true\.?\s*$', row['agent_notes'] or '')}
-    return [row['id'] for row in sorted(rows, key=lambda row: (
-        row['id'] in failed, row['id'] in judged, row['id'] not in flagged, row['first_seen'] or '', row['id']))]
+    backlog, link_cache = posting_paths(db, backlog)
+    if link_reads is None:
+        link_reads = saved_link_reads(link_cache)
+
+    def place_order(row, posting):
+        if not profile or not profile.get('work_rules'):
+            return 2
+        job = place_input(posting or dict(place=row['place'] or '', description=''))
+        status, _ = daily_search.place_facts(profile, job)
+        if status == 'ok':
+            # With the remote branch disabled, only a country match can return ok.
+            local = daily_search.place_facts(profile, dict(job, remote=False))[0] if job['remote'] else status
+            return 0 if local == 'ok' else 1
+        return 3 if status == 'out' else 2
+
+    def order(row):
+        status = str(row['status'] or '').strip()
+        stage = stages.DATA['legacy'].get(status, status)
+        posting = saved_posting(storage, row, profile, backlog, link_reads) if profile else None
+        read_failed = not posting and bool(link_reads.get(row['link'], {}).get('error'))
+        last_failed = row['id'] in failed or read_failed
+        return (last_failed, row['id'] in judged, {'Apply': 0, 'Review': 1}.get(stage, 2),
+                place_order(row, posting), not row['starred'])
+
+    return [row['id'] for row in sorted(rows, key=order)]
 
 
 # ---------------------------------------------------------------- AI usage
@@ -476,15 +535,17 @@ def _save(db, record, retire_id=None):
 
 
 def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dry_run=False, postings=None,
-                  jobs=None, deadline=None, backlog=None, usage=None, preview_cache=None, model=MODEL):
+                  jobs=None, deadline=None, backlog=None, usage=None, preview_cache=None, model=MODEL,
+                  read_link=None):
     """Judge waiting jobs within today's budget and return a plain report.
 
-    `postings` maps a job id to its posting text; without it the text comes from the search backlog.
+    `postings` maps a job id to its posting text; without it use the backlog and saved link reads.
     `deadline` is a time.monotonic() value. `usage` is the AI usage file (beside the tracker by default).
     A dry run reports the same results and saves no judgement, but its calls still count toward the day.
     `preview_cache` is a JSON file where dry runs keep their results and failures (beside the tracker by
     default), so a later preview does not call again and a failing job backs off there too.
     `model` names the AI that answers (card 04c); it is saved and is part of the cache key.
+    Daily runs pass `read_link` to fill missing text for never-judged jobs.
     """
     db = storage.db
     run_day = date.fromisoformat(today) if isinstance(today, str) else today
@@ -493,10 +554,11 @@ def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dr
     profile_id = profile['id']
     evidence_revision = _digest(evidence)
     report = dict(judged=0, refreshed=0, cached=0, skipped=0, backed_off=0, failed=[], pending=0,
-                  ai_unavailable=False, dry_run=dry_run, results=[], skipped_jobs=[])
+                  ai_unavailable=False, dry_run=dry_run, results=[], skipped_jobs=[], postings_read=0,
+                  posting_read_issues=[])
     db_file = db.execute('PRAGMA database_list').fetchone()[2]
-    if backlog is None and db_file:
-        backlog = Path(db_file).with_name('search-backlog.sqlite3')
+    backlog, link_cache = posting_paths(db, backlog)
+    link_reads = saved_link_reads(link_cache) if postings is None else {}
     if usage is None and db_file:
         usage = Path(db_file).with_name('ai-usage.sqlite3')
     if dry_run and preview_cache is None and db_file:
@@ -519,11 +581,17 @@ def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dr
             with _write(db):
                 action()
 
-    def read(job_id):
+    def job_row(job_id):
+        return db.execute('SELECT id, company, role, place, link, status FROM jobs WHERE id=?', (job_id,)).fetchone()
+
+    def read(job):
         if postings is not None:
-            posting = postings.get(job_id)
+            posting = postings.get(job['id'])
             return dict(posting) if posting else None
-        return backlog_posting(storage, job_id, profile_id, backlog)
+        posting = saved_posting(storage, job, profile, backlog, link_reads)
+        if posting and 'place_status' not in posting and profile.get('work_rules'):
+            posting['place_status'], posting['place_sentence'] = daily_search.place_facts(profile, place_input(posting))
+        return posting
 
     def named(job, reason):
         return dict(job_id=job['id'], company=job['company'], role=job['role'], reason=reason)
@@ -531,6 +599,12 @@ def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dr
     def result(job, score, fit, why, requirements, notes, cached=False):
         return dict(job_id=job['id'], company=job['company'], role=job['role'], score=score, fit=fit,
                     why=why, requirements=requirements, notes=notes, cached=cached)
+
+    def reuse(job, current):
+        report['cached'] += 1
+        report['results'].append(result(job, current['score'], current['fit'], json.loads(current['why'] or '[]'),
+                                        json.loads(current['requirements'] or '[]'), json.loads(current['notes'] or '[]'),
+                                        cached=True))
 
     def base(job, posting, key):
         return dict(job_id=job['id'], posting_row=posting.get('posting_row'), posting_hash=posting_hash(posting),
@@ -566,30 +640,75 @@ def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dr
     def recently_failed(row, key):
         return row is not None and bool(row['error']) and row['cache_key'] == key and recent(row['day'])
 
+    def waiting():
+        return pending_jobs(storage, profile=profile, backlog=backlog, link_reads=link_reads)
+
+    queue = list(jobs) if jobs is not None else waiting()
+    attempted = set()
+    if read_link is not None and postings is None and link_cache and not db.in_transaction:
+        judged = {row[0] for row in db.execute('SELECT job_id FROM judgements WHERE pass=? AND (current=1 OR score IS NOT NULL)',
+                                              (PASS,))}
+        for job_id in queue:
+            remaining = None if deadline is None else deadline - time.monotonic()
+            if len(attempted) >= POSTING_READ_LIMIT or (remaining is not None and remaining <= 0):
+                break
+            job = job_row(job_id)
+            if not job or job_id in judged or not open_stage(job['status']) or not job['link'] or read(job):
+                continue
+            link = job['link']
+            previous = link_reads.get(link, {})
+            if link in attempted or (previous.get('error') and recent(previous.get('day'))):
+                continue
+            remaining = None if deadline is None else deadline - time.monotonic()
+            if remaining is not None and remaining <= 0:
+                break
+            attempted.add(link)
+            try:
+                code, text = read_link(link, with_status=True, timeout=remaining)
+            except Exception:
+                code, text = None, None
+            observation, reason = recheck.classify(code, text)
+            if observation == 'open':
+                link_reads[link] = dict(text=text)
+                report['postings_read'] += 1
+            else:
+                link_reads[link] = dict(error=reason, day=day)
+        if attempted:
+            temporary = link_cache.with_suffix('.tmp')
+            temporary.write_text(json.dumps(link_reads, ensure_ascii=False) + '\n', encoding='utf-8')
+            temporary.replace(link_cache)
+            if jobs is None:
+                queue = waiting()
+
     stopped = False
     # A job the AI refused twice; one more job decides whether that was the job or an outage.
     suspect = None
-    for job_id in (list(jobs) if jobs is not None else pending_jobs(storage)):
-        job = db.execute('SELECT id, company, role FROM jobs WHERE id=?', (job_id,)).fetchone()
+    for job_id in queue:
+        job = job_row(job_id)
         if job is None:
             report['failed'].append(dict(job_id=job_id, company='', role='', reason='This job is not in the tracker.'))
             continue
-        job = dict(job)
-        posting = read(job_id)
+        current = db.execute('SELECT * FROM judgements WHERE job_id=? AND pass=? AND current=1', (job_id, PASS)).fetchone()
+        posting = read(job)
         if posting is None or not str(posting.get('description') or '').strip():
+            failure = link_reads.get(job['link'], {})
+            reason = NO_TEXT
+            if failure.get('error') and recent(failure.get('day')):
+                reason = failure['error']
+                if job['link'] not in attempted:
+                    report['backed_off'] += 1
+                if reason not in report['posting_read_issues']:
+                    report['posting_read_issues'].append(reason)
             report['skipped'] += 1
-            report['skipped_jobs'].append(named(job, NO_TEXT))
+            report['skipped_jobs'].append(named(job, reason))
             continue
         if not evidence:
             report['skipped'] += 1
             report['skipped_jobs'].append(named(job, NOT_ENOUGH))
             continue
         key = cache_key(posting, profile, evidence_revision, model)
-        current = db.execute('SELECT * FROM judgements WHERE job_id=? AND pass=? AND current=1', (job_id, PASS)).fetchone()
         if current is not None and current['cache_key'] == key:
-            report['cached'] += 1
-            report['results'].append(result(job, current['score'], current['fit'], json.loads(current['why']),
-                                            json.loads(current['requirements']), json.loads(current['notes']), cached=True))
+            reuse(job, current)
             continue
         retire_id = current['id'] if current is not None else None
         if dry_run and isinstance(kept.get(key), dict) and kept[key].get('error'):
@@ -658,7 +777,8 @@ def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dr
             fail(*suspect, 'The AI could not finish this job.')
             suspect = None
 
-        again = read(job_id)
+        live_job = job_row(job_id)
+        again = read(live_job) if live_job is not None else None
         if again is None or posting_hash(again) != posting_hash(posting) or \
                 (again.get('place_status') or 'ok') != (posting.get('place_status') or 'ok'):
             fail(job, posting, key, retire_id, 'The posting changed while it was judged.')
