@@ -27,6 +27,46 @@ def dns(*addresses):
 
 
 class Addresses(unittest.TestCase):
+    def test_listed_hosts_stop_before_direct_or_browser_read(self):
+        for host in ('amazon.jobs', 'www.amazon.jobs', 'AMAZON.COM.', 'careers.amazon.com',
+                     'smartrecruiters.com', 'jobs.smartrecruiters.com', 'api.smartrecruiters.com'):
+            link = f'https://{host}/example/123'
+            with self.subTest(host=host), mock.patch.object(lf, '_get', return_value=None) as get, \
+                    mock.patch.object(lf, 'browser_reader', return_value=None) as render:
+                self.assertEqual(lf.fetch_status_text(link), ('automatic_reading_disallowed', ''))
+                self.assertEqual(lf.fetch_posting_text(link, with_status=True),
+                                 ('automatic_reading_disallowed', None))
+                self.assertIsNone(lf.fetch_posting_text(link))
+                get.assert_not_called()
+                render.assert_not_called()
+
+    def test_host_lookalikes_and_names_in_paths_are_read(self):
+        body = ('Review fictional reports. ' * 20).strip()
+        for link in ('https://notamazon.jobs/example', 'https://amazon.jobs.example.org/example',
+                     'https://example.org/smartrecruiters.com?next=amazon.com'):
+            with self.subTest(link=link), mock.patch.object(lf, '_get', return_value=(200, 'text/plain', body)) as get, \
+                    mock.patch.object(lf, 'browser_reader') as render:
+                self.assertEqual(lf.fetch_posting_text(link), body)
+                self.assertEqual(get.call_args.args[0], link)
+                render.assert_not_called()
+
+    def test_direct_redirect_to_listed_host_stops_before_dns_or_browser(self):
+        link = 'http://jobs.example/example'
+        response = mock.Mock(status=302)
+        response.getheader.side_effect = {'Location': '//jobs.smartrecruiters.com/example/123',
+                                          'Content-Type': 'text/html'}.get
+        response.read.return_value = b''
+        with mock.patch.object(lf, 'public_address', return_value='93.184.216.34') as resolve, \
+                mock.patch('socket.create_connection') as dial, \
+                mock.patch('http.client.HTTPConnection') as connection, \
+                mock.patch.object(lf, 'browser_reader') as render:
+            connection.return_value.getresponse.return_value = response
+            self.assertEqual(lf.fetch_status_text(link), ('automatic_reading_disallowed', ''))
+        self.assertEqual([call.args[0] for call in resolve.call_args_list], ['jobs.example'])
+        dial.assert_called_once()
+        connection.return_value.request.assert_called_once()
+        render.assert_not_called()
+
     def test_private_and_local_addresses_are_refused(self):
         for bad in ('127.0.0.1', '10.0.0.5', '192.168.1.9', '172.16.0.1', '169.254.169.254', '100.64.0.1', '0.0.0.0'):
             with mock.patch('socket.getaddrinfo', dns(bad)):
@@ -174,11 +214,6 @@ class Parsing(unittest.TestCase):
             ('https://job-boards.greenhouse.io/example/jobs/123?source=example',
              'https://boards-api.greenhouse.io/v1/boards/example/jobs/123',
              {'title': 'Example Analyst', 'content': '&lt;p&gt;' + description + '&lt;/p&gt;'}, 'Review fictional reports.'),
-            ('https://jobs.smartrecruiters.com/ExampleCorp/456-example-analyst',
-             'https://api.smartrecruiters.com/v1/companies/ExampleCorp/postings/456',
-             {'name': 'Example Analyst', 'jobAd': {'sections': {
-                 'jobDescription': {'title': 'Duties', 'text': '<p>' + description + '</p>'},
-                 'qualifications': {'title': 'Qualifications', 'text': '<p>Spreadsheet skills</p>'}}}}, 'Spreadsheet skills'),
             ('https://jobs.lever.co/example/fictional-id/apply',
              'https://api.lever.co/v0/postings/example/fictional-id',
              {'text': 'Example Analyst', 'descriptionPlain': description,
@@ -204,39 +239,6 @@ class Parsing(unittest.TestCase):
         self.assertEqual(get.call_args.args[0],
                          'https://example.icims.com/jobs/123/example-analyst/job?mode=job&iFrame=0&in_iframe=1')
         self.assertIsNone(lf.icims_page('https://example.icims.com.example.org/jobs/123/example-analyst/job'))
-        self.browser.assert_not_called()
-
-    def test_inactive_smartrecruiters_posting_keeps_the_expiry_notice_and_ad(self):
-        link = 'https://jobs.smartrecruiters.com/ExampleCorp/456-example-analyst'
-        ad = 'Review fictional reports. Please sign in to the example portal.'
-        posting = {'active': False, 'name': 'Example Analyst', 'jobAd': {'sections': {
-            'jobDescription': {'text': '<p>' + ad + '</p>'}}}}
-        with mock.patch.object(lf, '_get', return_value=(200, 'application/json', json.dumps(posting))) as get:
-            status, text = lf.fetch_status_text(link)
-            self.assertEqual(lf.fetch_posting_text(link, with_status=True), (status, text))
-            self.assertEqual(recheck.link_status(link, fetch=lf.fetch_status_text),
-                             ('closed_text', 'This job has expired.'))
-        self.assertEqual(status, 200)
-        self.assertEqual(text.splitlines()[0], 'This job has expired.')
-        self.assertEqual(recheck.classify(status, text), ('closed_text', 'This job has expired.'))
-        self.assertIn(ad.strip(), text)
-        self.assertEqual([call.args[0] for call in get.call_args_list], [lf.smartrecruiters_api(link)] * 3)
-        self.browser.assert_not_called()
-
-    def test_active_smartrecruiters_ad_with_qualified_expiry_is_open(self):
-        link = 'https://jobs.smartrecruiters.com/ExampleCorp/456-example-analyst'
-        ad = 'If this job has expired, check other openings. ' + 'Review fictional reports. ' * 20
-        posting = {'active': True, 'jobAd': {'sections': {'jobDescription': {'text': ad}}}}
-        with mock.patch.object(lf, '_get', return_value=(200, 'application/json', json.dumps(posting))):
-            self.assertEqual(recheck.link_status(link, fetch=lf.fetch_status_text), ('open', ''))
-            self.assertEqual(lf.fetch_posting_text(link), ad.strip())
-        self.browser.assert_not_called()
-
-    def test_inactive_smartrecruiters_posting_without_an_ad_still_reports_expired(self):
-        link = 'https://jobs.smartrecruiters.com/ExampleCorp/456-example-analyst'
-        with mock.patch.object(lf, '_get', return_value=(200, 'application/json', '{"active": false}')) as get:
-            self.assertEqual(lf.fetch_status_text(link), (200, 'This job has expired.'))
-        get.assert_called_once()
         self.browser.assert_not_called()
 
     def test_missing_board_json_can_fall_back_to_the_original_page(self):
@@ -426,6 +428,16 @@ class BrowserProxy(unittest.IsolatedAsyncioTestCase):
     async def read_to_close(self, reader):
         return await asyncio.wait_for(reader.read(), 2)
 
+    async def test_proxy_refuses_listed_http_and_tls_destinations_before_dns(self):
+        self.resolver.side_effect = dns('93.184.216.34')
+        async with self.budget().listen() as port:
+            for request in (b'GET http://www.amazon.jobs/example HTTP/1.1\r\n\r\n',
+                            b'CONNECT api.smartrecruiters.com:443 HTTP/1.1\r\n\r\n'):
+                client = await self.client(port, request)
+                self.assertEqual(await self.read_to_close(client), b'')
+        self.resolver.assert_not_called()
+        self.dial.assert_not_awaited()
+
     async def test_get_pins_the_address_and_denies_the_redirect_destination(self):
         reply = b'HTTP/1.1 302 Found\r\nLocation: http://private.example/job\r\nContent-Length: 0\r\n\r\n'
         self.upstream.feed_data(reply)
@@ -506,6 +518,11 @@ class BrowserProxy(unittest.IsolatedAsyncioTestCase):
 
 
 class BrowserRendering(unittest.IsolatedAsyncioTestCase):
+    async def test_blocked_browser_navigation_returns_the_disallowed_status(self):
+        result = await self.render_terminal_page(200, {}, '', '', 0,
+                                                 redirect='https://www.amazon.jobs/example')
+        self.assertEqual(result, ('automatic_reading_disallowed', ''))
+
     async def test_launch_uses_the_first_available_channel_with_the_same_safety_settings(self):
         channels = ['chrome', 'msedge', None]
         for failures in range(4):
@@ -549,11 +566,18 @@ class BrowserRendering(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(result, (expected_status, ''))
                     self.assertEqual(recheck.classify(*result)[0], observation)
 
-    async def render_terminal_page(self, status, headers, title, text, samples):
+    async def render_terminal_page(self, status, headers, title, text, samples, redirect=None):
         url = 'https://example.org/jobs/123'
         page = SimpleNamespace(goto=mock.AsyncMock(return_value=SimpleNamespace(status=status, headers=headers)),
                                title=mock.AsyncMock(return_value=title),
-                               evaluate=mock.AsyncMock(return_value=text))
+                               evaluate=mock.AsyncMock(return_value=text), on=mock.Mock(), main_frame=object())
+        if redirect:
+            def fail_navigation(*args, **kwargs):
+                handler = page.on.call_args.args[1]
+                handler(SimpleNamespace(url=redirect, is_navigation_request=lambda: True, frame=page.main_frame))
+                raise OSError('Fictional navigation failure')
+
+            page.goto.side_effect = fail_navigation
         context = SimpleNamespace(route_web_socket=mock.AsyncMock(), route=mock.AsyncMock(),
                                   new_page=mock.AsyncMock(return_value=page))
         opened = SimpleNamespace(new_context=mock.AsyncMock(return_value=context), close=mock.AsyncMock())
@@ -565,8 +589,12 @@ class BrowserRendering(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(browser.asyncio, 'start_server', return_value=proxy), \
                 mock.patch.object(browser, '_launch', return_value=opened), \
                 mock.patch.object(browser.asyncio, 'sleep') as sleep:
+            options = {}
+            if redirect:
+                options['blocked_read'] = lambda url: (lf.READ_DISALLOWED, '') if lf.automatic_read_disallowed(url) else None
             result = await browser._render(playwright, OSError, url, lambda _: True, time.monotonic() + 2,
-                                           lf.MAX_BYTES, lf.MAX_TEXT, lf.MIN_USEFUL, lf._bot_check, lf._closed)
+                                           lf.MAX_BYTES, lf.MAX_TEXT, lf.MIN_USEFUL, lf._bot_check, lf._closed,
+                                           **options)
         page.goto.assert_awaited_once()
         self.assertEqual(page.evaluate.await_count, samples)
         sleep.assert_not_called()

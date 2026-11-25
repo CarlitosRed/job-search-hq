@@ -503,12 +503,17 @@ UNTRUSTED SENTIMENT JSON\n{json.dumps(sentiment,ensure_ascii=False)}
 Return exactly the requested JSON schema.'''
 
 
-def read_link(link):
-    """Best-effort read of a posting link on the server (Codex itself keeps web access off)."""
+@cache
+def posting_reader():
     spec=importlib.util.spec_from_file_location('hq_link_fetch',HERE/'link_fetch.py')
     module=importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.fetch_posting_text(link, with_status=True)
+    return module
+
+
+def read_link(link):
+    """Best-effort read of a posting link on the server (Codex itself keeps web access off)."""
+    return posting_reader().fetch_posting_text(link, with_status=True)
 
 
 @cache
@@ -653,8 +658,12 @@ class Tasks:
                 link_note=''
                 closure_reason=''
                 if kind=='analyze' and posting.get('link') and len(posting.get('text',''))<2000:
-                    try:fetched=self.link_reader(posting['link'])
-                    except Exception:fetched=None
+                    reader=posting_reader()
+                    if reader.automatic_read_disallowed(posting['link']):
+                        fetched=(reader.READ_DISALLOWED,None)
+                    else:
+                        try:fetched=self.link_reader(posting['link'])
+                        except Exception:fetched=None
                     code,fetched=fetched if isinstance(fetched,tuple) else (None,fetched)
                     if fetched:
                         pasted=posting.get('text','')
@@ -663,6 +672,9 @@ class Tasks:
                         if observation=='closed_text':
                             closure_reason=reason
                         link_note='link'
+                    elif code==reader.READ_DISALLOWED:
+                        if not posting.get('text','').strip() and not p.get('images'):
+                            raise ValueError(reader.MANUAL_POSTING_MESSAGE)
                     elif len(posting.get('text',''))<200 and not p.get('images'):
                         if code in (403,429):
                             raise ValueError('This site blocks automatic readers. Paste the posting text or add a photo.')

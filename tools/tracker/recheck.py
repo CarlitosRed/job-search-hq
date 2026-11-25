@@ -3,6 +3,7 @@
 import argparse
 from contextlib import closing
 from datetime import date, datetime, timedelta
+from functools import cache
 import importlib.util
 import json
 from pathlib import Path
@@ -13,7 +14,6 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
 HERE = Path(__file__).resolve().parent
-EXPIRED_NOTICE = 'This job has expired.'
 
 
 def component(name, folder=HERE):
@@ -23,19 +23,33 @@ def component(name, folder=HERE):
     return module
 
 
+@cache
+def posting_reader():
+    return component('link_fetch', HERE.parent / 'hq-dashboard')
+
+
 def linkedin(link):
     host = (urlsplit(link or '').hostname or '').lower().rstrip('.')
     return host == 'linkedin.com' or host.endswith('.linkedin.com')
 
 
+def link_skip_reason(link):
+    reader = posting_reader()
+    if reader.automatic_read_disallowed(link):
+        return reader.READ_DISALLOWED_REASON
+    if linkedin(link):
+        return 'LinkedIn links are not checked'
+    return ''
+
+
 def classify(code, text):
+    reader = posting_reader()
+    if code == reader.READ_DISALLOWED:
+        return 'unclear', reader.READ_DISALLOWED_REASON
     if code in (404, 410):
         return 'gone', f'The posting link returned {code}.'
     if code != 200:
         return 'unclear', f'The posting link returned {code}.' if code else 'The posting page could not be read.'
-    # The reader puts a confirmed board expiry in its own leading paragraph before the ad.
-    if text and text.startswith(EXPIRED_NOTICE + '\n\n'):
-        return 'closed_text', EXPIRED_NOTICE
     if re.search(r'\b(sign in|log in|access denied|verify you are human|captcha)\b', text or '', re.I):
         return 'unclear', 'The page requires sign in or blocks access.'
     phrases = (r'no longer accepting (?:new )?applications',
@@ -57,9 +71,10 @@ def classify(code, text):
 
 
 def link_status(link, fetch=None, wait=2, deadline=None):
-    if linkedin(link):
-        return 'unclear', 'LinkedIn links are not checked'
-    fetch = fetch or component('link_fetch', HERE.parent / 'hq-dashboard').fetch_status_text
+    reason = link_skip_reason(link)
+    if reason:
+        return 'unclear', reason
+    fetch = fetch or posting_reader().fetch_status_text
     for attempt in range(2):
         remaining = None if deadline is None else deadline - time.monotonic()
         if remaining is not None and remaining <= 0:
@@ -264,8 +279,9 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
             continue
         if link not in results:
             try:
-                if linkedin(link):
-                    answer = ('unclear', 'LinkedIn links are not checked')
+                reason = link_skip_reason(link)
+                if reason:
+                    answer = ('unclear', reason)
                 elif time.monotonic() >= deadline:
                     answer = ('unclear', 'Not checked: the time budget was reached.')
                 else:

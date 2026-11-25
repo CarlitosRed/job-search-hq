@@ -12,6 +12,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest import mock
 
 import openpyxl
 
@@ -222,6 +223,19 @@ class Explicit(Base):
 
 
 class LinkChecks(Base):
+    def test_daily_check_skips_listed_hosts_without_closing_the_job(self):
+        job_id = self.ids['Pasted Co']
+        url = 'https://jobs.smartrecruiters.com/example/123'
+        self.storage.db.execute('UPDATE jobs SET link=? WHERE id=?', (url, job_id))
+        self.storage.db.commit()
+        links = Links({url: ('gone', '410')})
+        report = self.run_check(DAY1, [self.full('101', '102')], links=links)
+        self.assertNotIn(url, links.calls)
+        self.assertEqual(self.state('Pasted Co'), 'not_checked')
+        self.assertEqual(recheck.posting_status(self.storage, job_id)['reason'],
+                         'This site does not allow automatic reading.')
+        self.assertIn(job_id, [item['job_id'] for item in report['not_checked']])
+
     def test_job_without_posting_row_closes_on_404(self):
         links = Links({'https://careers.pasted.example/jobs/77': ('gone', '410')})
         self.run_check(DAY1, [self.full('101', '102')], links=links)
@@ -573,6 +587,14 @@ class ReviewFixes2(Base):
 
 
 class LinkStatus(unittest.TestCase):
+    def test_listed_hosts_are_unclear_without_a_request(self):
+        fetch = mock.Mock(return_value=(410, ''))
+        for host in ('amazon.jobs', 'www.amazon.com', 'jobs.smartrecruiters.com'):
+            with self.subTest(host=host):
+                self.assertEqual(recheck.link_status(f'https://{host}/example', fetch=fetch),
+                                 ('unclear', 'This site does not allow automatic reading.'))
+        fetch.assert_not_called()
+
     def test_linkedin_is_unclear_without_a_request(self):
         self.assertEqual(recheck.link_status('https://www.linkedin.com/jobs/view/1')[0], 'unclear')
 

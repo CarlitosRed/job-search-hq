@@ -170,7 +170,8 @@ async def _launch(chromium, launch_error, port, remaining):
     return None
 
 
-async def _render(playwright, launch_error, link, check, expires, max_bytes, max_text, min_useful, bot_check, closed):
+async def _render(playwright, launch_error, link, check, expires, max_bytes, max_text, min_useful, bot_check, closed,
+                  blocked_read=None):
     def remaining():
         return max(0, expires - time.monotonic())
 
@@ -199,7 +200,25 @@ async def _render(playwright, launch_error, link, check, expires, max_bytes, max
 
                 await context.route('**/*', filter_request)
                 page = await context.new_page()
-                response = await page.goto(link, wait_until='domcontentloaded', timeout=max(1, remaining() * 1000))
+                blocked = None
+
+                def remember_blocked_navigation(request):
+                    nonlocal blocked
+                    if request.is_navigation_request():
+                        result = blocked_read(request.url)
+                        if result and request.frame == page.main_frame:
+                            blocked = result
+
+                if blocked_read:
+                    page.on('requestfailed', remember_blocked_navigation)
+                try:
+                    response = await page.goto(link, wait_until='domcontentloaded', timeout=max(1, remaining() * 1000))
+                except launch_error:
+                    if blocked:
+                        return blocked
+                    raise
+                if blocked:
+                    return blocked
                 if not response:
                     return None
                 if response.status == 403 or response.headers.get('cf-mitigated', '').strip().lower() == 'challenge':
@@ -207,9 +226,13 @@ async def _render(playwright, launch_error, link, check, expires, max_bytes, max
                 # Check the first DOM and each sample while waiting for posting text.
                 settle = min(expires, time.monotonic() + 4)
                 while True:
+                    if blocked:
+                        return blocked
                     if bot_check(await page.title()):
                         return 403, ''
                     text = await page.evaluate(_VISIBLE_TEXT, max_text)
+                    if blocked:
+                        return blocked
                     if bot_check(text):
                         return 403, ''
                     if response.status != 200:
@@ -221,7 +244,8 @@ async def _render(playwright, launch_error, link, check, expires, max_bytes, max
                 await browser.close()
 
 
-def read(link, timeout, public_address, public_url, max_bytes, max_text, min_useful, bot_check, closed):
+def read(link, timeout, public_address, public_url, max_bytes, max_text, min_useful, bot_check, closed,
+         blocked_read=None):
     """Return (status, text) or None within the caller's browser budget."""
     seconds = min(timeout, 30)
     if seconds <= 0:
@@ -236,7 +260,7 @@ def read(link, timeout, public_address, public_url, max_bytes, max_text, min_use
     async def run(playwright, launch_error):
         async with asyncio.timeout(max(0, expires - time.monotonic())):
             return await _render(playwright, launch_error, link, check, expires, max_bytes, max_text, min_useful,
-                                 bot_check, closed)
+                                 bot_check, closed, blocked_read)
 
     def worker():
         try:

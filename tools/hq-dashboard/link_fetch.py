@@ -10,7 +10,7 @@ from functools import cache
 import importlib.util
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
 MAX_BYTES = 1_500_000
 TIMEOUT = 10
@@ -21,7 +21,20 @@ MAX_TEXT = 40000
 BROWSER_SECONDS = 30
 AGENT = 'Mozilla/5.0 (compatible; JobSearchHQ posting reader)'
 _BOT_CHECK = object()  # A recognized challenge ends the read, unlike a bare 403.
-_INACTIVE_POSTING = object()
+NO_AUTOMATIC_READ_HOSTS = ('amazon.jobs', 'amazon.com', 'smartrecruiters.com')
+READ_DISALLOWED = 'automatic_reading_disallowed'
+READ_DISALLOWED_REASON = 'This site does not allow automatic reading.'
+MANUAL_POSTING_MESSAGE = READ_DISALLOWED_REASON + ' Paste the posting text or add a photo.'
+
+
+def automatic_read_disallowed(url):
+    """Match a listed hostname or its subdomains, including DNS spelling variants."""
+    try:
+        host = urlsplit(url or '').hostname or ''
+        host = unquote(host).encode('idna').decode('ascii').lower().rstrip('.')
+    except ValueError:
+        return False
+    return any(host == name or host.endswith('.' + name) for name in NO_AUTOMATIC_READ_HOSTS)
 
 
 @cache
@@ -133,15 +146,6 @@ def greenhouse_api(url):
             return f'https://{host}/v1/boards/{board}/jobs/{job}'
 
 
-def smartrecruiters_api(url):
-    parts = urlsplit(url)
-    if parts.hostname == 'jobs.smartrecruiters.com':
-        match = re.fullmatch(r'/([\w-]+)/(\d+)(?:-[^/]+)?/?', parts.path, re.ASCII)
-        if match:
-            company, job = match.groups()
-            return f'https://api.smartrecruiters.com/v1/companies/{company}/postings/{job}'
-
-
 def lever_api(url):
     parts = urlsplit(url)
     if parts.hostname in ('jobs.lever.co', 'jobs.eu.lever.co'):
@@ -161,6 +165,8 @@ def icims_page(url):
 
 def public_url(url, resolve, deadline):
     """Return parsed HTTP(S) URL, port and checked IP, or None for a disallowed target."""
+    if automatic_read_disallowed(url):
+        return None
     try:
         parts = urlsplit(url)
         if parts.scheme not in ('http', 'https') or not parts.hostname or '@' in parts.netloc:
@@ -181,7 +187,9 @@ def _get(url, accept, deadline=None, with_status=False):
         if deadline.expired():
             return None
         checked = public_url(url, public_address, deadline)
-        if not checked or deadline.expired():
+        if not checked:
+            return (READ_DISALLOWED, '', '') if with_status and automatic_read_disallowed(url) else None
+        if deadline.expired():
             return None
         parts, port, ip = checked
         target = (parts.path or '/') + ('?' + parts.query if parts.query else '')
@@ -211,12 +219,17 @@ def _get(url, accept, deadline=None, with_status=False):
                 return (_BOT_CHECK, '', '') if with_status else None
             redirect = code in (301, 302, 303, 307, 308)
             location = response.getheader('Location') if redirect else None
+            if location:
+                location = urljoin(url, location)
+                if automatic_read_disallowed(location):
+                    conn.close()
+                    return (READ_DISALLOWED, '', '') if with_status else None
             kind = (response.getheader('Content-Type') or '').split(';')[0].strip().lower()
             readable = kind in ('text/html', 'text/plain', 'application/xhtml+xml')
             if code != 200 and not (with_status and readable):
                 conn.close()
                 if redirect and location:
-                    url = urljoin(url, location)
+                    url = location
                     continue
                 return (code, '', '') if with_status else None
             chunks, size = [], 0
@@ -237,7 +250,7 @@ def _get(url, accept, deadline=None, with_status=False):
             if _bot_check(title) or _bot_check(visible):
                 return _BOT_CHECK, '', ''
         if redirect and location:
-            url = urljoin(url, location)
+            url = location
             continue
         if len(body) > MAX_BYTES or kind not in ('text/html', 'application/json', 'text/plain', 'application/xhtml+xml'):
             return (code, '', '') if code != 200 else None
@@ -316,14 +329,6 @@ def _json_text(data, board):
     if board is greenhouse_api:
         content = data.get('content')
         return _posting_sections(data.get('title'), html.unescape(content) if isinstance(content, str) else '')
-    if board is smartrecruiters_api:
-        ad = data.get('jobAd')
-        sections = ad.get('sections') if isinstance(ad, dict) else {}
-        if not isinstance(sections, dict):
-            sections = {}
-        descriptions = [_posting_sections(section.get('title'), section.get('text')) for section in sections.values()
-                        if isinstance(section, dict)]
-        return _join_posting(data.get('name'), '\n\n'.join(filter(None, descriptions)))
     if board is lever_api:
         lists = data.get('lists')
         sections = []
@@ -400,10 +405,6 @@ def _read_direct(url, deadline, board=None):
             data = None
         if isinstance(data, dict):
             text = _json_text(data, board)
-            if board is smartrecruiters_api and data.get('active') is False:
-                notice = _recheck().EXPIRED_NOTICE
-                text = '\n\n'.join(filter(None, (notice, text)))
-                return _INACTIVE_POSTING, text[:MAX_TEXT]
     if code != 200:
         return code, ''
     return (403, '') if _blocked_page(text) else (code, text[:MAX_TEXT])
@@ -411,34 +412,39 @@ def _read_direct(url, deadline, board=None):
 
 def _direct(link, deadline):
     mapped = (None, '')
-    for board in (workday_api, greenhouse_api, smartrecruiters_api, lever_api, icims_page):
+    for board in (workday_api, greenhouse_api, lever_api, icims_page):
         target = board(link)
         if target:
             mapped = _read_direct(target, deadline, board)
-            if (target == link or mapped[0] in (_BOT_CHECK, _INACTIVE_POSTING)
+            if (target == link or mapped[0] in (_BOT_CHECK, READ_DISALLOWED)
                     or len(mapped[1]) >= MIN_USEFUL or _closed(mapped[1])):
                 return mapped
             break
     direct = _read_direct(link, deadline)
     if direct[0] in (404, 410) or len(direct[1]) >= MIN_USEFUL or _closed(direct[1]):
         return direct
-    if direct[0] in (_BOT_CHECK, 403, 429):
+    if direct[0] in (_BOT_CHECK, READ_DISALLOWED, 403, 429):
         return direct
     return mapped if len(mapped[1]) > len(direct[1]) or mapped[0] in (403, 429) else direct
 
 
 def browser_reader(link, timeout):
     """The browser hook is replaceable in tests and loaded only when needed."""
+    if automatic_read_disallowed(link):
+        return READ_DISALLOWED, ''
     spec = importlib.util.spec_from_file_location('hq_browser_read', Path(__file__).with_name('browser_read.py'))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.read(link, timeout, public_address, public_url, MAX_BYTES, MAX_TEXT, MIN_USEFUL, _bot_check, _closed)
+    return module.read(link, timeout, public_address, public_url, MAX_BYTES, MAX_TEXT, MIN_USEFUL, _bot_check, _closed,
+                       blocked_read=lambda url: (READ_DISALLOWED, '') if automatic_read_disallowed(url) else None)
 
 
 def fetch_status_text(link, timeout=None):
     """Return the status and readable text from the direct read or optional browser."""
     if not isinstance(link, str) or len(link) > 2000 or not link.startswith(('https://', 'http://')):
         return None, ''
+    if automatic_read_disallowed(link):
+        return READ_DISALLOWED, ''
     start = time.monotonic()
     seconds = TOTAL_SECONDS if timeout is None else min(timeout, TOTAL_SECONDS)
     if seconds <= 0:
@@ -456,8 +462,8 @@ def fetch_status_text(link, timeout=None):
         deadline.stop()
     if code is _BOT_CHECK:
         return 403, ''
-    if code is _INACTIVE_POSTING:
-        return 200, text
+    if code == READ_DISALLOWED:
+        return code, ''
     if code in (404, 410) or len(text) >= MIN_USEFUL or _closed(text):
         return code, text
     remaining = BROWSER_SECONDS if timeout is None else min(BROWSER_SECONDS, timeout - (time.monotonic() - start))
@@ -465,7 +471,7 @@ def fetch_status_text(link, timeout=None):
         result = browser_reader(link, remaining)
         if result:
             browser_code, rendered = result
-            if browser_code in (404, 410):
+            if browser_code in (404, 410, READ_DISALLOWED):
                 return browser_code, ''
             if _blocked_page(rendered):
                 browser_code, rendered = 403, ''

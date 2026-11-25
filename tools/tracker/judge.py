@@ -644,6 +644,7 @@ def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dr
         return pending_jobs(storage, profile=profile, backlog=backlog, link_reads=link_reads)
 
     queue = list(jobs) if jobs is not None else waiting()
+    reader = recheck.posting_reader()
     attempted = set()
     if read_link is not None and postings is None and link_cache and not db.in_transaction:
         judged = {row[0] for row in db.execute('SELECT job_id FROM judgements WHERE pass=? AND (current=1 OR score IS NOT NULL)',
@@ -656,6 +657,8 @@ def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dr
             if not job or job_id in judged or not open_stage(job['status']) or not job['link'] or read(job):
                 continue
             link = job['link']
+            if reader.automatic_read_disallowed(link):
+                continue
             previous = link_reads.get(link, {})
             if link in attempted or (previous.get('error') and recent(previous.get('day'))):
                 continue
@@ -668,7 +671,9 @@ def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dr
             except Exception:
                 code, text = None, None
             observation, reason = recheck.classify(code, text)
-            if observation == 'open':
+            if code == reader.READ_DISALLOWED:
+                link_reads[link] = dict(error=reader.MANUAL_POSTING_MESSAGE, day=day)
+            elif observation == 'open':
                 link_reads[link] = dict(text=text)
                 report['postings_read'] += 1
             else:
@@ -692,15 +697,17 @@ def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dr
         posting = read(job)
         if posting is None or not str(posting.get('description') or '').strip():
             failure = link_reads.get(job['link'], {})
-            reason = NO_TEXT
-            if failure.get('error') and recent(failure.get('day')):
+            reason = ''
+            if postings is None and reader.automatic_read_disallowed(job['link']):
+                reason = reader.MANUAL_POSTING_MESSAGE
+            elif failure.get('error') and recent(failure.get('day')):
                 reason = failure['error']
                 if job['link'] not in attempted:
                     report['backed_off'] += 1
-                if reason not in report['posting_read_issues']:
-                    report['posting_read_issues'].append(reason)
+            if reason and reason not in report['posting_read_issues']:
+                report['posting_read_issues'].append(reason)
             report['skipped'] += 1
-            report['skipped_jobs'].append(named(job, reason))
+            report['skipped_jobs'].append(named(job, reason or NO_TEXT))
             continue
         if not evidence:
             report['skipped'] += 1
