@@ -4,13 +4,20 @@ Every company, job and place here is fictional. The fetcher is a fake keyed by U
 """
 from datetime import date, datetime, timedelta, timezone
 import copy
+from email.message import Message
 import importlib.util
+from io import BytesIO
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
+from urllib.error import HTTPError
+from urllib.parse import parse_qs, urlsplit
+from urllib.request import HTTPSHandler, build_opener
+from urllib.response import addinfourl
 
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('hq_daily_search_test', HERE / 'daily_search.py')
@@ -438,6 +445,314 @@ class WorkdayHomeFirst(Base):
         self.assertTrue(seen and all(callable(h) for h in seen), 'every board read gets the home-country check')
         self.assertTrue(seen[0]('Exampleland City, Exampleland'))
         self.assertFalse(seen[0]('Far City, Otherland'))
+
+
+class FakeWorkable:
+    origin = 'https://jobs.workable.com'
+
+    def __init__(self, rows=None, *, ignored=False, error=None, query_rows=None):
+        self.rows = rows or [dict()]
+        self.ignored = ignored
+        self.error = error
+        self.query_rows = query_rows or {}
+        self.calls = []
+
+    @staticmethod
+    def uid(index):
+        return f'00000000-0000-4000-8000-{index:012d}'
+
+    def __call__(self, method, url, *, deadline, boards=None):
+        self.calls.append(url)
+        assert method == 'GET' and deadline > 0
+        parsed = urlsplit(url)
+        assert parsed.hostname == 'jobs.workable.com'
+        if parsed.path == '/jobs.md':
+            query = parse_qs(parsed.query)
+            assert query['day_range'] == ['14']
+            if self.error is not None:
+                status, headers = self.error
+                if status != 403:
+                    self.error = None
+                raise HTTPError(url, status, '', headers, None)
+            scoped = 'location' in query and not self.ignored
+            phrase = query.get('query', [None])[0]
+            indices = self.query_rows.get(phrase, range(len(self.rows)))
+            total = len(indices) if scoped else 1000
+            total_line = (f'Found **{total:,}** matching jobs (showing first 30).' if total > 30
+                          else f'Found **{total:,}** matching job(s).')
+            lines = [total_line, '',
+                     '| Title | Company | Location | Workplace | Type | Link |',
+                     '| --- | --- | --- | --- | --- | --- |']
+            for index in indices[:30]:
+                row = self.rows[index]
+                title = row.get('title', f'Example Analyst {index}')
+                company = row.get('company', 'Example Cloud')
+                lines.append(f'| {title} | {company} | Remote | Remote | Full-time | '
+                             f'[View]({self.origin}/jobs/{self.uid(index)}.md) |')
+            return '\n'.join(lines)
+        part, token = parsed.path.strip('/').split('/')
+        assert part == 'view'
+        index = int(token[-12:])
+        row = self.rows[index]
+        if 'status' in row:
+            raise HTTPError(url, row['status'], '', {}, None)
+        canonical = f'{self.origin}/view/sample-code/fictional-posting'
+        ld = {'@type': 'JobPosting', 'url': canonical, 'id': token, 'identifier': {'value': token},
+              'datePosted': row.get('date', ago(1)), 'title': row.get('title', f'Example Analyst {index}'),
+              'hiringOrganization': {'name': row.get('company', 'Example Cloud')},
+              'jobLocationType': 'TELECOMMUTE', 'description': '<p>Write fictional reports.</p>'}
+        countries = [{'@type': 'Country', 'name': name} for name in row.get('countries', ['Exampleland'])]
+        if countries:
+            ld['applicantLocationRequirements'] = countries[0] if len(countries) == 1 else countries
+        ld.update(row.get('ld', {}))
+        if row.get('extra_posting'):
+            ld = [ld, {'@type': 'JobPosting', 'id': self.uid(999)}]
+        return ('<script>window.posting = {"state":"published"}</script>'
+                f'<script type="application/ld+json">{json.dumps(ld)}</script>')
+
+
+class WorkableTransport(unittest.TestCase):
+    def test_only_one_same_host_https_view_redirect_can_be_followed(self):
+        start = f'{FakeWorkable.origin}/view/{FakeWorkable.uid(0)}'
+        final = f'{FakeWorkable.origin}/view/sample-code/fictional-posting'
+        cases = [
+            ('/view/sample-code/fictional-posting', 200, [start, final]),
+            ('/view/sample-code/fictional-engineer---remote-(region)-at-e.x.a.m.p.l.e.', 200,
+             [start, f'{FakeWorkable.origin}/view/sample-code/fictional-engineer---remote-(region)-at-e.x.a.m.p.l.e.']),
+            ('/view/sample-code/fictional-reports-%26-data-analyst', 200,
+             [start, f'{FakeWorkable.origin}/view/sample-code/fictional-reports-%26-data-analyst']),
+            (final, 301, [start, final]),
+            (final, 204, [start, final]),
+            ('https://example.com/view/sample-code/fictional-posting', 200, [start]),
+            ('http://jobs.workable.com/view/sample-code/fictional-posting', 200, [start]),
+            ('/jobs.md', 200, [start]),
+            ('/view/%2e%2e/jobs.md', 200, [start]),
+            ('/view/sample-code', 200, [start]),
+            ('/view/sample-code/', 200, [start]),
+            ('/view/sample-code/fictional/posting', 200, [start]),
+            ('/view/sample-code/unused/../fictional-posting', 200, [start]),
+            ('/view/sample-code/%2E', 200, [start]),
+            ('/view/sample-code/.%2e', 200, [start]),
+            ('/view/sample-code/fictional%2fposting', 200, [start]),
+            ('/view/sample-code/fictional%5Cposting', 200, [start]),
+            ('/view/sample-code/fictional\\posting', 200, [start]),
+            ('/view/sample-code/fictional%00posting', 200, [start]),
+            ('/view/sample-code/fictional%7Fposting', 200, [start]),
+            ('/view/sample-code/fictional\t-posting', 200, [start]),
+        ]
+        for target, final_status, expected in cases:
+            with self.subTest(target=target, final_status=final_status):
+                calls, accepts = [], []
+
+                class CannedHTTPS(HTTPSHandler):
+                    def https_open(self, req):
+                        calls.append(req.full_url)
+                        accepts.append(req.get_header('Accept'))
+                        initial = req.full_url == start
+                        status = 301 if initial else final_status
+                        headers = Message()
+                        if status == 301:
+                            headers['Location'] = target if initial else '/view/sample-code/second-fictional-posting'
+                        response = addinfourl(BytesIO(b'Fictional page'), headers, req.full_url, status)
+                        response.msg = 'Fictional response'
+                        return response
+
+                with mock.patch.object(ds.boards, 'build_opener',
+                                       side_effect=lambda *handlers: build_opener(*handlers, CannedHTTPS())):
+                    if len(expected) == 2 and final_status == 200:
+                        self.assertEqual(ds.workable.fetch_text('GET', start, deadline=None, boards=ds.boards),
+                                         'Fictional page')
+                    else:
+                        with self.assertRaises((ds.boards.BoardReadError, HTTPError)):
+                            ds.workable.fetch_text('GET', start, deadline=None, boards=ds.boards)
+                self.assertEqual(calls, expected)
+                self.assertEqual(accepts, ['text/html'] * len(expected))
+
+
+class SearchSource(Base):
+    def profile(self, *phrases, **search):
+        profile = ops_profile(companies=search.pop('companies', []),
+                              search_sources=['workable_search'], **search)
+        lane = profile['goals']['lanes'][0]
+        lane['titles'], lane['duties'] = list(phrases[:1]) or ['Example analyst'], list(phrases[1:])
+        profile['goals']['lanes'] = [lane]
+        return profile
+
+    def search(self, fake, profile=None, today=TODAY, **options):
+        clock = [1.0]
+        self.delays = []
+
+        def sleep(seconds):
+            self.delays.append(seconds)
+            clock[0] += seconds
+
+        with mock.patch.object(ds.workable.time, 'monotonic', side_effect=lambda: clock[0]), \
+             mock.patch.object(ds.workable.time, 'sleep', side_effect=sleep):
+            return ds.run(profile or self.profile(), FakeBoards(), self.backlog, today,
+                          mark_landed=True, search_fetch=fake, **options)
+
+    def saved(self, profile='example-ops'):
+        with ds.connect(self.backlog) as db:
+            return [(json.loads(body), landed) for body, landed in db.execute(
+                'SELECT body, landed FROM search_backlog WHERE profile_id=? ORDER BY rowid', (profile,))]
+
+    def queries(self):
+        with ds.connect(self.backlog) as db:
+            return db.execute('SELECT profile_id, query, total, kept, reason FROM search_runs ORDER BY rowid').fetchall()
+
+    def test_ignored_location_is_refused_before_details(self):
+        fake = FakeWorkable(ignored=True)
+        out = self.search(fake)
+        self.assertEqual(len(fake.calls), 2)
+        self.assertEqual(self.saved(), [])
+        self.assertEqual(self.queries(), [])
+        self.assertIn('location filter could not be confirmed', out['boards'][0]['reason'])
+        self.assertEqual(out['boards'][0]['read'], 'failed')
+
+    def test_caps_distinct_phrases_request_spacing_and_retry_after(self):
+        fake = FakeWorkable([{} for _ in range(45)], error=(429, {'Retry-After': '4'}),
+                            query_rows={'Example analyst': range(30), 'Fictional duty 0': range(30, 45)})
+        self.search(fake, self.profile('Example analyst', 'EXAMPLE ANALYST', *[f'Fictional duty {i}' for i in range(40)]))
+        listing = [url for url in fake.calls if '/jobs.md?' in url]
+        self.assertEqual(len(listing), 25)
+        details = fake.calls[len(listing):]
+        self.assertEqual(details, [f'{fake.origin}/view/{fake.uid(index)}' for index in range(40)])
+        self.assertIn(4, self.delays)
+        self.assertEqual(len(self.delays), len(fake.calls) - 1)
+        self.assertTrue(all(delay >= 1.5 for delay in self.delays))
+        queries = [row[1].casefold() for row in self.queries()]
+        self.assertEqual(len(queries), len(set(queries)))
+        self.assertTrue(any(query.startswith('fictional duty') for query in queries))
+
+    def test_location_guard_once_and_queries_and_details_follow_title_first_lane_order(self):
+        titles = ['Example first title', 'Sample first title', 'Example second title']
+        duties = ['Example first duty', 'Sample first duty', 'Example second duty']
+        order = titles + duties
+        fake = FakeWorkable([{} for _ in order],
+                            query_rows={phrase: [index] for index, phrase in enumerate(order)})
+        profile = self.profile()
+        profile['goals']['lanes'] = [
+            dict(id='example', titles=titles[::2], duties=duties[::2]),
+            dict(id='sample', titles=titles[1::2], duties=duties[1::2])]
+        self.search(fake, profile)
+        self.assertEqual([parse_qs(urlsplit(url).query) for url in fake.calls[:8]], [
+            {'day_range': ['14']}, {'day_range': ['14'], 'location': ['Exampleland']},
+            *[{'day_range': ['14'], 'location': ['Exampleland'], 'query': [phrase]} for phrase in order]])
+        self.assertEqual(fake.calls[8:], [f'{fake.origin}/view/{fake.uid(index)}' for index in range(6)])
+
+    def test_view_status_and_exactly_one_uuid_matched_job_posting(self):
+        other = FakeWorkable.uid(999)
+        fake = FakeWorkable([{}, {'ld': {'validThrough': ago(1)}}, {'status': 404}, {'status': 410},
+                             {'status': 502}, {'ld': {'id': other, 'identifier': {'value': other}}},
+                             {'ld': {'identifier': {'value': other}}}, {'extra_posting': True},
+                             {'ld': {'validThrough': 'unreadable'}}])
+        self.search(fake)
+        self.assertEqual([job['open'] for job, _ in self.saved()],
+                         [True, False, False, False, None, None, None, None, None])
+
+    def test_view_supplies_text_sections_and_on_site_address(self):
+        fake = FakeWorkable([{'ld': {
+            'title': 'Fictional Detail Analyst', 'hiringOrganization': {'name': 'Fictional Detail Studio'},
+            'jobLocationType': None, 'applicantLocationRequirements': None,
+            'jobLocation': {'address': {'addressLocality': 'Sample Borough', 'addressRegion': 'Sample District',
+                                        'addressCountry': 'Exampleland'}},
+            'description': '<p>Write &amp; review.</p>',
+            'requirementsSection': '<ul><li>Check fictional records.</li></ul>',
+            'benefitsSection': '<p>Fictional training.</p>'}},
+            {'countries': ['Farland', 'Exampleland']}])
+        self.search(fake)
+        onsite, remote = [job for job, _ in self.saved()]
+        self.assertEqual(onsite['title'], 'Fictional Detail Analyst')
+        self.assertEqual(onsite['company'], 'Fictional Detail Studio')
+        self.assertFalse(onsite['remote'])
+        self.assertEqual(onsite['place_text'], 'Sample Borough, Sample District, Exampleland')
+        self.assertEqual(onsite['description'].splitlines(),
+                         ['Write & review.', 'Check fictional records.', 'Fictional training.'])
+        self.assertTrue(remote['remote'])
+        self.assertEqual(remote['applicant_countries'], ['Farland', 'Exampleland'])
+        self.assertEqual(remote['place_text'], 'Farland, Exampleland')
+        self.assertEqual(fake.calls[3:], [f'{fake.origin}/view/{fake.uid(index)}' for index in range(2)])
+
+    def test_facts_require_open_date_and_place_and_never_land(self):
+        fake = FakeWorkable([{'date': None}, {'date': ago(14)}, {'date': ago(15)},
+                             {'countries': []}, {'ld': {'validThrough': ago(1)}}, {'date': ago(1) + ' junk'},
+                             {'countries': ['Farland']}, {'date': ago(-1)}])
+        out = self.search(fake)
+        self.assertEqual(out['landing'], [])
+        rows = self.saved()
+        self.assertEqual(len(rows), 8)
+        self.assertTrue(all(landed == 0 for _, landed in rows))
+        reasons = [job['fact_reason'].lower() for job, _ in rows]
+        self.assertEqual(reasons[1], 'kept for review')
+        for index, word in [(0, 'date'), (2, '14 days'), (3, 'place'), (4, 'open'),
+                            (5, 'date'), (6, 'place'), (7, 'date')]:
+            self.assertIn(word, reasons[index])
+        self.assertEqual(self.queries()[0][2:4], (8, 1))
+        self.assertEqual(rows[1][0]['description'], 'Write fictional reports.')
+
+    def test_employer_copy_wins_and_board_still_uses_45_days(self):
+        fake = FakeWorkable([{'title': 'Partner Operations Analyst', 'company': 'example cloud'},
+                             {'title': 'Fictional Intern'}])
+        profile = self.profile('Partner operations', 'incentive reporting', companies=COMPANIES[:1],
+                               exclude_titles=[{'pattern': 'Intern', 'reason': 'Excluded title.'}])
+        out = self.search(fake, profile)
+        self.assertFalse(any('/view/' in url for url in fake.calls))
+        copies = [(job, landed) for job, landed in self.saved() if job['title'] == 'Partner Operations Analyst']
+        self.assertEqual(len(copies), 2)
+        self.assertEqual([job['provider'] for job in out['landing']].count('workable_search'), 0)
+        self.assertIn('employer', next(job['fact_reason'] for job, _ in copies if job['provider'] == 'workable_search').lower())
+        board = {'provider': 'greenhouse', 'title': 'Example Analyst', 'company': 'Example Cloud',
+                 'posted_on': ago(30), 'first_seen': ago(1), 'date_source': 'greenhouse',
+                 'open': True, 'place_text': 'Exampleland', 'remote': False, 'description': ''}
+        self.assertFalse(ds.too_old(board, TODAY))
+        self.assertIn('14 days', ds.posting_facts(profile, board, TODAY))
+
+    def test_workable_keeps_the_same_company_board_backlog(self):
+        profile = self.profile('Partner operations', 'incentive reporting', companies=COMPANIES[:1])
+        baseline = copy.deepcopy(profile)
+        baseline['id'] = 'example-baseline'
+        baseline['search'].pop('search_sources')
+        self.run_search(baseline, mark_landed=True)
+        expected = self.saved(baseline['id'])
+        self.assertIn('101', {job['posting_id'] for job, _ in expected})
+        self.assertNotIn('102', {job['posting_id'] for job, _ in expected})
+
+        self.search(FakeWorkable(), profile)
+        self.assertEqual([(job, landed) for job, landed in self.saved() if job['provider'] == 'greenhouse'],
+                         expected)
+        self.assertTrue(any(job['provider'] == 'workable_search' for job, _ in self.saved()))
+
+    def test_403_stops_only_workable_and_old_backlog_upgrades(self):
+        profile = self.profile('Partner operations', companies=COMPANIES[:1])
+        old = copy.deepcopy(profile)
+        old['search'].pop('search_sources')
+        ds.run(old, FakeBoards(), self.backlog, TODAY)
+        with ds.connect(self.backlog) as db, db:
+            db.execute('DROP TABLE IF EXISTS search_runs')
+        fake = FakeWorkable(error=(403, {'Retry-After': '2'}))
+        out = self.search(fake, profile)
+        self.assertEqual(len(fake.calls), 1)
+        self.assertEqual(out['boards'][-1]['http_status'], 403)
+        self.assertTrue(out['landing'])
+        self.assertEqual(self.queries(), [])
+        self.assertIn('403', out['boards'][-1]['reason'])
+
+    def test_profile_isolation_and_first_seen_clamps_later_date(self):
+        home = self.profile()
+        away = copy.deepcopy(home)
+        away['id'] = 'example-away'
+        away['work_rules'].update(home_country='Farland', authorized_countries=[])
+        self.search(FakeWorkable(), home)
+        other = FakeWorkable()
+        self.search(other, away)
+        self.assertIn('location=Farland', other.calls[1])
+        self.assertIn('place', self.saved(away['id'])[0][0]['fact_reason'].lower())
+        self.assertEqual(self.saved()[0][0]['fact_reason'], 'Kept for review')
+        later = TODAY + timedelta(days=15)
+        self.search(FakeWorkable([{'date': later.isoformat()}]), home, today=later)
+        self.assertLessEqual(self.saved()[0][0]['posted_on'], TODAY.isoformat())
+        self.assertIn('14 days', self.saved()[0][0]['fact_reason'])
+        self.assertEqual({row[0] for row in self.queries()}, {home['id'], away['id']})
 
 
 if __name__ == '__main__':

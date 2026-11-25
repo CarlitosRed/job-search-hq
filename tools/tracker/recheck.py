@@ -158,7 +158,12 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
     def named(job_id, reason):
         return dict(job_id=job_id, company=jobs[job_id]['company'], role=jobs[job_id]['role'], reason=reason[:200])
 
+    search_reads = []
     for source in snapshot.get('boards', []):
+        # Search pages are bounded samples. Absence cannot close a posting.
+        if source.get('search_only'):
+            search_reads.append(source)
+            continue
         key = (source['provider'], source['board'])
         source = dict(source)
         worldwide = source.get('worldwide')
@@ -339,7 +344,7 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
                 record(job_id, pid, 'link', observation, detail, state)
             return observation, detail, state
 
-        record_board_reads(db, run_id, today, read_at, boards.values())
+        record_board_reads(db, run_id, today, read_at, [*boards.values(), *search_reads])
         for post, action, seen, board in plans:
             job_id, pid = post['job_id'], post['id']
             if not valid(job_id, post, seen):
