@@ -300,6 +300,19 @@ class Storage(Base):
 
 
 class CacheAndLimits(Base):
+    def test_listed_link_is_skipped_with_manual_input_message(self):
+        job_id = self.ids['Example Co']
+        self.storage.db.execute('UPDATE jobs SET link=? WHERE id=?', ('https://www.amazon.jobs/example', job_id))
+        self.storage.db.commit()
+        reader = mock.Mock(return_value=(410, None))
+        complete = mock.Mock()
+        report = judge.judge_pending(self.storage, self.profile, EVIDENCE, TODAY, 'run-1',
+                                     complete=complete, limit=20, jobs=[job_id], read_link=reader)
+        self.assertEqual(report['skipped_jobs'][0]['reason'],
+                         'This site does not allow automatic reading. Paste the posting text or add a photo.')
+        reader.assert_not_called()
+        complete.assert_not_called()
+
     def test_same_inputs_reuse_the_judgement(self):
         ai = FakeAI()
         self.run_judge(ai=ai)
