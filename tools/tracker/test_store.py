@@ -15,6 +15,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import contextmanager
+from unittest.mock import patch
 
 import openpyxl
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -381,6 +382,76 @@ class Writes(Base):
         row, saved = self.t.add({'sheet': 'Jobs', 'Company': 'Free Text', 'Role': 'R', 'Posted': '3 days ago'})
         self.assertEqual(saved['Posted'], '3 days ago')
 
+
+
+class BackupRotation(Base):
+    def setUp(self):
+        super().setUp()
+        self.migrate()
+        self.t = tracker_for(self.xlsx)
+        clock = patch.object(self.t, 'date', wraps=date)
+        clock.start().today.return_value = date(2026, 11, 25)
+        self.addCleanup(clock.stop)
+
+    def check_rotation(self, suffix, files, *, removed=(), directories=()):
+        backups = self.work / f'backups-{suffix[1:]}'
+        backups.mkdir()
+        self.t.BACKUPS = backups
+        stem = self.t.XLSX.stem
+        for name in files:
+            (backups / f'{stem}-{name}{suffix}').write_bytes(b'backup')
+        for name in directories:
+            (backups / f'{stem}-{name}{suffix}').mkdir()
+
+        if suffix == '.sqlite3':
+            self.t.update({'sheet': 'Jobs', 'row': 2, 'note': 'Backed up', 'expect': {'Company': 'Example Co'}})
+        else:
+            self.t.backup()
+
+        today = '2026-11-25'
+        self.assertTrue((backups / f'{stem}-{today}{suffix}').is_file())
+        kept = (set(files) - set(removed)) | set(directories) | {today}
+        self.assertEqual({path.name for path in backups.iterdir()}, {f'{stem}-{name}{suffix}' for name in kept})
+        for name in directories:
+            self.assertTrue((backups / f'{stem}-{name}{suffix}').is_dir())
+
+    def test_seven_named_backups_and_today_survive(self):
+        named = [f'before-{number}' for number in range(7)]
+        for suffix in ('.sqlite3', '.xlsx'):
+            with self.subTest(suffix=suffix):
+                self.check_rotation(suffix, named)
+
+    def test_only_the_newest_seven_daily_backups_are_kept(self):
+        named = [f'before-{number}' for number in range(10)]
+        dated = [f'2026-11-{day:02d}' for day in range(1, 10)]
+        for suffix in ('.sqlite3', '.xlsx'):
+            with self.subTest(suffix=suffix):
+                self.check_rotation(suffix, named + dated, removed=dated[:3])
+
+    def test_daily_lookalikes_survive(self):
+        lookalikes = ['2026-10-45', '2026-10-25-note', '2026-10-\u0662\u0665']
+        dated = [f'2026-11-{day:02d}' for day in range(1, 10)]
+        for suffix in ('.sqlite3', '.xlsx'):
+            with self.subTest(suffix=suffix):
+                self.check_rotation(suffix, lookalikes + dated, removed=dated[:3])
+
+    def test_future_backups_leave_room_for_today(self):
+        future = [f'2026-12-{day:02d}' for day in range(1, 10)]
+        for suffix in ('.sqlite3', '.xlsx'):
+            with self.subTest(suffix=suffix):
+                self.check_rotation(suffix, future, removed=future[:3])
+
+    def test_daily_directory_survives_rotation(self):
+        dated = [f'2026-11-{day:02d}' for day in range(1, 10)]
+        for suffix in ('.sqlite3', '.xlsx'):
+            with self.subTest(suffix=suffix):
+                self.check_rotation(suffix, dated, removed=dated[:3], directories=['2026-10-01'])
+
+    def test_workbook_stem_with_pattern_characters_is_matched_literally(self):
+        self.t.XLSX = self.xlsx.with_stem('applications[tracker]+')
+        shutil.copy2(self.xlsx, self.t.XLSX)
+        dated = [f'2026-11-{day:02d}' for day in range(1, 10)]
+        self.check_rotation('.xlsx', dated, removed=dated[:3])
 
 
 class EditSavesShape(Base):

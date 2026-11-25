@@ -13,6 +13,7 @@ from copy import copy
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from stat import S_ISREG
 
 import openpyxl
 import importlib.util
@@ -181,14 +182,32 @@ def excel_open():
     return (XLSX.parent / ("~$" + XLSX.name)).exists()
 
 
+def _rotate_daily_backups(stem, today):
+    pattern = re.compile(rf"{re.escape(stem)}-([0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}){re.escape(today.suffix)}")
+    daily = []
+    for path in today.parent.iterdir():
+        match = pattern.fullmatch(path.name)
+        if not match:
+            continue
+        try:
+            day = date.fromisoformat(match[1])
+            if S_ISREG(path.lstat().st_mode):
+                daily.append((day, path))
+        except (ValueError, FileNotFoundError):
+            continue
+
+    # Today takes one slot even when the other copies have later dates.
+    daily.sort(key=lambda entry: (entry[1] == today, entry[0]), reverse=True)
+    for _, path in daily[7:]:
+        path.unlink(missing_ok=True)
+
+
 def backup():
     BACKUPS.mkdir(exist_ok=True)
     today = BACKUPS / f"{XLSX.stem}-{date.today().isoformat()}{XLSX.suffix}"
     if not today.exists():
         shutil.copy2(XLSX, today)
-    olds = sorted(BACKUPS.glob(f"{XLSX.stem}-*{XLSX.suffix}"))
-    for old in olds[:-7]:
-        old.unlink(missing_ok=True)
+    _rotate_daily_backups(XLSX.stem, today)
 
 
 def backup_database(storage):
@@ -200,9 +219,7 @@ def backup_database(storage):
             storage.db.backup(target)
         finally:
             target.close()
-    olds = sorted(BACKUPS.glob(f"{XLSX.stem}-*.sqlite3"))
-    for old in olds[:-7]:
-        old.unlink(missing_ok=True)
+    _rotate_daily_backups(XLSX.stem, today)
 
 
 def save(wb):
