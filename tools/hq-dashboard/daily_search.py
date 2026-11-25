@@ -2,7 +2,9 @@
 import argparse
 from contextlib import closing
 from datetime import date, datetime, timedelta
+from functools import partial
 import importlib.util
+from itertools import zip_longest
 import json
 from pathlib import Path
 import re
@@ -23,13 +25,14 @@ def load_component(name):
 boards = load_component('job_search')
 profiles = load_component('search_profile')
 settings = load_component('hq_settings')
+workable = load_component('workable_search')
 
 
 def distinct(phrases):
     result, seen = [], set()
     for phrase in phrases:
         key = tuple(re.findall(r'\w+', phrase.casefold()))
-        if key not in seen:
+        if key and key not in seen:
             result.append(phrase)
             seen.add(key)
     return result
@@ -58,6 +61,12 @@ def place_facts(profile, job):
     location, description = job['place_text'], job['description']
     authorized = rules['authorized_countries']
     countries = [rules['home_country'], *authorized]
+    if 'applicant_countries' in job:
+        names = job['applicant_countries']
+        allowed = {name.strip().casefold() for name in countries}
+        return ('ok' if allowed.intersection(name.casefold() for name in names) else 'check'), ', '.join(names)
+    if job.get('provider') == workable.SOURCE and job['remote']:
+        return 'check', location
     scope = job.get('workday_country_scope')
     if scope and scope == json.dumps(sorted(profiles.workday_countries(profile))):
         return 'ok', location
@@ -122,6 +131,121 @@ def identity(job):
     return json.dumps([job['provider'], job['company'], job['posting_id']], ensure_ascii=False)
 
 
+def job_key(company, title):
+    return tuple(' '.join(re.findall(r'\w+', field.casefold())) for field in (company or '', title or ''))
+
+
+KEPT_FOR_REVIEW = 'Kept for review'
+SKIPPED = 'This job was skipped.'
+ARCHIVED = 'This job was archived.'
+ON_TRACKER = 'This job is already on the tracker.'
+EMPLOYER_COPY = 'The employer board already has this posting.'
+SEARCH_COPY = 'This search already found another copy of the posting.'
+
+
+def posting_facts(profile, job, today, repeat=''):
+    """Return one review decision for a posting from any daily search source."""
+    if repeat:
+        return repeat
+    if job.get('read_reason'):
+        return job['read_reason']
+    if job.get('open') is not True:
+        return 'The posting could not be confirmed open.'
+    posted = job.get('posted_on')
+    confirmed = boards.iso_day(posted)
+    if (not confirmed or confirmed != posted
+            or job.get('date_source') not in (*profiles.PROVIDERS, workable.SOURCE)
+            or posted > today.isoformat()):
+        return 'The employer posting date could not be confirmed.'
+    earliest = min(posted, job['first_seen'], job.get('workday_earliest_posted_on') or posted)
+    limit = profile['search'].get('landing_max_age_days', profiles.DEFAULTS['landing_max_age_days'])
+    if (today - date.fromisoformat(earliest)).days > limit:
+        return f'The posting is older than {limit} days.'
+    if place_facts(profile, job)[0] != 'ok':
+        return 'The place where you can work could not be confirmed.'
+    return exclusion_reason(profile, job) or KEPT_FOR_REVIEW
+
+
+def tracker_repeats(tracker, profile_id):
+    """Read tracker identities from this profile's links and its manual jobs."""
+    if tracker is None or not Path(tracker).is_file():
+        return {}, {}
+    uri = Path(tracker).resolve().as_uri() + '?mode=ro'
+    titles, links = {}, {}
+    with closing(sqlite3.connect(uri, uri=True)) as db:
+        db.execute('BEGIN')
+        columns = {row[1] for row in db.execute('PRAGMA table_info(postings)')}
+        owners = {}
+        if columns:
+            for job_id, owner in db.execute('SELECT job_id,profile_id FROM postings'):
+                owners.setdefault(job_id, set()).add(owner)
+        archived_id = {row[1] for row in db.execute('PRAGMA table_info(old_jobs)')}
+        archived_id = 'original_job_id' if 'original_job_id' in archived_id else 'NULL'
+        for table, ref in [('jobs', 'id'), ('old_jobs', archived_id)]:
+            for row_id, company, role, link, status in db.execute(
+                    f'SELECT {ref},company,role,link,status FROM {table}'):
+                if row_id in owners and profile_id not in owners[row_id]:
+                    continue
+                reason = (ARCHIVED if table == 'old_jobs' else SKIPPED if (status or '').casefold() == 'skipped'
+                          else ON_TRACKER)
+                key = job_key(company, role)
+                if all(key) and titles.get(key) not in (SKIPPED, ARCHIVED):
+                    titles[key] = reason
+                if link and links.get(link) not in (SKIPPED, ARCHIVED):
+                    links[link] = reason
+    return titles, links
+
+
+def save_workable(db, profile, today, jobs, runs, previous, employer_keys, repeat_reason):
+    profile_id = profile['id']
+    day = today.isoformat()
+    # Workable's UUID survives spelling changes to its published company name.
+    prior = {job['posting_id']: (key, first, job) for key, (first, job, _) in previous.items()
+             if job['provider'] == workable.SOURCE}
+    decisions, winners = {}, set()
+
+    def copy_reason(job, key):
+        return (repeat_reason(job) or (EMPLOYER_COPY if key in employer_keys else '')
+                or (SEARCH_COPY if key in winners else ''))
+
+    for job in jobs:
+        token = job['posting_id']
+        old_key, first, old = prior.get(token, (None, day, {}))
+        job['first_seen'] = first
+        # A failed refresh leaves the date unknown. Remember the earliest proven
+        # day separately so a later success cannot make a repost younger.
+        prior_date = old.get('earliest_posted_on')
+        if job['posted_on']:
+            job['posted_on'] = min(job['posted_on'], prior_date or first, first)
+            prior_date = job['posted_on']
+        job['earliest_posted_on'] = prior_date
+        key = job_key(job['company'], job['title'])
+        decision = posting_facts(profile, job, today, copy_reason(job, key) or job.get('fact_reason', ''))
+        if decision == KEPT_FOR_REVIEW:
+            winners.add(key)
+        decisions[token] = job['fact_reason'] = decision
+        if old_key and old_key != identity(job):
+            db.execute('DELETE FROM search_backlog WHERE profile_id=? AND identity=?', (profile_id, old_key))
+        db.execute('''INSERT INTO search_backlog (profile_id,identity,first_seen,body,landed)
+            VALUES (?,?,?,?,0) ON CONFLICT(profile_id,identity) DO UPDATE SET body=excluded.body''',
+                   (profile_id, identity(job), first, json.dumps(job, ensure_ascii=False)))
+    db.executemany('''INSERT INTO search_runs (profile_id,day,source,query,total,kept,reason) VALUES (?,?,?,?,?,?,?)
+        ON CONFLICT(profile_id,day,source,query) DO UPDATE SET total=excluded.total,kept=excluded.kept,reason=excluded.reason''',
+                   [(profile_id, day, workable.SOURCE, run['query'], run['total'],
+                     sum(decisions[token] == KEPT_FOR_REVIEW for token in run['posting_ids']), run['reason'])
+                    for run in runs])
+    # Previously kept rows can age out or be superseded by a later discovery.
+    for token, (old_key, _, old) in prior.items():
+        if token in decisions or old.get('fact_reason') != KEPT_FOR_REVIEW:
+            continue
+        key = job_key(old['company'], old['title'])
+        reason = posting_facts(profile, old, today, copy_reason(old, key))
+        if reason != KEPT_FOR_REVIEW:
+            old['fact_reason'] = reason
+            db.execute('UPDATE search_backlog SET body=? WHERE profile_id=? AND identity=?',
+                       (json.dumps(old, ensure_ascii=False), profile_id, old_key))
+
+
 def too_old(job, today):
     dates = [date.fromisoformat(value) for value in
              (job['posted_on'], job['first_seen'], job.get('workday_earliest_posted_on')) if value]
@@ -140,7 +264,7 @@ def landing_set(profile, waiting):
     # Rule 1 (spec 06 ranking and landing rules, 2026-11-14)
     copies = {}
     for job in sorted(waiting, key=order):
-        key = (job['company'], tuple(re.findall(r'\w+', job['title'].casefold())))
+        key = (job['company'], job_key('', job['title'])[1])
         copies.setdefault(key, job)
     ranked = list(copies.values())
     selected, seen, company_counts = [], set(), {}
@@ -210,14 +334,16 @@ def workday_progress(backlog, profile_id):
 
 
 def boards_read(result):
-    # Workday can supply usable postings before a board stops.
+    # Workday can supply usable postings before a board stops. A partial Workable
+    # read completed at least one search query, which can validly find no matches.
     if 'boards' in result:
-        return any(board['read'] == 'complete' or board['read'] == 'partial' and board['rows']
+        return any(board['read'] == 'complete' or board['read'] == 'partial'
+                   and (board['rows'] or board.get('provider') == workable.SOURCE)
                    for board in result['boards'])
     return bool(result.get('landing'))
 
 
-def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
+def run(profile, fetch, backlog, today, mark_landed=False, wait=2, *, search_fetch=None, tracker=None):
     """Fetch and rank all candidates; return a landing set without importing it."""
     if isinstance(today, str):
         today = date.fromisoformat(today)
@@ -242,9 +368,10 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
     def home_first(text):
         return any(boards.phrase_matches(country, text) for country in countries.values())
 
-    companies = profile['search']['companies']
-    if not 1 <= len(companies) <= 300:
-        raise ValueError('Choose between one and 300 job-board sources.')
+    companies = profile['search'].get('companies', [])
+    use_workable = workable.SOURCE in profile['search'].get('search_sources', [])
+    if len(companies) > 300 or not (companies or use_workable):
+        raise ValueError('Choose a search source or between one and 300 job boards.')
     ordinary = [i for i, company in enumerate(companies) if company['provider'] != 'workday']
     workday = [i for i, company in enumerate(companies) if company['provider'] == 'workday']
     progress = workday_progress(backlog, profile['id']) if workday else {}
@@ -252,6 +379,9 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
     country_key = json.dumps(sorted(countries))
     with connect(backlog) as db, db:
         db.execute('CREATE TABLE IF NOT EXISTS search_backlog (profile_id TEXT NOT NULL, identity TEXT NOT NULL, first_seen TEXT NOT NULL, body TEXT NOT NULL, landed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (profile_id, identity))')
+        db.execute('''CREATE TABLE IF NOT EXISTS search_runs (
+            profile_id TEXT NOT NULL, day TEXT NOT NULL, source TEXT NOT NULL, query TEXT NOT NULL,
+            total INTEGER, kept INTEGER NOT NULL, reason TEXT NOT NULL, PRIMARY KEY (profile_id,day,source,query))''')
         if workday:
             db.execute('''CREATE TABLE IF NOT EXISTS workday_country_facets (
                 profile_id TEXT NOT NULL, board_key TEXT NOT NULL, countries TEXT NOT NULL,
@@ -410,10 +540,46 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
         if reading['read'] != 'complete' and not worldwide:
             errors.append({'company': company['label'], 'message': reading['reason']})
 
+    search_jobs, search_runs = [], []
+    tracker_titles, tracker_links = tracker_repeats(tracker if use_workable else None, profile['id'])
+    employer_keys = {job_key(job['company'], job['title']) for job in fetched}
+    landed_keys = set()
+
+    def repeat_reason(job):
+        key = job_key(job['company'], job['title'])
+        title_reason, link_reason = tracker_titles.get(key), tracker_links.get(job['link'])
+        if link_reason in (SKIPPED, ARCHIVED):
+            return link_reason
+        return title_reason or link_reason or (ON_TRACKER if key in landed_keys else '')
+
+    if use_workable:
+        with connect(backlog) as db:
+            for (body,) in db.execute('SELECT body FROM search_backlog WHERE profile_id=? AND landed=1',
+                                      (profile['id'],)):
+                job = json.loads(body)
+                landed_keys.add(job_key(job['company'], job['title']))
+
+        def skip_detail(job):
+            return (repeat_reason(job)
+                    or (EMPLOYER_COPY if job_key(job['company'], job['title']) in employer_keys else '')
+                    or exclusion_reason(profile, job))
+
+        lanes = profile['goals']['lanes']
+        queries = distinct(' '.join(phrase.split()) for field in ('titles', 'duties')
+                           for group in zip_longest(*(lane[field] for lane in lanes), fillvalue='')
+                           for phrase in group if len(phrase.strip()) <= 300)
+        search_jobs, search_runs, reading = workable.read(
+            profile, queries, today, boards, search_fetch or partial(workable.fetch_text, boards=boards), skip_detail)
+        board_reads.append(reading)
+        tracker_titles, tracker_links = tracker_repeats(tracker, profile['id'])
+
     with connect(backlog) as db, db:
         db.execute('BEGIN IMMEDIATE')
         previous = {key: (first_seen, json.loads(body), landed) for key, first_seen, body, landed in
                     db.execute('SELECT identity,first_seen,body,landed FROM search_backlog WHERE profile_id=?', (profile['id'],))}
+        landed_keys = {job_key(job['company'], job['title']) for _, job, landed in previous.values() if landed}
+
+        fact_winners = set()
         # A listing-only read can use the list ID while a detail read uses a
         # requisition ID. Retain the established identity for the same link.
         workday_links = {}
@@ -451,6 +617,13 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
                     job['date_source'] = old[1]['date_source']
             if job.get('gone'):
                 continue
+            title_key = job_key(job['company'], job['title'])
+            repeat = repeat_reason(job)
+            if title_key in fact_winners and not repeat:
+                repeat = 'Another employer board already has this posting.'
+            job['fact_reason'] = posting_facts(profile, dict(job, open=True), today, repeat)
+            if job['fact_reason'] == KEPT_FOR_REVIEW:
+                fact_winners.add(title_key)
             ranked = None
             if exclusion_reason(profile, job):
                 counts['excluded'] += 1
@@ -466,10 +639,14 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
                 db.execute('''INSERT INTO search_backlog (profile_id,identity,first_seen,body,landed)
                     VALUES (?,?,?,?,0) ON CONFLICT(profile_id,identity) DO UPDATE SET body=excluded.body''',
                            (profile['id'], key, job['first_seen'], json.dumps(ranked or job, ensure_ascii=False)))
+        save_workable(db, profile, today, search_jobs, search_runs, previous, employer_keys, repeat_reason)
+        if use_workable:
+            reading['kept'] = sum(job['fact_reason'] == KEPT_FOR_REVIEW for job in search_jobs)
         waiting = []
         for (body,) in db.execute('SELECT body FROM search_backlog WHERE profile_id=? AND landed=0', (profile['id'],)).fetchall():
             job = json.loads(body)
-            if job.get('gone') or too_old(job, today) or exclusion_reason(profile, job):
+            if (job['provider'] == workable.SOURCE or job.get('gone') or too_old(job, today)
+                    or exclusion_reason(profile, job) or repeat_reason(job) in (SKIPPED, ARCHIVED)):
                 continue
             ranked = rank(profile, job)
             if ranked:
@@ -478,6 +655,7 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2):
                            (json.dumps(ranked, ensure_ascii=False), profile['id'], identity(job)))
         landing = landing_set(profile, [job for job in waiting if identity(job) in seen])
         for job in landing:
+            job.pop('fact_reason', None)
             job.pop('workday_country_scope', None)
             job.pop('workday_list_fingerprint', None)
             job.pop('workday_details_read_on', None)
@@ -526,7 +704,8 @@ def main():
         with args.output.open('x', encoding='utf-8') as stream:
             try:
                 profile = profiles.load(args.profile)
-                result = run(profile, boards.fetch_json, args.backlog, date.today())
+                result = run(profile, boards.fetch_json, args.backlog, date.today(),
+                             tracker=args.profile.parent / 'work' / 'applications-tracker.sqlite3')
                 if args.mark_landed:
                     result['metadata']['counts']['backlog_waiting'] -= len(result['landing'])
                 stream.write(json.dumps(result, ensure_ascii=False, indent=2) + '\n')

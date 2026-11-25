@@ -109,6 +109,82 @@ class Base(unittest.TestCase):
 
 
 class Phases(Base):
+    def test_workable_is_opt_in_and_never_lands_skipped_or_archived_copies(self):
+        with closing(store.Store(self.db_file)) as storage, storage.db:
+            storage.put_row('jobs', 'Jobs', 3, HEAD,
+                            [2, 'Example Cloud', 'Fictional Skip Analyst', 'Farland', None, None, None,
+                             'Skipped', None, 'https://example.com/skipped', '', ''])
+            storage.put_row('jobs', 'Jobs', 4, HEAD,
+                            [3, 'Example Cloud', 'Fictional Archived Analyst', 'Farland', None, None, None,
+                             'Tracked', None, 'https://example.com/archived', '', ''])
+            archived_id = storage.db.execute("SELECT id FROM jobs WHERE row=4 AND sheet='Jobs'").fetchone()[0]
+            storage.put_row('old_jobs', 'Old', 2, HEAD,
+                            [3, 'Example Cloud', 'Fictional Archived Analyst', 'Farland', None, None, None,
+                             'Tracked', None, 'https://example.com/archived', '', ''])
+            storage.db.execute("UPDATE old_jobs SET original_job_id=? WHERE sheet='Old' AND row=2", (archived_id,))
+            storage.db.execute('DELETE FROM jobs WHERE id=?', (archived_id,))
+        fake = fixtures.FakeWorkable([{'title': 'Fictional Skip Analyst'}, {'title': 'Fictional Archived Analyst'},
+                                     {'title': 'Fictional Review Analyst'},
+                                     {'title': 'Known Analyst', 'company': 'Known Co'}])
+        with mock.patch.object(self.dr.daily_search.workable, 'fetch_text', fake), \
+             mock.patch.object(self.dr.daily_search.workable.time, 'sleep', return_value=None):
+            self.run_daily()
+            self.assertEqual(fake.calls, [])
+            profile = fixtures.ops_profile(companies=[], search_sources=['workable_search'])
+            profile['goals']['lanes'] = [dict(id='fictional', label='Fictional', titles=['Fictional Analyst'], duties=[])]
+            (self.root / 'profile.json').write_text(json.dumps(profile), encoding='utf-8')
+            before = self.jobs()
+            out = self.run_daily(force=True)
+        self.assertTrue(fake.calls)
+        self.assertEqual([url for url in fake.calls if '/view/' in url],
+                         [f'{fake.origin}/view/{fake.uid(2)}'])
+        self.assertEqual(self.jobs(), before)
+        self.assertEqual(out['phases']['land']['status'], 'done')
+        with closing(sqlite3.connect(self.work / 'search-backlog.sqlite3')) as db:
+            reasons = {job['title']: job['fact_reason'].lower() for (body,) in db.execute(
+                "SELECT body FROM search_backlog WHERE landed=0") if (job := json.loads(body))['provider'] == 'workable_search'}
+        self.assertIn('skipped', reasons['Fictional Skip Analyst'])
+        self.assertIn('archived', reasons['Fictional Archived Analyst'])
+        self.assertIn('already on the tracker', reasons['Known Analyst'])
+        self.assertEqual(reasons['Fictional Review Analyst'], 'kept for review')
+        with closing(sqlite3.connect(self.db_file)) as db:
+            self.assertEqual(db.execute("SELECT read FROM board_reads WHERE provider='workable_search'").fetchall(),
+                             [('complete',)])
+
+    def test_workable_caps_report_coverage_without_a_warning(self):
+        profile = fixtures.ops_profile(companies=[], search_sources=['workable_search'])
+        profile['goals']['lanes'] = [dict(id='fictional', label='Fictional',
+                                         titles=['Fictional Analyst', 'Fictional Reporter'], duties=[])]
+        (self.root / 'profile.json').write_text(json.dumps(profile), encoding='utf-8')
+        workable = self.dr.daily_search.workable
+        cases = (
+            ('DETAIL_LIMIT', 2, fixtures.FakeWorkable([
+                {'date': '2026-03-09'}, {'status': 404}, {'date': '2026-03-09'}]), 2, 1),
+            ('LIST_LIMIT', 3, fixtures.FakeWorkable(query_rows={'Fictional Analyst': []}), 0, 0),
+        )
+        for cap, limit, fake, checked, kept in cases:
+            with self.subTest(cap=cap), mock.patch.object(workable, cap, limit), \
+                 mock.patch.object(workable, 'fetch_text', fake), \
+                 mock.patch.object(workable.time, 'sleep', return_value=None):
+                out = self.run_daily(force=True)
+                search = out['phases']['search']
+                self.assertEqual(search['status'], 'done')
+                self.assertIn(f'Workable: {checked} postings checked, {kept} kept for review.', search['detail'])
+                self.assertEqual(out['status'], 'done')
+
+    def test_failed_workable_read_warns_and_other_boards_still_land(self):
+        profile = fixtures.ops_profile(search_sources=['workable_search'])
+        (self.root / 'profile.json').write_text(json.dumps(profile), encoding='utf-8')
+        fake = fixtures.FakeWorkable(error=(403, {}))
+        with mock.patch.object(self.dr.daily_search.workable, 'fetch_text', fake):
+            out = self.run_daily()
+        search = out['phases']['search']
+        self.assertEqual(search['status'], 'partial')
+        self.assertIn('Workable: 0 postings checked, 0 kept for review.', search['detail'])
+        self.assertIn('HTTP 403', search['detail'])
+        self.assertEqual(out['phases']['land']['status'], 'done')
+        self.assertEqual(out['status'], 'done_with_warnings')
+
     def test_one_run_searches_lands_and_records_every_phase(self):
         out = self.run_daily()
         self.assertEqual(out['status'], 'done')

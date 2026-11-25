@@ -238,7 +238,8 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                 db.execute('UPDATE runs SET profile_id=? WHERE run_id=?', (profile['id'], run_id))
             result = saved
             if result is None:
-                result = daily_search.run(profile, fetch, backlog, slot, mark_landed=False)
+                result = daily_search.run(profile, fetch, backlog, slot, mark_landed=False,
+                                          tracker=work / 'applications-tracker.sqlite3')
                 snapshot.parent.mkdir(parents=True, exist_ok=True)
                 temp = snapshot.with_suffix('.tmp')
                 temp.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
@@ -250,6 +251,13 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
             if workday.get('total'):
                 country = profile['work_rules']['home_country'].strip()
                 detail += f" Workday: {workday['read']} of {workday['total']} boards read for {country}."
+            search_read = next((row for row in result.get('boards', [])
+                                if row['provider'] == daily_search.workable.SOURCE), None)
+            workable_failed = search_read is not None and search_read['read'] == 'failed'
+            if search_read and 'checked' in search_read and 'kept' in search_read:
+                detail += f" Workable: {search_read['checked']} postings checked, {search_read['kept']} kept for review."
+            if search_read and search_read['reason']:
+                detail += ' ' + search_read['reason']
             if not daily_search.boards_read(result):
                 # An outage skips closing, but its readings are still useful.
                 tracker = work / 'applications-tracker.sqlite3'
@@ -258,7 +266,7 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                         recheck.record_board_reads(storage.db, run_id, slot.isoformat(),
                                                    result['metadata']['read_at'], result['boards'])
                 return 'failed', detail
-            return ('partial' if failed else 'done'), detail
+            return ('partial' if failed or workable_failed else 'done'), detail
 
         def land():
             report = land_search.land(work / 'applications-tracker.xlsx', snapshot, backlog,

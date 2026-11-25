@@ -11,11 +11,12 @@ import re
 
 
 DEFAULTS = {'daily_land_limit': 30, 'judge_budget': 20,
-            'max_per_company': 3, 'wild_cards': 3}
+            'max_per_company': 3, 'wild_cards': 3, 'landing_max_age_days': 14}
 WORKDAY_DEFAULTS = {'workday_page_pause_seconds': 1.5,
                     'workday_board_budget_seconds': 360,
                     'workday_run_budget_seconds': 1500}
 PROVIDERS = ('greenhouse', 'lever', 'ashby', 'workday')
+SEARCH_SOURCES = ('workable_search',)
 
 
 def workday_countries(profile):
@@ -121,7 +122,12 @@ def load(path):
         if not isinstance(rules.get(key), bool):
             problems.append('work_rules.' + key + ' must be true or false.')
     search = obj(profile.get('search'), 'search')
-    companies = items(search.get('companies'), 'search.companies', True)
+    sources = items(search.setdefault('search_sources', []), 'search.search_sources')
+    if any(source not in SEARCH_SOURCES for source in sources):
+        problems.append('search.search_sources may only include workable_search.')
+    companies = items(search.get('companies', [] if sources else None), 'search.companies', not sources)
+    if sources:
+        search.setdefault('companies', companies)
     if len(companies) > 300:
         problems.append('search.companies may have at most 300 boards.')
     for index, value in enumerate(companies):
@@ -149,7 +155,7 @@ def load(path):
             text(exclusion.get('reason'), name + '.reason')
     for key, default in DEFAULTS.items():
         search.setdefault(key, default)
-        minimum = 1 if key in ('daily_land_limit', 'max_per_company') else 0
+        minimum = 1 if key in ('daily_land_limit', 'max_per_company', 'landing_max_age_days') else 0
         if type(search[key]) is not int or search[key] < minimum:
             problems.append('search.' + key + f' must be a whole number of at least {minimum}.')
     if type(search.get('wild_cards')) is int and type(search.get('daily_land_limit')) is int and search['wild_cards'] > search['daily_land_limit']:

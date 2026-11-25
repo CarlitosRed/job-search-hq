@@ -146,6 +146,16 @@ def fetch_json(method, url, body=None, *, deadline=None):
         raise ValueError('Use a supported public job-board endpoint.')
     data = None if body is None else json.dumps(body).encode('utf-8')
     request = Request(url, data=data, method=method, headers={'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'JobSearchHQ/1.0 (public job-board reader)'})
+    data = fetch_bounded(request, deadline, MAX_BOARD_BYTES)
+    try:
+        return json.loads(data)
+    except ValueError:
+        raise InvalidBoardResponse('returned invalid JSON', 200) from None
+
+
+def fetch_bounded(request, deadline, max_bytes, *, redirect_handler=None, expected_status=None):
+    """Read a caller-validated endpoint, rejecting redirects by default."""
+    host = urlsplit(request.full_url).hostname
     with _HOST_LOCK:
         slot = _HOST_SLOTS.setdefault(host, threading.BoundedSemaphore(2))
     timeout = TIMEOUT if deadline is None else min(TIMEOUT, deadline - time.monotonic())
@@ -156,26 +166,25 @@ def fetch_json(method, url, body=None, *, deadline=None):
             timeout = min(TIMEOUT, deadline - time.monotonic())
             if timeout <= 0:
                 raise TimeoutError('The job board request timed out.')
-        with build_opener(NoRedirect).open(request, timeout=timeout) as response:
+        with build_opener(redirect_handler or NoRedirect).open(request, timeout=timeout) as response:
+            if expected_status is not None and response.status != expected_status:
+                raise BoardReadError('returned an unexpected HTTP status', response.status)
             if deadline is None:
-                data = response.read(MAX_BOARD_BYTES + 1)
+                data = response.read(max_bytes + 1)
             else:
                 data = bytearray()
-                while len(data) <= MAX_BOARD_BYTES:
+                while len(data) <= max_bytes:
                     if time.monotonic() >= deadline:
                         raise BoardReadError('timed out reading its response', response.status)
-                    chunk = response.read1(min(65536, MAX_BOARD_BYTES + 1 - len(data)))
+                    chunk = response.read1(min(65536, max_bytes + 1 - len(data)))
                     if not chunk:
                         break
                     data.extend(chunk)
     finally:
         slot.release()
-    if len(data) > MAX_BOARD_BYTES:
+    if len(data) > max_bytes:
         raise InvalidBoardResponse('returned a response above the size limit', 200)
-    try:
-        return json.loads(data)
-    except ValueError:
-        raise InvalidBoardResponse('returned invalid JSON', 200) from None
+    return data
 
 
 # Card 06-1d: home-country reads first, place from the job page
