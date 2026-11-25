@@ -31,6 +31,7 @@ jobs:
       - run: python -I tools/hq-dashboard/test_state_path.py
       - run: python -I tools/hq-dashboard/test_search_profile.py
       - run: python -I tools/hq-dashboard/test_daily_search.py
+      - run: python -I tools/hq-dashboard/test_discovery_sources.py
       # Card 03: closing and re-check.
       - run: python -I tools/hq-dashboard/test_board_reads.py
       - run: python -I tools/tracker/test_store.py

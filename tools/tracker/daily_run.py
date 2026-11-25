@@ -258,6 +258,17 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                 detail += f" Workable: {search_read['checked']} postings checked, {search_read['kept']} kept for review."
             if search_read and search_read['reason']:
                 detail += ' ' + search_read['reason']
+            discovery_failed = False
+            for row in result.get('boards', []):
+                label = daily_search.discovery.LABELS.get(row['provider'])
+                if not label:
+                    continue
+                discovery_failed |= row['read'] == 'failed'
+                hidden = ', '.join(f"{count} ({reason.rstrip('.')})" for reason, count in row['hidden'].items())
+                detail += (f" {label} found {row['rows']}, kept {row['kept']} for review, "
+                           f"and hid {hidden or '0'}.")
+                if row['reason']:
+                    detail += ' ' + row['reason']
             if not daily_search.boards_read(result):
                 # An outage skips closing, but its readings are still useful.
                 tracker = work / 'applications-tracker.sqlite3'
@@ -266,7 +277,7 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                         recheck.record_board_reads(storage.db, run_id, slot.isoformat(),
                                                    result['metadata']['read_at'], result['boards'])
                 return 'failed', detail
-            return ('partial' if failed or workable_failed else 'done'), detail
+            return ('partial' if failed or workable_failed or discovery_failed else 'done'), detail
 
         def land():
             report = land_search.land(work / 'applications-tracker.xlsx', snapshot, backlog,

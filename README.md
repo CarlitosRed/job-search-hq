@@ -12,7 +12,7 @@ The qualification judge uses **your own evidence** to assess saved postings. You
 ## What it does
 
 - **Board, list, overview and contacts** over your tracker, with durable saves. Edits queue and conflicts are shown instead of overwritten. In Excel mode, edits wait while the workbook is open.
-- **Search**: the Search tab reads public Greenhouse, Lever, Ashby and Workday boards. A profile can supply the boards. `daily_search.py` uses a profile to rank results in a SQLite backlog and save a new JSON landing set. It does not schedule itself or import results into the tracker. Set `search.search_sources` to `["workable_search"]` in the profile to enable daily Workable discovery for its home country. Workable findings stay in the backlog with a reason or “Kept for review.” `search.landing_max_age_days` defaults to 14 for the fact checks. Company-board landing still uses 45 days.
+- **Search** uses the profile's public Greenhouse, Lever, Ashby and Workday boards. `daily_search.py` ranks results in a SQLite backlog and saves a JSON landing set. Leave `search.search_sources` empty to use only the configured boards, or add any of `"workable_search"`, `"himalayas"` and `"jobicy"`. These sources are off by default. Himalayas and Jobicy leads need a matching employer posting to be kept for review. Source findings stay in the backlog with their decision and are excluded from landing. The daily-run panel shows how many Himalayas and Jobicy leads were found, kept or hidden and why. `search.landing_max_age_days` defaults to 14 for the fact checks. Company-board landing still uses 45 days.
 - **Scores and stars.** List, Board and Top opportunities show a 1.0 to 5.0 score and an action: Apply now, Worth applying, Only with a reason or Skip. Unscored jobs show Not scored yet. The drawer shows quoted reasons and main requirements with evidence titles. Highest score first puts starred jobs first, then sorts by score and date. With SQLite you can star or unstar a job.
 - **Review a posting.** Paste text or add photos, review requirements and gaps, then ask for a CV or letter.
 - **Evidence first**: the model is asked to use entries in `evidence/` that are marked `verified` or `stated`, `public-safe: yes`
@@ -87,6 +87,7 @@ python -I tools/hq-dashboard/test_strong_cv.py
 python -I tools/hq-dashboard/test_state_path.py
 python -I tools/hq-dashboard/test_search_profile.py
 python -I tools/hq-dashboard/test_daily_search.py
+python -I tools/hq-dashboard/test_discovery_sources.py
 python -I tools/hq-dashboard/test_board_reads.py
 python -I tools/tracker/test_store.py
 python -I tools/tracker/test_stages.py

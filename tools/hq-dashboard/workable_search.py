@@ -20,8 +20,9 @@ RUN_SECONDS = 180
 
 
 class ViewRedirect(HTTPRedirectHandler):
-    def __init__(self, boards):
+    def __init__(self, boards, before_redirect=None):
         self.boards = boards
+        self.before_redirect = before_redirect
         self.followed = False
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -36,13 +37,19 @@ class ViewRedirect(HTTPRedirectHandler):
                 has_dot_segment = any(part in ('.', '..') for part in original_path.split('/'))
                 if (not has_dot_segment and slug not in ('.', '..') and '/' not in slug
                         and '\\' not in slug and not CONTROL.search(slug)):
+                    if self.before_redirect is not None:
+                        try:
+                            self.before_redirect(newurl)
+                        except Exception:
+                            fp.close()
+                            raise
                     self.followed = True
                     return super().redirect_request(req, fp, code, msg, headers, newurl)
         fp.close()
         raise self.boards.BoardReadError('redirected outside its allowed view page', code)
 
 
-def fetch_text(method, url, *, deadline, boards):
+def fetch_text(method, url, *, deadline, boards, before_redirect=None):
     endpoint = urlsplit(url)
     view = not endpoint.query and re.fullmatch(rf'/view/{UUID}', endpoint.path)
     if (method != 'GET' or endpoint.netloc != 'jobs.workable.com' or endpoint.scheme != 'https'
@@ -52,7 +59,7 @@ def fetch_text(method, url, *, deadline, boards):
     request = Request(url, headers={'Accept': 'text/html' if view else 'text/markdown',
                                     'User-Agent': 'JobSearchHQ/1.0 (public job-board reader)'})
     data = boards.fetch_bounded(request, deadline, boards.MAX_BYTES,
-                                redirect_handler=ViewRedirect(boards) if view else None, expected_status=200)
+                                redirect_handler=ViewRedirect(boards, before_redirect) if view else None, expected_status=200)
     return data.decode('utf-8', errors='strict')
 
 
