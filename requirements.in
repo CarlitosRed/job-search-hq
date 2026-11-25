@@ -1,0 +1,5 @@
+# Direct dependencies. requirements.txt is generated from this file with hashes:
+#   uv pip compile requirements.in --universal --generate-hashes --python-version 3.12 -o requirements.txt
+openpyxl==3.1.5
+python-docx==1.2.0
+Pillow==12.3.0
