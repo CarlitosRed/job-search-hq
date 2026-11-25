@@ -65,7 +65,40 @@ async function pcDownload(url,fallback,button){if(PCDL.has(url))return;PCDL.add(
 downloadCv=async function(id){return pcDownload('/api/cvs/'+encodeURIComponent(id),'CV.docx',null)};
 /* "Check fit and create CV" never inherits a pending "Write a cover letter". */
 const pcReviewFromJob=reviewFromJob;reviewFromJob=function(j){PC_LETTER='';return pcReviewFromJob(j)};
-docBlock=function(title,which,text,extra=''){return `<section class="sec" data-sec="${which}"><div class="doc-h"><h3>${title}</h3><button class="btn ghost" type="button" data-doc="${which}" data-do="copy">Copy</button><button class="btn ghost" type="button" data-pc-doc="${which}">Download draft .docx</button></div><pre class="doc">${esc(text)}</pre>${extra}</section>`};
+let PC_TRIM=null;
+function pcTrimCard(record){
+ const fit=record?.fit,warning=fit?.cv_page_warning;
+ if(!warning)return '';
+ const state=PC_TRIM?.id===record._id&&PC_TRIM?.content===fit.cv_markdown?PC_TRIM:null;
+ const preview=state?.preview,off=OP||state?.busy?' disabled':'';
+ return `<div data-cv-trim><div class="acts"><p>${esc(warning)}</p>
+  ${preview?'':`<button class="btn ghost" type="button" data-pc-trim="preview"${off}>Trim to one page</button>`}</div>
+  ${preview?`<p>About ${preview.pages.toFixed(1)} pages after trimming.</p>
+   ${preview.removed.length?`<ul class="plain">${preview.removed.map(line=>`<li>${esc(line)}</li>`).join('')}</ul>`:'<p>There are no lines to remove.</p>'}
+   <div class="acts">
+   ${preview.removed.length?`<button class="btn" type="button" data-pc-trim="apply"${off}>Remove these lines</button>`:''}
+   <button class="btn ghost" type="button" data-pc-trim="keep"${off}>Keep all</button></div>`:''}
+  ${state?.message?`<p role="status">${esc(state.message)}</p>`:''}</div>`;
+}
+docBlock=function(title,which,text,extra='',record){return `<section class="sec" data-sec="${which}"><div class="doc-h"><h3>${title}</h3><button class="btn ghost" type="button" data-doc="${which}" data-do="copy">Copy</button><button class="btn ghost" type="button" data-pc-doc="${which}">Download draft .docx</button></div><pre class="doc">${esc(text)}</pre>${which==='cv'?pcTrimCard(record):''}${extra}</section>`};
+$('#result').addEventListener('click',async e=>{
+ const button=e.target.closest('[data-pc-trim]');
+ if(!button||!CUR?.fit?.cv_page_warning||OP||PC_TRIM?.busy)return;
+ const action=button.dataset.pcTrim,id=CUR._id,content=CUR.fit.cv_markdown;
+ if(action==='keep'){PC_TRIM=null;renderResult(CUR);return}
+ const preview=PC_TRIM?.id===id&&PC_TRIM?.content===content?PC_TRIM.preview:null;
+ if(action==='apply'&&!preview)return;
+ const state=PC_TRIM={id,content,preview,busy:true};
+ renderResult(CUR);
+ try{
+  const request=action==='apply'?{id,draftHash:preview.draftHash,previewHash:preview.previewHash}:
+   {id,draftHash:CUR.fit.cv_draft_hash};
+  const result=await pcFetch('/api/ai/cv-trim/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});
+  if(action==='preview')state.preview=result;
+  else{PC_TRIM=null;gotPostings(POSTINGS.map(p=>p._id===id?result.posting:p));toast('Trimmed CV saved as a draft.')}
+ }catch(x){state.message=x.message}
+ finally{state.busy=false;if(CUR?._id===id)renderResult(CUR)}
+});
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-pc-doc]');if(!b||!CUR)return;e.stopImmediatePropagation();b.disabled=true;
  try{const r=await fetch('/api/ai/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:CUR._id,kind:b.dataset.pcDoc==='cv'?'cv':'letter'})});
  if(!r.ok){const error=await r.json().catch(()=>({}));throw Error(error.error||'Could not export this draft. Sign in again if your session ended.')}

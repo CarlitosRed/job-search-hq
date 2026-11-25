@@ -327,6 +327,30 @@ class CatchUp(Base):
         self.assertFalse(self.record.exists(), 'reading the status never creates the record')
 
 
+class Paused(Base):
+    def test_paused_status_reports_last_success_despite_interrupted_run(self):
+        self.run_daily()
+        with closing(sqlite3.connect(self.record)) as db, db:
+            db.execute("UPDATE runs SET finished='2026-03-10T06:05:00'")
+            db.execute("INSERT INTO runs VALUES ('r2', 'example-ops', '2026-03-12', 'catch-up', "
+                       "'2026-03-12T08:00:00', NULL, 'running', '2026-03-11')")
+        state = self.dr.status(self.record, datetime(2026, 3, 12, 12), enabled=False)
+        self.assertEqual(state['tone'], 'n')
+        self.assertEqual(state['message'], 'Daily search is paused. Last search on Mar 10 at 06:05.')
+        self.assertEqual(state['last_success'], '2026-03-10T06:05:00')
+        self.assertIsNone(state['missed_since'])
+
+    def test_paused_runner_blocks_automatic_triggers_and_allows_manual(self):
+        self.settings(enabled=False)
+        fetch = mock.Mock(side_effect=AssertionError('Paused search fetched a board'))
+        for trigger in ('scheduled', 'catch-up'):
+            with self.subTest(trigger=trigger):
+                self.assertEqual(self.run_daily(trigger=trigger, force=True, fetch=fetch)['status'], 'paused')
+        fetch.assert_not_called()
+        self.assertFalse(self.record.exists())
+        self.assertEqual(self.run_daily(trigger='manual')['status'], 'done')
+
+
 class Resume(Base):
     def test_a_failed_landing_resumes_with_the_same_run_id_without_searching_again(self):
         real = self.dr.land_search.land

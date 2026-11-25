@@ -719,6 +719,9 @@ border-radius:24px;border:1px solid var(--line);background:var(--card);color:var
 .banner.a{background:var(--amber-soft);color:var(--amber-ink)}
 .banner.n{background:var(--soft);color:var(--ink2)}
 .banner svg{width:17px;height:17px;flex:none;margin-top:1px}
+.stale-boards{margin-bottom:10px;padding:10px 12px;border-radius:12px;font-size:13px;background:var(--soft);color:var(--ink2)}
+.stale-boards summary{cursor:pointer}
+.stale-boards ul{display:block;margin:6px 0 0;padding:0 0 0 1.25em}
 .sec h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin:0 0 10px;font-weight:700}
 .stepper{display:grid;grid-template-columns:repeat(5,1fr);list-style:none;margin:0;padding:0;counter-reset:s}
 .stepper li{position:relative;text-align:center}
@@ -1794,6 +1797,14 @@ function detail(j){const st=stageOf(j),si=stageIdx(j),closed=closedStage(st);
  </article>`}
 
 /* ---------- render ---------- */
+function staleBoardsNotice(boards){
+ if(!boards?.length)return "";
+ const rows=boards.map(b=>{
+  const since=new Date(b.since+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"});
+  return `<li>${esc(`${b.board}: not fully read since ${since}${b.reason?" ("+b.reason+")":""}`)}</li>`;
+ }).join("");
+ return `<details class="stale-boards"><summary>${boards.length} job board${boards.length===1?"":"s"} not fully read</summary><ul class="banner n">${rows}</ul></details>`;
+}
 function render(){const keep=$$("textarea[data-note][data-dirty='1']").map(t=>[t.closest("[data-k]").dataset.k,t.value,t===document.activeElement,t.selectionStart]);
  const openRequirements=$$(".judge-requirements[open]").map(d=>d.closest("[data-k]").dataset.k);
  const rounds=$$(".round input[data-field]").filter(t=>t.value!==t.defaultValue||t===document.activeElement).map(t=>[t.closest("[data-k]").dataset.k,t.closest(".round").dataset.id,t.dataset.field,t.value,t===document.activeElement,t.selectionStart,t.selectionEnd,t.selectionDirection]);
@@ -1813,7 +1824,10 @@ function renderInner(){const js=filtered();$$(".seg button").forEach(b=>b.setAtt
  else if(S.view==="board")m.innerHTML=board(js);
  else if(S.view==="list")m.innerHTML=listView(js);
  else m.innerHTML=contactsView();
- if(["overview","board","list"].includes(S.view)&&D.daily_run){const tone=["a","n"].includes(D.daily_run.tone)?" "+D.daily_run.tone:"";const stale=D.stale_boards||[];m.insertAdjacentHTML("afterbegin",`<div class="banner${tone}" role="status" style="margin-bottom:10px">${esc(D.daily_run.message)}</div>${stale.length?`<div class="banner n" style="margin-bottom:10px">${esc(stale.map(b=>`${b.board}: not fully read since ${new Date(b.since+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}${b.reason?" ("+b.reason+")":""}`).join("; "))}</div>`:""}`)}
+ if(["overview","board","list"].includes(S.view)&&D.daily_run){
+  const tone=["a","n"].includes(D.daily_run.tone)?" "+D.daily_run.tone:"";
+  m.insertAdjacentHTML("afterbegin",`<div class="banner${tone}" role="status" style="margin-bottom:10px">${esc(D.daily_run.message)}</div>${staleBoardsNotice(D.stale_boards)}`);
+ }
  if(usesJobView())m.insertAdjacentHTML("afterbegin",jobViews());
  if(scroll&&$(".board-cols"))$(".board-cols").scrollLeft=scroll;
  const sp=$("#split");if(sp&&!sp.querySelector(".side"))sp.classList.add("noside");

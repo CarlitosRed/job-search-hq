@@ -353,7 +353,7 @@ function renderResult(r){const box=$("#result");if(!r){box.innerHTML="";return}
  ${arr(f.gaps).length?`<section class="sec"><h3>What you're missing</h3><ul class="plain">${arr(f.gaps).map(g=>`<li>${esc(evidenceText(g))}</li>`).join("")}</ul></section>`:""}
  ${next?`<section class="sec next"><h3>Next step</h3>${next}</section>`:""}
  ${arr(f.cv_edits).length?`<details class="sec"${det?" open":""}><summary>What was tailored in the CV</summary><ul class="plain">${arr(f.cv_edits).map(g=>`<li>${esc(evidenceText(g))}</li>`).join("")}</ul></details>`:""}
- ${hasCv?docBlock("CV for this posting","cv",f.cv_markdown,`${watchOut("About this CV:",f.cv_flags)}${ai?`<div class="doc-f"><button class="btn ghost" type="button" data-rv="cv"${off}>Regenerate</button></div>`:""}${status("cv")}`):""}
+ ${hasCv?docBlock("CV for this posting","cv",f.cv_markdown,`${watchOut("About this CV:",f.cv_flags)}${ai?`<div class="doc-f"><button class="btn ghost" type="button" data-rv="cv"${off}>Regenerate</button></div>`:""}${status("cv")}`,r):""}
  ${hasCl?docBlock("Cover letter","cl",f.cover_letter_markdown,`<p class="sent-used"><b>Sentiment:</b> ${esc(used)}<small class="mut">${words} words</small></p>${watchOut("About this letter:",f.letter_flags)}${sentOn?sentBox(off):ai?`<div class="doc-f"><button class="btn ghost" type="button" data-rv="letter"${off}>Try another sentiment</button></div>`:""}${status("cl")}`):""}
  ${sourceNames?`<p class="mut">Evidence used: ${esc(sourceNames)}</p>`:""}
  ${hasCv||hasCl?`<p class="mut">{{DRAFT_HELP}}</p>`:""}</article>`;

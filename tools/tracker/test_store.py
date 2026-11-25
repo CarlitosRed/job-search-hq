@@ -15,7 +15,8 @@ import sys
 import tempfile
 import unittest
 from contextlib import contextmanager
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import openpyxl
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -121,6 +122,32 @@ class Base(unittest.TestCase):
             yield connection
         finally:
             connection.close()
+
+
+class PostBodyLimits(Base):
+    def test_invalid_body_lengths_are_rejected_before_reading(self):
+        tracker = tracker_for(self.xlsx)
+        for path in ('/api/add', '/api/update', '/api/rounds'):
+            for length, status in ((None, 400), ('-1', 400), ('wrong', 400), ('262145', 413), ('9' * 5000, 413)):
+                with self.subTest(path=path, length=length):
+                    headers = {'Content-Length': length} if length is not None else {}
+                    handler = SimpleNamespace(path=path, headers=headers, local=lambda: True,
+                                              rfile=Mock(), send=Mock())
+                    tracker.H.do_POST(handler)
+                    handler.rfile.read.assert_not_called()
+                    self.assertEqual(handler.send.call_args.args[0], status)
+
+    def test_body_at_limit_is_read_and_processed(self):
+        tracker = tracker_for(self.xlsx)
+        body = b'{}' + b' ' * 262142
+        handler = SimpleNamespace(path='/api/update', headers={'Content-Length': str(len(body))},
+                                  local=lambda: True, rfile=Mock(), send=Mock())
+        handler.rfile.read.return_value = body
+        with patch.object(tracker, 'update') as update:
+            tracker.H.do_POST(handler)
+        handler.rfile.read.assert_called_once_with(262144)
+        update.assert_called_once_with({})
+        self.assertEqual(handler.send.call_args.args[0], 200)
 
 
 class Migration(Base):

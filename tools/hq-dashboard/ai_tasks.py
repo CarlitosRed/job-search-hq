@@ -12,7 +12,7 @@ _settings_spec.loader.exec_module(hq_settings)
 SETTINGS = hq_settings.load()
 
 import base64
-from contextlib import closing
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from functools import cache
 import hashlib
@@ -391,6 +391,164 @@ def cv_skills_problem(content,record,bank,sources):
     return None
 
 
+def cv_text_problem(content):
+    if _cleaner is None:
+        draft_problem('', 'cv')
+    if content != _cleaner.plain(content):
+        return 'The CV contains hidden characters. Try again.'
+    if problem := cv_heading_problem(content):
+        return problem
+    if word_count(content) > 600:
+        return 'The CV came back too long for one page. Try again.'
+    return None
+
+
+def cv_page_estimate(content):
+    pages, _, last = cv_layout.page_fill(*cv_layout.parse(content))
+    return pages - 1 + last
+
+
+def cv_page_warning(content):
+    pages = cv_page_estimate(content)
+    return f'About {pages:.1f} pages. A CV should fit on one.' if pages > 1 else None
+
+
+def cv_draft_hash(content):
+    return hashlib.sha256(content.encode('utf-8', errors='surrogatepass')).hexdigest()
+
+
+def draft_evidence_problem(content, sources, claims, bank):
+    if (not isinstance(sources, list) or not sources or not isinstance(claims, list) or not claims
+            or any(not isinstance(c, dict) for c in claims)):
+        return 'The draft has no complete evidence map.'
+    if (any(not isinstance(s, str) or s not in bank['entries'] for s in sources)
+            or any(not isinstance(c.get('evidence'), list) or not c['evidence']
+                   or any(s not in sources for s in c['evidence']) for c in claims)):
+        return 'The draft cited evidence that is not eligible.'
+    if any(not isinstance(c.get('text'), str) or not c['text'].strip() or c['text'] not in content for c in claims):
+        return 'The evidence map does not match the document text.'
+    return None
+
+
+def cv_content_problem(content, claims, sources, bank, record):
+    if problem := cv_summary_problem(content, claims, bank, record):
+        return problem
+    sections = cv_layout.parse(content)[1]
+    cited = {key: bank['entries'][key] for key in sources}
+    ordinary = [claim for claim in claims if claim.get('kind', 'bullet') == 'bullet']
+    return cv_experience_problem(sections, cited, ordinary) or cv_project_problem(sections, cited, ordinary)
+
+
+def cv_fixed_content(bank):
+    """Build the same fixed lines and claim mappings for saving and revalidation."""
+    fixed, claims = [], []
+    for section in SETTINGS['cv_fixed_sections']:
+        lines=[]
+        for spec in section.get('lines',[section]):
+            entries=[(key,bank['entries'][key]) for key in spec['entries'] if key in bank['entries']]
+            parts=[(part,key) for key,entry in entries for part in
+                   ([entry['text']] if spec['from']=='text' else entry.get('skills',[])) if part]
+            if 'lines' in section:
+                parts=[(' '.join(part.splitlines()),key) for part,key in parts]
+            if 'lines' in section or spec['from']=='skills':
+                if parts:lines.append((spec.get('join',', ').join(part for part,_ in parts),
+                                       list(dict.fromkeys(key for _,key in parts))))
+            else:
+                lines.extend((part,[key]) for part,key in parts)
+        if not lines:continue
+        name=section['name'].strip().rstrip(':').strip()
+        fixed.append((cv_layout.section_heading('## '+name),'## '+name+'\n'+'\n'.join(text for text,_ in lines)+'\n'))
+        for text,evidence in lines:
+            claims.append({'text':text,'kind':'bullet','evidence':evidence})
+    return fixed, claims
+
+
+@cache
+def _load_cv_onepage():
+    spec = importlib.util.spec_from_file_location('hq_cv_onepage', HERE / 'cv_onepage.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def trim_cv_draft(record, *, expected=None):
+    """Compute the same deletion proposal for preview and confirmation."""
+    content = record.get('fit', {}).get('cv_markdown')
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError('Create a CV draft first.')
+    digest = cv_draft_hash(content)
+    if expected is not None and digest != expected.get('draftHash'):
+        raise ValueError('The CV draft changed. Reload the page and preview the trim again.')
+    try:
+        cv_onepage = _load_cv_onepage()
+        focus = cv_onepage.focus_words(record.get('role') or '')
+        result, removed = cv_onepage.trim_lines(content, focus)
+    except SystemExit as error:
+        raise ValueError(str(error)) from error
+    preview_hash = cv_draft_hash(result)
+    return result, {'draftHash': digest, 'previewHash': preview_hash, 'removed': removed,
+                    'pages': cv_page_estimate(result)}
+
+
+def trim_cv_evidence(record, content, bank):
+    fit = record['fit']
+    problem = 'The CV evidence map could not be kept consistent after trimming.'
+    claims = fit.get('cv_claims')
+    candidates = fit.get('cv_sources', fit.get('sources'))
+    if (not isinstance(claims, list) or not isinstance(candidates, list)
+            or any(not isinstance(key, str) for key in candidates)):
+        raise ValueError(problem)
+    for claim in claims:
+        if (not isinstance(claim, dict) or not isinstance(claim.get('text'), str)
+                or not isinstance(claim.get('evidence'), list)
+                or any(not isinstance(key, str) for key in claim['evidence'])):
+            raise ValueError(problem)
+    claims = [claim for claim in claims if claim['text'] in content]
+    required = {key for claim in claims for key in claim['evidence']}
+    # Legacy records store only the most recently saved document's sources.
+    # The CV claims also identify its sources when a letter was saved later.
+    if 'cv_sources' not in fit:
+        candidates = list(dict.fromkeys(candidates + [key for claim in claims for key in claim['evidence']]))
+    sources = [key for key in dict.fromkeys(candidates) if key in bank['entries']]
+    if issue := draft_evidence_problem(content, sources, claims, bank):
+        raise ValueError(issue)
+
+    # Retain sources that independently support role headings and generated Skills.
+    # Project titles are validated against the same sources as their kept bullets.
+    sections = cv_layout.parse(content)[1]
+    roles = {heading[1] for section in sections if cv_layout.section_heading('## ' + section['name']) == 'experience'
+             for line in section['items'] if (heading := re.match(r'^###\s+(.*)', line))}
+    role_sources = {key: set(bank['entries'][key].get('roles', [])) for key in sources}
+
+    def supports_roles(keys):
+        return roles <= set().union(*(role_sources[key] for key in keys))
+
+    if not supports_roles(sources):
+        raise ValueError(problem)
+    if issue := cv_skills_problem(content, record, bank, sources):
+        raise ValueError(issue)
+    for key in reversed(sources.copy()):
+        if key not in required:
+            without = [source for source in sources if source != key]
+            if supports_roles(without) and cv_skills_problem(content, record, bank, without) is None:
+                sources = without
+
+    # Fixed lines are generated from the bank at save time and can join several
+    # entries into a single line. Require the same generated text and mappings.
+    fixed, fixed_claims = cv_fixed_content(bank)
+    fixed_names = {name for name, _ in fixed}
+    chunks = cv_source_sections(content)
+    kept_fixed = [(name, text.strip()) for name, text in chunks if name in fixed_names]
+    if (kept_fixed != [(name, text.strip()) for name, text in fixed]
+            or any(claim not in claims for claim in fixed_claims)):
+        raise ValueError(problem)
+    other_text = ''.join(text for name, text in chunks if name not in fixed_names)
+    ordinary = [claim for claim in claims if claim not in fixed_claims or claim['text'] in other_text]
+    if issue := cv_content_problem(content, ordinary, sources, bank, record):
+        raise ValueError(issue)
+    return claims, sources
+
+
 def strong_cv(content,record,bank,sources,claims):
     """Reorder whole bullet blocks and sections; skills come from cited entries."""
     ranked=cv_evidence(record,bank)
@@ -410,27 +568,11 @@ def strong_cv(content,record,bank,sources,claims):
     removed=''.join(text for name,text in original if name in fixed_names)
     kept=''.join(text for name,text in original if name not in fixed_names and name not in ('skills','technical skills'))
     claims[:]=[claim for claim in claims if claim['text'] not in removed or claim['text'] in kept]
-    fixed=[]
-    for section in SETTINGS['cv_fixed_sections']:
-        lines=[]
-        for spec in section.get('lines',[section]):
-            entries=[(key,bank['entries'][key]) for key in spec['entries'] if key in bank['entries']]
-            parts=[(part,key) for key,entry in entries for part in
-                   ([entry['text']] if spec['from']=='text' else entry.get('skills',[])) if part]
-            if 'lines' in section:
-                parts=[(' '.join(part.splitlines()),key) for part,key in parts]
-            if 'lines' in section or spec['from']=='skills':
-                if parts:lines.append((spec.get('join',', ').join(part for part,_ in parts),
-                                       list(dict.fromkeys(key for _,key in parts))))
-            else:
-                lines.extend((part,[key]) for part,key in parts)
-        if not lines:continue
-        name=section['name'].strip().rstrip(':').strip()
-        fixed.append((cv_layout.section_heading('## '+name),'## '+name+'\n'+'\n'.join(text for text,_ in lines)+'\n'))
-        for text,evidence in lines:
-            claims.append({'text':text,'kind':'bullet','evidence':evidence})
-            for key in evidence:
-                if key not in sources:sources.append(key)
+    fixed,fixed_claims=cv_fixed_content(bank)
+    claims.extend(fixed_claims)
+    for claim in fixed_claims:
+        for key in claim['evidence']:
+            if key not in sources:sources.append(key)
     skill_lines=cv_skill_lines(record,bank,sources)
     if skill_lines:
         early=SETTINGS['cv_skills_placement']=='tools_tested'
@@ -573,10 +715,68 @@ class Tasks:
 
     def posting(self,key):
         with self.connect() as db:
-            row=db.execute('SELECT body FROM postings WHERE id=?',(key,)).fetchone()
+            return self._read_posting(db,key)
+
+    def _read_posting(self,db,key):
+        row=db.execute('SELECT body FROM postings WHERE id=?',(key,)).fetchone()
         if not row:
             raise ValueError('Analyze the posting first.')
         return json.loads(row[0])
+
+    @contextmanager
+    def edit_posting(self,db,key):
+        # The caller commits or rolls back, including any accompanying task update.
+        db.execute('BEGIN IMMEDIATE')
+        record=self._read_posting(db,key)
+        yield record
+        db.execute('UPDATE postings SET body=? WHERE id=?',(json.dumps(record),key))
+
+    def preview_cv_trim(self, payload):
+        _, preview = trim_cv_draft(self.posting(payload['id']), expected=payload if 'draftHash' in payload else None)
+        return preview
+
+    def apply_cv_trim(self, payload):
+        key = payload['id']
+        with self.connect() as db, db, self.edit_posting(db, key) as record:
+            content, preview = trim_cv_draft(record, expected=payload)
+            if preview['previewHash'] != payload.get('previewHash'):
+                raise ValueError('The proposed trim changed. Preview it again.')
+            if preview['pages'] > 1:
+                raise ValueError('The trimmed CV would still be over one page. Edit the draft before trying again.')
+            if not preview['removed']:
+                raise ValueError('There are no lines to remove.')
+            fit = record['fit']
+            try:
+                cv_onepage = _load_cv_onepage()
+                cv_onepage.verify_subset(fit['cv_markdown'], content)
+                cv_onepage.verify_summary_support(cv_layout.parse(content)[1])
+            except SystemExit as error:
+                raise ValueError(str(error)) from error
+            if problem := cv_text_problem(content) or draft_problem(content, 'cv'):
+                raise ValueError(problem)
+            if problems := readability_problems(content, SETTINGS['cv_blocked_terms']):
+                raise ValueError(' '.join(problems))
+            if not content.strip() or len(content) > 30000:
+                raise ValueError('The trimmed CV must contain draft text within the save limit.')
+            bank = self.bank_loader()
+            claims, sources = trim_cv_evidence(record, content, bank)
+            letter_sources = []
+            if fit.get('cover_letter_markdown'):
+                letter_sources = fit.get('letter_sources')
+                letter_claims = fit.get('letter_claims')
+                if letter_sources is None:
+                    try:
+                        letter_sources = list(dict.fromkeys(key for claim in letter_claims for key in claim['evidence']))
+                    except (KeyError, TypeError):
+                        raise ValueError('The cover letter evidence map could not be kept consistent.') from None
+                if draft_evidence_problem(fit['cover_letter_markdown'], letter_sources, letter_claims, bank):
+                    raise ValueError('The cover letter evidence map could not be kept consistent.')
+                fit['letter_sources'] = letter_sources
+            fit.update(cv_markdown=content, cv_claims=claims, cv_sources=sources,
+                       sources=list(dict.fromkeys(sources + letter_sources)))
+            fit.pop('cv_rationale', None)
+            record.update(reviewed=False, review=None)
+        return {'posting': dict(record, _id=key)}
 
     def submit(self,p):
         kind=p.get('kind')
@@ -722,25 +922,16 @@ class Tasks:
                     claims=out.get('claims',[])
                     if not isinstance(content,str) or not content.strip() or len(content)>30000 or not sources or not claims:
                         raise ValueError('The draft has no complete evidence map.')
-                    if kind=='cv':
-                        if _cleaner is None:draft_problem('', 'cv')
-                        # Validate the exact text Word sees before parsing headings or transforming it.
-                        if content!=_cleaner.plain(content):
-                            raise ValueError('The CV contains hidden characters. Try again.')
-                        problem=cv_heading_problem(content)
-                        if problem:raise ValueError(problem)
-                    if kind=='cv' and word_count(content)>600:
-                        raise ValueError('The CV came back too long for one page. Try again.')
+                    if kind=='cv' and (problem:=cv_text_problem(content)):
+                        raise ValueError(problem)
                     problem=draft_problem(content,kind)
                     if problem:
                         raise ValueError(problem)
                     problems=readability_problems(content,SETTINGS['cv_blocked_terms'])
                     if problems:
                         raise ValueError(' '.join(problems))
-                    if any(s not in bank['entries'] for s in sources) or any(not c.get('evidence') or any(s not in sources for s in c['evidence']) for c in claims):
-                        raise ValueError('The draft cited evidence that is not eligible.')
-                    if any(not isinstance(c.get('text'),str) or not c['text'].strip() or c['text'] not in content for c in claims):
-                        raise ValueError('The evidence map does not match the document text.')
+                    if problem:=draft_evidence_problem(content,sources,claims,bank):
+                        raise ValueError(problem)
                     flags=out.get('flags',[])
                     if kind=='cv':
                         rationale=out.get('rationale')
@@ -750,14 +941,8 @@ class Tasks:
                         claims=[dict(claim,kind='bullet') if claim.get('kind')=='summary' and
                                 cv_claim_problem(dict(claim,kind='bullet'),bank) is None else claim
                                 for claim in claims]
-                        problem=cv_summary_problem(content,claims,bank,record)
+                        problem=cv_content_problem(content,claims,sources,bank,record)
                         if problem:raise ValueError(problem)
-                        draft_sections=cv_layout.parse(content)[1]
-                        cited_entries={key:bank['entries'][key] for key in sources}
-                        ordinary_claims=[claim for claim in claims if claim.get('kind','bullet')=='bullet']
-                        for validate in (cv_experience_problem,cv_project_problem):
-                            problem=validate(draft_sections,cited_entries,ordinary_claims)
-                            if problem:raise ValueError(problem)
                         content=strong_cv(content,record,bank,sources,claims)
                         if word_count(content)>600:
                             raise ValueError('The CV came back too long for one page. Try again.')
@@ -790,15 +975,22 @@ class Tasks:
                             previous=date
                         if any(c['text'] not in content for c in claims):
                             raise ValueError('The evidence map does not match the final document text after CV formatting. Try again.')
-                    record['fit'].update({field:content,'sources':sources,('cv_flags' if kind=='cv' else 'letter_flags'):flags,kind+'_claims':claims})
-                    if kind=='cv':
-                        record['fit'].pop('cv_rationale',None)
-                        if out.get('rationale') is not None:record['fit']['cv_rationale']=out['rationale']
-                    if kind=='letter':record['fit'].update(sentiment=p.get('sentiment',''),withoutSentiment=p.get('withoutSentiment',False))
-                    record.update(reviewed=False,review=None)
+                    draft_fields={field:content,'sources':sources,kind+'_sources':sources,
+                                  kind+'_flags':flags,kind+'_claims':claims}
+                    if kind=='letter':
+                        draft_fields.update(sentiment=p.get('sentiment',''),withoutSentiment=p.get('withoutSentiment',False))
                     posting_id=p['postingId']
                 with self.connect() as db,db:
-                    db.execute('INSERT OR REPLACE INTO postings VALUES(?,?)',(posting_id,json.dumps(record)))
+                    if kind=='analyze':
+                        db.execute('INSERT OR REPLACE INTO postings VALUES(?,?)',(posting_id,json.dumps(record)))
+                    else:
+                        with self.edit_posting(db,posting_id) as latest:
+                            fit=latest['fit']
+                            fit.update(draft_fields)
+                            if kind=='cv':
+                                fit.pop('cv_rationale',None)
+                                if out.get('rationale') is not None:fit['cv_rationale']=out['rationale']
+                            latest.update(reviewed=False,review=None)
                     db.execute("UPDATE tasks SET status='done',message='Saved. Documents remain drafts awaiting separate truth review.',result=? WHERE id=?",(posting_id,key))
             except Exception as error:
                 message=str(error) if isinstance(error,(ValueError,RuntimeError)) else 'The task failed. Check Codex login, usage and local permissions before retrying.'

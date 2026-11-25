@@ -247,6 +247,8 @@ class App:
         self.ai = ai_module.Tasks(self.state)
         self.evidence_notes = ai_module.evidence_notes
         self.rubric_version = ai_module.RUBRIC_VERSION
+        self.cv_page_warning = ai_module.cv_page_warning
+        self.cv_draft_hash = ai_module.cv_draft_hash
         # Worker imports/checks the canonical v3.2 policy before serving analysis.
         #
         # Public employer-board discovery has its own durable journal and never
@@ -349,9 +351,12 @@ class App:
                             current = set()
                         d['stale_boards'] = daily_run.recheck.stale_boards(storage, datetime.now().date(), current=current)
             try:
-                at = hq_settings.load()['daily_run']['at']
+                config = hq_settings.load()['daily_run']
+                if not isinstance(config, dict):
+                    config = {}
                 d['daily_run'] = daily_run.status(self.tracker.XLSX.parent / 'daily-runs.sqlite3',
-                                                  datetime.now(), at=at)
+                                                  datetime.now(), at=config.get('at', '06:00'),
+                                                  enabled=config.get('enabled', True))
             except (OSError, ValueError, sqlite3.Error, KeyError, TypeError):
                 d['daily_run'] = dict(state='failed', tone='r',
                                      message='The daily search record could not be read.',
@@ -552,8 +557,17 @@ def handler(app):
                 if self.path == '/api/health':
                     return self.send(200, app.health())
                 if self.path == '/api/ai/state':
+                    postings = app.ai.postings()
+                    for posting in postings:
+                        fit = posting.get('fit')
+                        if not isinstance(fit, dict):
+                            continue
+                        content = fit.get('cv_markdown')
+                        if isinstance(content, str) and (warning := app.cv_page_warning(content)):
+                            fit['cv_page_warning'] = warning
+                            fit['cv_draft_hash'] = app.cv_draft_hash(content)
                     return self.send(200, {'rubric_version':app.rubric_version,'tasks':app.ai.list_tasks(),
-                                          'postings':app.ai.postings(),'evidence_titles':evidence_titles()})
+                                          'postings':postings,'evidence_titles':evidence_titles()})
                 if self.path == '/api/search/state':
                     return self.send(200, app.search.state())
                 if self.path == '/api/cvs':
@@ -632,7 +646,9 @@ def handler(app):
                     with app.auth_lock:
                         app.sessions.pop(app.session_key(self.headers.get('Cookie', '')), None)
                     return self.send(200, {'ok': True}, headers={'Set-Cookie': 'hq_session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0'})
-                if self.path not in ('/api/add', '/api/update', '/api/rounds', '/api/star', '/api/writes/dismiss','/api/ai/submit','/api/ai/link','/api/ai/export','/api/search/submit'):
+                if self.path not in ('/api/add', '/api/update', '/api/rounds', '/api/star', '/api/writes/dismiss',
+                                     '/api/ai/submit', '/api/ai/link', '/api/ai/export', '/api/search/submit',
+                                     '/api/ai/cv-trim/preview', '/api/ai/cv-trim/apply'):
                     return self.send(404)
                 if content_type != 'application/json':
                     return self.send(415)
@@ -646,13 +662,19 @@ def handler(app):
                         return self.send(400, {'error': str(error)})
                 if self.path=='/api/ai/submit':
                     return self.send(202,{'id':app.ai.submit(payload)})
+                if self.path in ('/api/ai/cv-trim/preview', '/api/ai/cv-trim/apply'):
+                    if not isinstance(payload.get('id'), str):
+                        return self.send(400, {'error': 'Choose a CV draft first.'})
+                    try:
+                        trim = app.ai.preview_cv_trim if self.path.endswith('/preview') else app.ai.apply_cv_trim
+                        return self.send(200, trim(payload))
+                    except ValueError as error:
+                        return self.send(400, {'error': str(error)})
                 if self.path=='/api/ai/link':
-                    record=app.ai.posting(payload.get('id'))
                     job_id=payload.get('jobId')
                     if not any(j['_id']==job_id for j in app.data()['jobs']):raise ValueError('Unknown tracker entry.')
-                    record['jobId']=job_id
-                    with app.ai.connect() as db,db:
-                        db.execute('UPDATE postings SET body=? WHERE id=?',(json.dumps(record),payload['id']))
+                    with app.ai.connect() as db,db,app.ai.edit_posting(db,payload.get('id')) as record:
+                        record['jobId']=job_id
                     return self.send(200,{'ok':True})
                 if self.path=='/api/ai/export':
                     try:

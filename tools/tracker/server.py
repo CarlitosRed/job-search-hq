@@ -36,6 +36,7 @@ hq_settings = importlib.util.module_from_spec(_settings_spec)
 _settings_spec.loader.exec_module(hq_settings)
 XLSX = Path(os.environ.get("TRACKER_XLSX") or hq_settings.data_root() / "work" / "applications-tracker.xlsx").resolve()
 PORT = int(os.environ.get("TRACKER_PORT") or 8765)
+MAX_POST_BYTES = 262144
 BACKUPS = XLSX.parent / ".tracker-backups"
 LOCK = threading.Lock()
 # Same order as the data-validation list in the workbook.
@@ -519,8 +520,14 @@ class H(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path not in ("/api/update", "/api/add", "/api/rounds") or not self.local():
             return self.send(404, "not found", "text/plain")
+        length = self.headers.get("Content-Length", "")
+        if not re.fullmatch(r"[0-9]+", length):
+            return self.send(400, json.dumps({"error": "Invalid Content-Length"}), "application/json")
+        length = length.lstrip("0") or "0"
+        if len(length) > len(str(MAX_POST_BYTES)) or int(length) > MAX_POST_BYTES:
+            return self.send(413, json.dumps({"error": "Request body is too large"}), "application/json")
         try:
-            p = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            p = json.loads(self.rfile.read(int(length)))
             with LOCK, workbook_lock(XLSX):
                 if path in ("/api/update", "/api/rounds"):
                     (rounds if path == "/api/rounds" else update)(p)
