@@ -16,7 +16,7 @@ WORKDAY_DEFAULTS = {'workday_page_pause_seconds': 1.5,
                     'workday_board_budget_seconds': 360,
                     'workday_run_budget_seconds': 1500}
 PROVIDERS = ('greenhouse', 'lever', 'ashby', 'workday')
-SEARCH_SOURCES = ('workable_search',)
+SEARCH_SOURCES = ('workable_search', 'himalayas', 'jobicy')
 
 
 def workday_countries(profile):
@@ -124,7 +124,7 @@ def load(path):
     search = obj(profile.get('search'), 'search')
     sources = items(search.setdefault('search_sources', []), 'search.search_sources')
     if any(source not in SEARCH_SOURCES for source in sources):
-        problems.append('search.search_sources may only include workable_search.')
+        problems.append('search.search_sources may only include ' + ', '.join(SEARCH_SOURCES) + '.')
     companies = items(search.get('companies', [] if sources else None), 'search.companies', not sources)
     if sources:
         search.setdefault('companies', companies)
