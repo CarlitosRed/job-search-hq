@@ -26,6 +26,7 @@ land_search = load_component('land_search', HERE)
 recheck = load_component('recheck', HERE)
 # Card 04a: qualification judge.
 judge = load_component('judge', HERE)
+ai_shadow = load_component('ai_shadow', HERE.parent / 'hq-dashboard')
 link_fetch = load_component('link_fetch', HERE.parent / 'hq-dashboard')
 daily_search = land_search.daily_search
 settings = daily_search.settings
@@ -203,6 +204,7 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
         if saved is None:
             phases.pop('search', None)
         backlog = work / 'search-backlog.sqlite3'
+        jobicy_pages = {}
         began = datetime.now()
 
         def timestamp():
@@ -235,16 +237,15 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
             return dict(run_id=run_id, status=state, slot=slot.isoformat(), phases=phases, missed_since=missed)
 
         def search():
-            try:
-                profile = daily_search.profiles.load(root / 'profile.json')
-            except (OSError, ValueError):
+            if profile is None:
                 return 'failed', 'The search profile is missing or invalid. Check the profile before retrying.'
             with db:
                 db.execute('UPDATE runs SET profile_id=? WHERE run_id=?', (profile['id'], run_id))
             result = saved
             if result is None:
+                options = {'jobicy_pages': jobicy_pages} if trial_on else {}
                 result = daily_search.run(profile, fetch, backlog, slot, mark_landed=False,
-                                          tracker=work / 'applications-tracker.sqlite3')
+                                          tracker=work / 'applications-tracker.sqlite3', **options)
                 snapshot.parent.mkdir(parents=True, exist_ok=True)
                 temp = snapshot.with_suffix('.tmp')
                 temp.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
@@ -285,6 +286,10 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
             return ('partial' if failed or workable_failed or discovery_failed else 'done'), detail
 
         def land():
+            if trial_on:
+                return 'skipped', 'The Trial is on, so nothing is added to the board.'
+            if profile is None:
+                return 'failed', 'The search profile is missing or invalid. Check the profile before retrying.'
             report = land_search.land(work / 'applications-tracker.xlsx', snapshot, backlog,
                                       apply=True, today=now.date())
             if not report['ok']:
@@ -322,7 +327,6 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
         def judge_jobs():
             preview = config['judge'] == 'preview'
             tracker = work / 'applications-tracker.sqlite3'
-            profile = daily_search.profiles.load(root / 'profile.json')
             excluded = settings.load(root, defaults_root=settings.app_root())['excluded_evidence_ids']
             evidence = judge.judge_evidence(root, excluded)
             with closing(land_search.store.Store(':memory:' if preview else tracker)) as storage:
@@ -373,14 +377,39 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                 return 'partial', detail + ' The AI became unavailable; the remaining jobs keep their current scores.'
             return 'done', detail
 
+        def shadow_jobs(profile):
+            owner = settings.load(root, defaults_root=settings.app_root())
+            evidence = judge.judge_evidence(root, owner['excluded_evidence_ids'])
+            profile = dict(profile, owner_name=owner.get('owner_name'),
+                           owner_short_name=owner.get('owner_short_name'))
+            engine = config['judge_ai']
+            ask = complete or (lambda prompt, schema: judge.seam.complete(prompt, schema, engine=engine))
+            detail = ai_shadow.run(profile, evidence, now.date(), run_id, backlog,
+                                   work / 'applications-tracker.sqlite3', work / 'ai-usage.sqlite3',
+                                   ask, fetch=None if fetch is daily_search.boards.fetch_json else fetch,
+                                   jobicy_pages=jobicy_pages)
+            return 'done', detail
+
+        def trial():
+            if trial_on:
+                phase('trial', lambda: shadow_jobs(profile))
+
         for step in config['before']:
             if phase('before:' + step['name'], lambda step=step: command_step(step, root)) == 'failed':
                 return finish('failed')
+        try:
+            profile = daily_search.profiles.load(root / 'profile.json')
+        except (OSError, ValueError):
+            profile = None
+        trial_on = profile is not None and profile['search']['ai_shadow']
         if phase('search', search) == 'failed':
-            phase('land', lambda: ('skipped', 'Search did not finish.'))
+            trial()
+            phase('land', land if trial_on else lambda: ('skipped', 'Search did not finish.'))
             return finish('failed')
         if phase('land', land) == 'failed':
+            trial()
             return finish('failed')
+        trial()
         if phase('recheck', check_postings) == 'failed':
             return finish('failed')
         phase('judge', judge_jobs)

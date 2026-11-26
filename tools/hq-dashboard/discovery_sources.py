@@ -136,12 +136,15 @@ def lead_from_row(source, raw, boards):
     return lead
 
 
-def read(source, profile, queries, countries, boards, fetch, backlog_connect):
+def read(source, profile, queries, countries, boards, fetch, backlog_connect, *, shadow=False, jobicy_pages=None):
     label = LABELS[source]
     reading = dict(provider=source, board=f"{label} ({profile['id']})", read='complete', reason='',
                    rows=0, kept=0, hidden={}, seen=[], search_only=True)
     is_jobicy = source == 'jobicy'
-    if is_jobicy and not reserve_jobicy(backlog_connect):
+    # Both daily paths may use the same response in this run. Only the first
+    # path may contact Jobicy, using the normal durable reservation and pacing.
+    replay = is_jobicy and bool(jobicy_pages)
+    if is_jobicy and not replay and not reserve_jobicy(backlog_connect):
         reading.update(read='skipped', reason='Jobicy was already read within the past hour.')
         return {}, {}, reading
     budget = Budget(3 if is_jobicy else 12, 2)
@@ -149,10 +152,17 @@ def read(source, profile, queries, countries, boards, fetch, backlog_connect):
     read_page = False
 
     def request(url):
+        if replay:
+            if url not in jobicy_pages:
+                raise LimitReached()
+            return jobicy_pages[url]
         for attempt in range(2):
             budget.reserve(url)
             try:
-                return fetch('GET', url, deadline=budget.deadline)
+                payload = fetch('GET', url, deadline=budget.deadline)
+                if is_jobicy and jobicy_pages is not None:
+                    jobicy_pages[url] = payload
+                return payload
             except HTTPError as error:
                 if error.code != 429:
                     raise
@@ -179,7 +189,7 @@ def read(source, profile, queries, countries, boards, fetch, backlog_connect):
     if is_jobicy:
         try:
             geo = jobicy_geo(profile, request(JOBICY_LOCATIONS), countries)
-        except (OSError, ValueError, boards.HTTPException, RecursionError) as error:
+        except (OSError, ValueError, boards.HTTPException, RecursionError, LimitReached) as error:
             status = problem(error)
             if status in (403, 429):
                 reading['read'] = 'failed'
@@ -219,7 +229,12 @@ def read(source, profile, queries, countries, boards, fetch, backlog_connect):
                 run['total'] = (run['total'] or 0) + total
             for raw in rows:
                 lead = lead_from_row(source, raw, boards)
-                if not boards.profile_posting_matches(profile, lead['title'], lead['description']):
+                if shadow and is_jobicy:
+                    terms = [phrase for phrase in queries if boards.phrase_matches(
+                        phrase, lead['title'] + ' ' + lead['description'])]
+                    if not terms:
+                        continue
+                elif not shadow and not boards.profile_posting_matches(profile, lead['title'], lead['description']):
                     if is_jobicy:
                         continue
                     lead['fact_reason'] = NO_SEARCH_MATCH
@@ -227,6 +242,12 @@ def read(source, profile, queries, countries, boards, fetch, backlog_connect):
                 found.setdefault(token, lead)
                 if token not in run['posting_ids']:
                     run['posting_ids'].append(token)
+                if shadow and is_jobicy:
+                    for phrase in terms:
+                        row = runs.setdefault(phrase, dict(total=0, reason='', posting_ids=[]))
+                        if token not in row['posting_ids']:
+                            row['posting_ids'].append(token)
+                            row['total'] += 1
             read_page = True
         except LimitReached:
             break
@@ -286,7 +307,8 @@ def employer_job(result):
                 link=result['link'], description=result['description'])
 
 
-def confirm(profile, today, groups, boards, workable, fetch, fetch_workable, backlog_connect, job_key):
+def confirm(profile, today, groups, boards, workable, fetch, fetch_workable, backlog_connect, job_key,
+            *, shadow_query=None):
     """Resolve employer copies and return transient misses by company."""
     if not groups:
         return {}, {}
@@ -307,6 +329,7 @@ def confirm(profile, today, groups, boards, workable, fetch, fetch_workable, bac
     matched, errors, updates, expired = {}, {}, [], []
     refused_hosts = {}
     configured = {(board['provider'], board['board']) for board in profile['search'].get('companies', [])}
+    enabled = {provider for provider, _ in configured} | set(profile['search'].get('search_sources', []))
 
     def request(read, method, url):
         host = urlsplit(url).hostname
@@ -384,6 +407,8 @@ def confirm(profile, today, groups, boards, workable, fetch, fetch_workable, bac
     companies = 0
     for name, leads in groups.items():
         cached, checked, stored = remembered.get(name, (None, None, None))
+        if shadow_query is not None and (cached == NO_BOARD or cached and cached['provider'] not in enabled):
+            cached = None
         if cached == NO_BOARD:
             continue
         if companies == 15:
@@ -396,10 +421,13 @@ def confirm(profile, today, groups, boards, workable, fetch, fetch_workable, bac
             for provider in ('greenhouse', 'lever', 'ashby')]
         if not cached:
             options.append(dict(provider=workable.SOURCE))
+        if shadow_query is not None:
+            options = [board for board in options if board['provider'] in enabled
+                       and shadow_query(board.get('board') or company)]
         chosen, workable_match = None, False
         exhausted = False
         for board in options:
-            if (board['provider'], board.get('board')) in configured:
+            if shadow_query is None and (board['provider'], board.get('board')) in configured:
                 continue
             try:
                 if board['provider'] == workable.SOURCE:
@@ -427,6 +455,8 @@ def confirm(profile, today, groups, boards, workable, fetch, fetch_workable, bac
             updates.append((owner, name, day, json.dumps(chosen or NO_BOARD)))
         if exhausted:
             break
+    if shadow_query is not None:
+        return matched, errors
     with backlog_connect() as db, db:
         db.executemany('DELETE FROM discovery_boards WHERE profile_id=? AND company=? AND checked_on=? AND board=?',
                        expired)

@@ -70,7 +70,7 @@ class ScoreRules(unittest.TestCase):
             (4.5, 4.5, 'Apply now'), (4.49, 4.5, 'Apply now'),
             (4.0, 4.0, 'Worth applying'), (3.99, 4.0, 'Worth applying'),
             (3.5, 3.5, 'Only with a reason'), (3.49, 3.5, 'Only with a reason'),
-            (3.44, 3.4, 'Skip'), (0, 1.0, 'Skip'), (8, 5.0, 'Apply now'),
+            (3.44, 3.4, 'Worth a look'), (0, 1.0, 'Skip'), (8, 5.0, 'Apply now'),
         ]:
             with self.subTest(raw=raw):
                 self.assertEqual(judge.score_action(raw), (score, action))
@@ -461,7 +461,7 @@ class ScoreIntegration(Base):
         self.assertEqual((report['refreshed'], len(ai.calls)), (1, 1))
         row = self.current('Example Co')
         self.assertEqual((row['prompt_version'], row['schema_version'], row['rule_version']),
-                         ('judge-prompt-2', 'judge-schema-2', 'score-rules-1'))
+                         ('judge-prompt-2', 'judge-schema-2', 'score-rules-2'))
         self.assertEqual(row['score'], 4.2)
         self.assertEqual(db.execute('SELECT current FROM judgements ORDER BY id').fetchall()[0][0], 0)
 
