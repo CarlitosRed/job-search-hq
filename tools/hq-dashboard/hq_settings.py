@@ -5,6 +5,15 @@ import re
 from pathlib import Path
 
 
+SEARCH_KEYS_FILE = 'work/search-keys.json'
+SEARCH_KEY_FIELDS = {
+    'web_search': ('key',),
+    'adzuna': ('id', 'key'),
+    'jooble': ('key',),
+    'careerjet': ('key',),
+}
+
+
 def app_root():
     """Return the folder containing the bundled settings and tools."""
     return Path(__file__).resolve().parents[2]
@@ -19,6 +28,32 @@ def data_root():
     if (app.parent / '.job-search-hq-data').is_file():
         return app.parent
     return app
+
+
+def load_search_keys(root=None):
+    """Read credentials only for the search runner and return a safe diagnostic on failure."""
+    def reject_constant(_):
+        raise ValueError
+
+    path = (Path(root) if root is not None else data_root()) / SEARCH_KEYS_FILE
+    try:
+        values = json.loads(path.read_text(encoding='utf-8'), parse_constant=reject_constant)
+    except FileNotFoundError:
+        return {}, ''
+    except OSError:
+        return {}, f'Could not read {SEARCH_KEYS_FILE}.'
+    except (ValueError, RecursionError):
+        return {}, f'Use valid JSON in {SEARCH_KEYS_FILE}.'
+    if not isinstance(values, dict):
+        return {}, f'Use a JSON object in {SEARCH_KEYS_FILE}.'
+    credentials = {}
+    for name, fields in SEARCH_KEY_FIELDS.items():
+        options = values.get(name, {})
+        if not isinstance(options, dict) or any(
+                field in options and not isinstance(options[field], str) for field in fields):
+            return {}, f'Use an object with string credentials for {name} in {SEARCH_KEYS_FILE}.'
+        credentials[name] = {field: options[field] for field in fields if options.get(field, '').strip()}
+    return credentials, ''
 
 
 def load(root=None, defaults_root=None):

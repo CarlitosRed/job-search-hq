@@ -584,10 +584,10 @@ def filter_choice(backlog, owner, id_, action):
     return dict(ok=True)
 
 
-def plan_prompt(profile, evidence, choices, runs, settings):
+def plan_prompt(profile, evidence, choices, runs, enabled_engines):
     context = dict(goals=profile['goals'], work_rules=profile['work_rules'], skills=profile.get('proven', {}),
                    evidence=judge.prompt_evidence(evidence), owner_feedback=choices,
-                   yesterday=runs, engines=[name for name in engines.NAMES if engines.enabled(settings, name)])
+                   yesterday=runs, engines=enabled_engines)
     return ('Plan public job searches from this profile. Return JSON only. Include roles at home, remote, '
             'and relocation abroad where the profile allows it. Suggest employers, including new arrivals. '
             'Use an empty URL if unknown. Filter values are strings, with whole numbers for years. '
@@ -599,7 +599,6 @@ def plan_prompt(profile, evidence, choices, runs, settings):
 def run(profile, evidence, day, run_id, backlog, tracker, usage, complete, *, fetch=None,
         reader=None, jobicy_pages=None, settings=None, profile_root=None, board_reads=None):
     owner, stamp = profile['id'], day.isoformat()
-    settings = settings or {}
     with database(backlog) as db:
         db.execute('INSERT OR IGNORE INTO review_plans(profile_id,run_id,day) VALUES (?,?,?)', (owner, run_id, stamp))
         stored, detail = db.execute('SELECT plan,detail FROM review_plans WHERE profile_id=? AND run_id=?',
@@ -610,11 +609,13 @@ def run(profile, evidence, day, run_id, backlog, tracker, usage, complete, *, fe
                      for source, found, kept, reported in db.execute("""SELECT source,SUM(total),SUM(kept),SUM(reason!='')
                         FROM search_runs WHERE profile_id=? AND day=? AND run_id IS NOT NULL GROUP BY source""",
                         (owner, (day - timedelta(days=1)).isoformat()))]
+    settings, stopped, keys_error = engines.configured_options(settings or {}, profile_root)
     plan = json.loads(stored) if stored else None
     if plan is None and reserve_search(usage, owner, stamp, run_id):
         try:
+            enabled_engines = [name for name in engines.NAMES if name not in stopped and engines.enabled(settings, name)]
             prompt = plan_prompt(profile, evidence, recent_choices(backlog, tracker, owner, day,
-                                                                  profile_root=profile_root), yesterday, settings)
+                                                                  profile_root=profile_root), yesterday, enabled_engines)
             plan = validate_plan(complete(prompt, PLAN_SCHEMA), profile, evidence)
         except Exception as error:
             if type(error).__name__ not in ('AiBadAnswer', 'AiUnavailable'):
@@ -646,9 +647,12 @@ def run(profile, evidence, day, run_id, backlog, tracker, usage, complete, *, fe
         batches = reader(profile, plan, fetch, backlog, day)
     else:
         batches = engines.find(profile, plan, day, backlog, settings, board_fetch=fetch,
-                               board_reads=board_reads, jobicy_pages=jobicy_pages, allowed=query_guard(profile, evidence))
+                               board_reads=board_reads, jobicy_pages=jobicy_pages, allowed=query_guard(profile, evidence),
+                               stopped=stopped)
     count = enqueue(profile, day, backlog, tracker, batches, run_id=run_id, profile_root=profile_root)
     detail = f'{count} jobs ready to review.' + fallback
+    if keys_error:
+        detail += ' ' + keys_error
     with database(backlog) as db:
         db.execute('UPDATE review_plans SET detail=? WHERE profile_id=? AND run_id=?', (detail, owner, run_id))
     return detail

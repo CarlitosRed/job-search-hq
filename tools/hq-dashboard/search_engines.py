@@ -1,13 +1,15 @@
 ﻿"""Execute checked search plans through bounded engine adapters."""
+from base64 import b64encode
 from datetime import timedelta
 from functools import cache, partial
+from http.client import HTTPException
 import importlib.util
 import json
 from pathlib import Path
 import re
 import time
 from urllib.error import HTTPError
-from urllib.parse import quote, urlencode, urljoin, urlsplit
+from urllib.parse import quote, unquote, unquote_plus, urlencode, urljoin, urlsplit
 from urllib.request import Request
 
 HERE = Path(__file__).resolve().parent
@@ -27,9 +29,11 @@ careers = load('careers_page')
 FEEDS = ('web_search', 'adzuna', 'jooble', 'careerjet', 'remotive', 'remoteok', 'arbeitnow', 'linkedin')
 LEGACY = ('configured_boards', 'workday', 'workable_search', 'himalayas', 'jobicy')
 NAMES = (*FEEDS, *LEGACY, 'careers_page')
-KEYED = ('web_search', 'adzuna', 'jooble', 'careerjet')
+KEYED = tuple(search.settings.SEARCH_KEY_FIELDS)
 AGENT = 'JobSearchHQ/1.0 (public job search)'
 NOT_CONFIRMED = 'The lead could not be confirmed on the employer’s website.'
+SITE_BLOCKED = 'The service requires a CAPTCHA, bot check or sign-in.'
+MOVE_SEARCH_KEY = 'Move this key to work/search-keys.json; keys in settings.json are ignored.'
 
 
 class ReadStopped(ValueError):
@@ -46,7 +50,7 @@ def api_request(method, url, body=None, *, headers=None, timeout=10):
                                'Content-Type': 'application/json', **(headers or {})})
     raw = search.boards.fetch_bounded(request, time.monotonic() + timeout, 8_000_000)
     if raw.lstrip().startswith(b'<') and careers.CHALLENGE.search(raw[:5000].decode('utf-8', 'replace')):
-        raise SiteBlocked('The service requires a CAPTCHA, bot check or sign-in.')
+        raise SiteBlocked(SITE_BLOCKED)
     return json.loads(raw)
 
 
@@ -66,9 +70,11 @@ class Transport:
         self.last[domain] = time.monotonic()
         try:
             return self.fetch(method, url, body, headers=headers, timeout=self.timeout)
-        except SiteBlocked as error:
-            self.blocked[domain] = str(error)
-            raise
+        except SiteBlocked:
+            self.blocked[domain] = SITE_BLOCKED
+            raise ReadStopped(SITE_BLOCKED) from None
+        except ReadStopped:
+            raise ReadStopped('The service could not be read.') from None
         except HTTPError as error:
             code = error.code
             error.close()
@@ -102,6 +108,22 @@ def options_for(settings, name):
     return options if isinstance(options, dict) else {}
 
 
+def configured_options(settings, root=None):
+    """Resolve file-backed engine options before planning or dispatch."""
+    credentials, error = search.settings.load_search_keys(root)
+    effective, stopped = dict(settings), {}
+    for name, fields in search.settings.SEARCH_KEY_FIELDS.items():
+        options = dict(options_for(settings, name))
+        private = credentials.get(name, {})
+        inline = {field: options.pop(field, '') for field in fields}
+        if error:
+            stopped[name] = error
+        elif any(value and field not in private for field, value in inline.items()):
+            stopped[name] = MOVE_SEARCH_KEY
+        effective[name] = dict(options, **private)
+    return effective, stopped, error
+
+
 def enabled(settings, name):
     options = options_for(settings, name)
     if options.get('enabled') is False:
@@ -109,6 +131,22 @@ def enabled(settings, name):
     if name in FEEDS:
         return load(name).enabled(options)
     return True
+
+
+def public_hits(rows, options, name):
+    """Discard results that echo request credentials before they reach discovery or storage."""
+    secrets = {options[field] for field in search.settings.SEARCH_KEY_FIELDS.get(name, ())
+               if options.get(field)}
+    if not secrets:
+        return rows
+    if name == 'careerjet':
+        secrets.add(b64encode((options['key'] + ':').encode()).decode())
+
+    def echoes_credentials(value):
+        return isinstance(value, str) and any(
+            secret in text for text in (value, unquote(value), unquote_plus(value)) for secret in secrets)
+
+    return [row for row in rows if not any(echoes_credentials(row.get(field)) for field in ('url', 'title', 'company'))]
 
 
 def queries_for(name, plan, profile):
@@ -227,7 +265,7 @@ def extra_rows(board, queries, fetch, day):
 
 
 def find(profile, plan, day, backlog, settings, *, api=None, page=None, board_fetch=None, registry=None,
-         board_reads=None, jobicy_pages=None, allowed=lambda text: True):
+         board_reads=None, jobicy_pages=None, allowed=lambda text: True, stopped=None):
     owner = profile['id']
     if registry is not None:
         results = []
@@ -241,10 +279,14 @@ def find(profile, plan, day, backlog, settings, *, api=None, page=None, board_fe
     read_disallowed = partial(links.automatic_read_disallowed, hosts=denied_hosts)
     blocked, batches, hits = {}, [], {}
     web = None
+    stopped = stopped or {}
     for name in FEEDS:
         module = load(name)
-        if not enabled(settings, name):
-            if options_for(settings, name).get('enabled') is False:
+        options = options_for(settings, name)
+        if name in stopped or not enabled(settings, name):
+            if name in stopped:
+                reason = stopped[name]
+            elif options.get('enabled') is False:
                 reason = 'This engine is switched off.'
             elif name == 'linkedin':
                 reason = 'No LinkedIn alert export is configured.'
@@ -264,8 +306,8 @@ def find(profile, plan, day, backlog, settings, *, api=None, page=None, board_fe
         groups = [[query] for query in queries[:module.CAP]] if name in KEYED else [queries]
         for group in groups:
             try:
-                found.extend(module.read(transport, group, options_for(settings, name)))
-            except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+                found.extend(public_hits(module.read(transport, group, options), options, name))
+            except (OSError, ValueError, KeyError, TypeError, AttributeError, HTTPException) as error:
                 errors.append(str(error) if isinstance(error, ReadStopped) else 'The service could not be read.')
                 break
         hits[name] = [dict(url=careers.field(row.get('url'), 2000), title=careers.field(row.get('title')),
@@ -284,8 +326,9 @@ def find(profile, plan, day, backlog, settings, *, api=None, page=None, board_fe
                 break
             try:
                 query = dict(words=f"{lead['company']} {lead['title']} careers", place='')
-                hits['web_search'].extend(module.read(transport, [query], options_for(settings, 'web_search')))
-            except (OSError, ValueError, KeyError, TypeError):
+                options = options_for(settings, 'web_search')
+                hits['web_search'].extend(public_hits(module.read(transport, [query], options), options, 'web_search'))
+            except (OSError, ValueError, KeyError, TypeError, AttributeError, HTTPException):
                 break
     urls = [row['url'] for rows in hits.values() for row in rows
             if search.boards.safe_link(row['url']) and not careers.is_lead(row['url'])]

@@ -70,15 +70,16 @@ Each run makes one search AI attempt, up to two attempts per profile each day. I
 
 Configured boards are a starting set. Public web results, named employers and aggregator leads can surface new employer boards. The search remembers boards whose public API responds and stops using a discovered board after 30 days of errors or empty results. Employer pages that require sign-in or a bot check, or return HTTP 403 or 429, are skipped with a reason. Aggregator leads require independent confirmation from the employer. Engine counts and hidden reasons are saved in `work/search-backlog.sqlite3`.
 
-Set credentials in the private `search_engines` settings object. This example lists the supported keys with empty values.
+Copy `search-keys.example.json` to `work/search-keys.json` under your data root and fill in the credentials for the engines you use. The `work/` folder is ignored. Never commit `work/search-keys.json`. Keys in `settings.json` are ignored. When both files supply a credential, the value in `work/search-keys.json` takes precedence. If that file is invalid, the run reports the problem and continues with keyless engines.
+
+Set provider, country, locale, LinkedIn path, and per-engine `enabled` flags in the `search_engines` object in `settings.json`.
 
 ```json
 {
   "search_engines": {
-    "web_search": {"provider": "brave", "key": ""},
-    "adzuna": {"id": "", "key": "", "country": "us"},
-    "jooble": {"key": ""},
-    "careerjet": {"key": "", "locale": "en_US"},
+    "web_search": {"provider": "brave"},
+    "adzuna": {"country": "us"},
+    "careerjet": {"locale": "en_US"},
     "linkedin": {"path": ""}
   }
 }
