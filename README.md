@@ -13,7 +13,7 @@ The qualification judge uses **your own evidence** to assess saved postings. You
 
 - **Board, list, overview and contacts** over your tracker, with durable saves. Edits queue and conflicts are shown instead of overwritten. In Excel mode, edits wait while the workbook is open.
 - **Search** uses the profile's public Greenhouse, Lever, Ashby and Workday boards. `daily_search.py` ranks results in a SQLite backlog and saves a JSON landing set. Leave `search.search_sources` empty to use only the configured boards, or add any of `"workable_search"`, `"himalayas"` and `"jobicy"`. These sources are off by default. Himalayas and Jobicy leads need a matching employer posting to be kept for review. Source findings stay in the backlog with their decision and are excluded from landing. The daily-run panel shows how many Himalayas and Jobicy leads were found, kept or hidden and why. `search.landing_max_age_days` defaults to 14 for the fact checks. Company-board landing still uses 45 days.
-- **Scores and stars.** List, Board and Top opportunities show a 1.0 to 5.0 score and an action: Apply now, Worth applying, Only with a reason or Skip. Unscored jobs show Not scored yet. The drawer shows quoted reasons and main requirements with evidence titles. Highest score first puts starred jobs first, then sorts by score and date. With SQLite you can star or unstar a job.
+- **Scores and stars.** List, Board and Top opportunities show a 1.0 to 5.0 score and an action. The bands start at 4.5 for Apply now, 4.0 for Worth applying, 3.5 for Only with a reason, and 3.0 for Worth a look. Lower scores and postings outside your work rules show Skip. Unscored jobs show Not scored yet. The drawer shows quoted reasons and main requirements with evidence titles. Highest score first puts starred jobs first, then sorts by score and date. With SQLite you can star or unstar a job.
 - **Review a posting.** Paste text or add photos, review requirements and gaps, then ask for a CV or letter.
 - **Evidence first**: the model is asked to use entries in `evidence/` that are marked `verified` or `stated`, `public-safe: yes`
   and have CV-ready wording, and to list each factual claim with its evidence IDs. The app checks that cited IDs are eligible
@@ -52,6 +52,20 @@ Known limits: one pending edit at a time; a changed tracker produces a conflict 
 AI tasks that were running at a restart are marked interrupted rather than rerun (queued tasks can still run);
 page fit uses font metrics and needs visual review in Word or Pages.
 
+## AI search Trial
+
+Set `search.ai_shadow` to `true` in the profile to run the Trial with the enabled daily run or a manual run. While the Trial is on, the daily run skips landing, so nothing is added to the board. With `search.ai_shadow` set to `false` (the default), the daily run lands jobs as usual. Sign in as the profile owner to see the Trial tab. It shows checked scores of 3.0 and higher, the search that found each job, and any repost note. Keep and Skip, with an optional reason, inform future searches. Trial results and answers stay in the search backlog database.
+
+The Trial asks the configured judge provider for one plan a day. The plan uses goals, eligible judge evidence, the last 60 days of Keep and Skip choices, and yesterday’s search counts. Posting descriptions are used only for sorting and judging. The plan can use the profile’s enabled search sources and select up to five configured employer boards. A Trial posting needs a confirmed open employer listing, an employer publication date within 14 days, and an eligible place. If the AI becomes unavailable or the call budget runs out, the Trial can reuse yesterday’s usable plan once and stops asking the AI. The Trial gets at most 25 AI calls per day per profile, and its scores count toward the qualification judge’s daily limit.
+
+Two profile search settings are reserved for a future landing switch. `search.landing_score` is a number that defaults to `3.0`. `search.daily_land_cap` is a whole number from 1 through 10 and defaults to `10`.
+
+A removed or archived job can reappear once for a newer employer publication. If the tracker has no date for the previous posting, a current posting that passes the 14-day check can reappear once. A job you skipped stays hidden. To record a removal separately, use the following command with the original posting link and removal date.
+
+```powershell
+python -I tools/hq-dashboard/ai_shadow.py --company "Fable Workshop" --title "Research Analyst" --link "https://example.invalid/posting/1" --removed-on 2026-11-18
+```
+
 ## Quick start
 
 Follow [SETUP.md](SETUP.md) for Python 3.12 installation, a fictional workbook, the PC page build, password setup, and the Windows server on `127.0.0.1:8770`. It also covers HTTPS phone access, backups, startup tasks, and known gaps. Tracker writes keep up to seven daily pre-write backups of the active database or workbook; these do not cover evidence or state. The bundled `examples/applications-tracker.xlsx` contains three fictional jobs and one fictional contact; the setup guide also provides a fixture snippet.
@@ -88,6 +102,7 @@ python -I tools/hq-dashboard/test_state_path.py
 python -I tools/hq-dashboard/test_search_profile.py
 python -I tools/hq-dashboard/test_daily_search.py
 python -I tools/hq-dashboard/test_discovery_sources.py
+python -I tools/hq-dashboard/test_ai_shadow.py
 python -I tools/hq-dashboard/test_board_reads.py
 python -I tools/tracker/test_store.py
 python -I tools/tracker/test_stages.py

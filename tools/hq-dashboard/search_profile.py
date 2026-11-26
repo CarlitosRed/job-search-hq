@@ -158,6 +158,14 @@ def load(path):
         minimum = 1 if key in ('daily_land_limit', 'max_per_company', 'landing_max_age_days') else 0
         if type(search[key]) is not int or search[key] < minimum:
             problems.append('search.' + key + f' must be a whole number of at least {minimum}.')
+    if type(search.setdefault('ai_shadow', False)) is not bool:
+        problems.append('search.ai_shadow must be true or false.')
+    landing_score = search.setdefault('landing_score', 3.0)
+    if type(landing_score) not in (int, float) or not float('-inf') < landing_score < float('inf'):
+        problems.append('search.landing_score must be a finite number.')
+    cap = search.setdefault('daily_land_cap', 10)
+    if type(cap) is not int or not 1 <= cap <= 10:
+        problems.append('search.daily_land_cap must be a whole number from 1 to 10.')
     if type(search.get('wild_cards')) is int and type(search.get('daily_land_limit')) is int and search['wild_cards'] > search['daily_land_limit']:
         problems.append('search.wild_cards cannot exceed daily_land_limit.')
     for key, default in WORKDAY_DEFAULTS.items():

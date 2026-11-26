@@ -1,6 +1,6 @@
 /* PC backend. Workbook remains the source of truth. */
 let busy=false,READY=false,seenView=null;
-const CAP={db:null,sample:null,downloads:null},NOTED=new Set(),TOOL_VIEWS=['search','review'];
+const CAP={db:null,sample:null,downloads:null},NOTED=new Set(),TOOL_VIEWS=['search','review','trial'];
 const nowISO=()=>new Date().toISOString();
 const use=()=>Promise.resolve(null);
 function pcDate(value){const s=String(value||''),ns=/^\d{16,20}$/.test(s);if(!ns&&!/^\d{4}-\d{2}-\d{2}T/.test(s))return s;const d=new Date(ns?Number(s)/1e6:s);return Number.isNaN(d.getTime())?'Date unavailable':d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})}

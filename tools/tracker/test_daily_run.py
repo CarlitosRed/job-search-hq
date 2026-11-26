@@ -109,6 +109,30 @@ class Base(unittest.TestCase):
 
 
 class Phases(Base):
+    def test_trial_skips_landing_when_search_found_jobs(self):
+        profile = fixtures.ops_profile(ai_shadow=True)
+        (self.root / 'profile.json').write_text(json.dumps(profile), encoding='utf-8')
+        before = self.jobs()
+        with mock.patch.object(self.dr.ai_shadow, 'run', return_value='Trial test.'):
+            out = self.run_daily()
+        snapshot = self.work / 'daily-runs' / (out['run_id'] + '.json')
+        self.assertTrue(json.loads(snapshot.read_text(encoding='utf-8'))['landing'])
+        self.assertEqual(out['phases']['land'], {
+            'status': 'skipped', 'detail': 'The Trial is on, so nothing is added to the board.'})
+        self.assertEqual(len(self.jobs()), len(before))
+        self.assertEqual(self.landed(), 0)
+        for name in ('search', 'trial', 'recheck', 'judge'):
+            self.assertEqual(out['phases'][name]['status'], 'done')
+
+    def test_daily_search_lands_jobs_when_trial_is_off(self):
+        profile = fixtures.ops_profile(ai_shadow=False)
+        (self.root / 'profile.json').write_text(json.dumps(profile), encoding='utf-8')
+        before = len(self.jobs())
+        out = self.run_daily()
+        self.assertEqual(out['phases']['land']['status'], 'done')
+        self.assertGreater(self.landed(), 0)
+        self.assertEqual(len(self.jobs()), before + self.landed())
+
     def test_workable_is_opt_in_and_never_lands_skipped_or_archived_copies(self):
         with closing(store.Store(self.db_file)) as storage, storage.db:
             storage.put_row('jobs', 'Jobs', 3, HEAD,

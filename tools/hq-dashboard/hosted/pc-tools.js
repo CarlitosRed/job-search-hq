@@ -9,6 +9,7 @@ async function pcState(){
  if(CUR){const fresh=POSTINGS.find(p=>p._id===CUR._id);if(fresh){CUR=fresh;renderResult(CUR)}}return data;
 }
 async function pcInit(){
+ pcTrialInit();
  CAP.sample={};CAP.downloads={};
  CAP.db={doc:path=>({update:async patch=>{
   if(!path.startsWith('postings/')||Object.keys(patch).some(k=>k!=='jobId'))throw Error('This change requires a separate reviewer.');
@@ -207,3 +208,88 @@ $('#requests').addEventListener('click',e=>{const retry=e.target.closest('[data-
  $('#addErr').textContent='Check the list and details, then tap Add lead to save this job.';$('#addErr').hidden=false;
 });
 $('.seg').addEventListener('click',e=>{if(e.target.closest('[data-v="search"]'))pcSearchState()});
+
+const pcTrackerRender=renderInner;
+renderInner=function(){
+ const section=$('#v-trial'),show=S.view==='trial',wasHidden=section.hidden;
+ pcTrackerRender();
+ section.hidden=!show;
+ if(show&&wasHidden)pcTrialRefresh();
+};
+
+async function pcTrialInit(){
+ try{await pcFetch('/api/trial')}catch{return}
+ const tab=document.createElement('button');
+ tab.type='button';
+ tab.dataset.v='trial';
+ tab.id='trial-tab';
+ tab.setAttribute('role','tab');
+ tab.setAttribute('aria-controls','v-trial');
+ tab.setAttribute('aria-selected','false');
+ const label=document.createElement('span');
+ label.className='l';
+ label.textContent='Trial';
+ tab.append(label);
+ tab.onclick=()=>{S.view='trial';render()};
+ $('.seg').append(tab);
+ if(location.hash==='#trial')tab.click();
+}
+
+function pcTrialDate(day){
+ return new Intl.DateTimeFormat(undefined,{dateStyle:'long',timeZone:'UTC'}).format(new Date(day+'T00:00:00Z'));
+}
+
+async function pcTrialRefresh(){
+ const status=$('#trial-status'),days=$('#trial-days');
+ status.textContent='Loading Trial results…';
+ days.replaceChildren();
+ try{
+  const data=await pcFetch('/api/trial');
+  status.textContent=data.days.length?'':'The Trial has no results yet.';
+  for(const day of data.days){
+   const group=document.createElement('section');
+   group.className='panel';
+   group.innerHTML=`<h2>${esc(pcTrialDate(day.day))}</h2><p>${esc(day.detail)}</p>`;
+   for(const job of day.jobs){
+    const card=document.createElement('article');
+    card.className='trial-posting';
+    const link=pcSearchLink(job.link);
+    card.innerHTML=`<h3>${esc(job.title)} · ${esc(job.company)}</h3>
+     ${fitChip({judgement:{score:job.score,action:job.action}})}
+     <ul>${job.reasons.map(reason=>`<li>${esc(reason)}</li>`).join('')}</ul>
+     <p><strong>Found by</strong> ${esc(job.found_by)}</p>
+     ${job.repost_note?`<p>${esc(job.repost_note)}</p>`:''}
+     ${link?`<p><a href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open posting <span class="sr">(opens a new tab)</span></a></p>`:''}`;
+    const feedback=document.createElement('p');
+    feedback.setAttribute('role','status');
+    const saved=(choice,reason)=>{feedback.textContent=(choice==='keep'?'Kept':'Skipped')+(reason?' · '+reason:'')};
+    if(job.answer){saved(job.answer,job.answer_reason)}
+    else{
+     const form=document.createElement('form');
+     form.innerHTML=`<label>Reason (optional) <input class="inp" name="reason" maxlength="500"></label>
+       <button class="btn ghost" type="submit" value="keep">Keep</button>
+       <button class="btn ghost" type="submit" value="skip">Skip</button>`;
+     form.onsubmit=async event=>{
+      event.preventDefault();
+      if(!event.submitter)return;
+      const choice=event.submitter.value,reason=form.elements.reason.value.trim();
+      const buttons=Array.from(form.querySelectorAll('button'));
+      buttons.forEach(button=>button.disabled=true);
+      try{
+       const answer=await pcFetch('/api/trial/answer',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({day:day.day,identity:job.identity,choice,reason})});
+       form.remove();
+       saved(answer.choice,answer.reason);
+       feedback.tabIndex=-1;
+       feedback.focus();
+      }catch(error){feedback.textContent=error.message;buttons.forEach(button=>button.disabled=false)}
+     };
+     card.append(form);
+    }
+    card.append(feedback);
+    group.append(card);
+   }
+   days.append(group);
+  }
+ }catch(error){status.textContent=error.message}
+}

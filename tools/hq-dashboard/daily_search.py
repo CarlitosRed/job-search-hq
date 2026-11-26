@@ -145,7 +145,7 @@ EMPLOYER_COPY = 'The employer board already has this posting.'
 SEARCH_COPY = 'This search already found another copy of the posting.'
 
 
-def posting_facts(profile, job, today, repeat=''):
+def posting_facts(profile, job, today, repeat='', *, shadow=False):
     """Return one review decision for a posting from any daily search source."""
     if repeat:
         return repeat
@@ -159,9 +159,9 @@ def posting_facts(profile, job, today, repeat=''):
             or job.get('date_source') not in (*profiles.PROVIDERS, workable.SOURCE)
             or posted > today.isoformat()):
         return 'The employer posting date could not be confirmed.'
-    earliest = min(posted, job['first_seen'], job.get('earliest_posted_on') or posted,
-                   job.get('workday_earliest_posted_on') or posted)
-    limit = profile['search'].get('landing_max_age_days', profiles.DEFAULTS['landing_max_age_days'])
+    earliest = posted if shadow else min(posted, job['first_seen'], job.get('earliest_posted_on') or posted,
+                                         job.get('workday_earliest_posted_on') or posted)
+    limit = 14 if shadow else profile['search'].get('landing_max_age_days', profiles.DEFAULTS['landing_max_age_days'])
     if (today - date.fromisoformat(earliest)).days > limit:
         return f'The posting is older than {limit} days.'
     if place_facts(profile, job)[0] != 'ok':
@@ -276,7 +276,7 @@ def lane_queries(profile):
 
 
 def follow_discovery(profile, today, feeds, known_keys, prior_keys, repeat_reason,
-                     fetch, search_fetch, backlog_connect):
+                     fetch, search_fetch, backlog_connect, *, shadow_query=None):
     eligible = {}
     discovered = (lead for leads, _, _ in feeds.values() for lead in leads.values())
     for position, lead in enumerate(discovered):
@@ -295,7 +295,7 @@ def follow_discovery(profile, today, feeds, known_keys, prior_keys, repeat_reaso
     groups = {name: [lead for _, _, lead in ordered[name]] for name in sorted(
         ordered, key=lambda name: (*ordered[name][0][:2], -len(ordered[name])))}
     matches, errors = discovery.confirm(profile, today, groups, boards, workable, fetch, search_fetch,
-                                        backlog_connect, job_key)
+                                        backlog_connect, job_key, shadow_query=shadow_query)
     for leads, _, _ in feeds.values():
         for token, lead in leads.items():
             if lead.get('fact_reason'):
@@ -410,7 +410,7 @@ def boards_read(result):
 
 
 def run(profile, fetch, backlog, today, mark_landed=False, wait=2, *, search_fetch=None, tracker=None,
-        discovery_fetch=None):
+        discovery_fetch=None, shadow_plan=None, shadow_query=None, jobicy_pages=None):
     """Fetch and rank all candidates; return a landing set without importing it."""
     if isinstance(today, str):
         today = date.fromisoformat(today)
@@ -435,10 +435,27 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2, *, search_fet
     def home_first(text):
         return any(boards.phrase_matches(country, text) for country in countries.values())
 
+    shadow = shadow_plan is not None
     companies = profile['search'].get('companies', [])
     sources = profile['search'].get('search_sources', [])
+    if shadow:
+        if shadow_query is None:
+            raise ValueError('The Trial needs a checked plan before searching.')
+        configured = {(c['provider'], c['board']): c for c in companies}
+        companies = [configured[key] for entry in shadow_plan['boards']
+                     if (key := (entry['provider'], entry['board'])) in configured
+                     and key[0] in profiles.PROVIDERS and shadow_query(key[1])]
+        planned_searches = [entry for entry in shadow_plan['searches'] if entry['source'] in sources
+                            and entry['source'] in profiles.SEARCH_SOURCES and shadow_query(entry['words'])]
+        planned_queries = {}
+        for entry in planned_searches:
+            planned_queries.setdefault(entry['source'], []).append(entry['words'])
+        sources = list(planned_queries)
     use_workable = workable.SOURCE in sources
-    discovery_sources = [source for source in discovery.LABELS if source in sources]
+    discovery_order = sources if shadow else discovery.LABELS
+    discovery_sources = [source for source in discovery_order if source in discovery.LABELS and source in sources]
+    if shadow and not (companies or sources):
+        return []
     if len(companies) > 300 or not (companies or use_workable or discovery_sources):
         raise ValueError('Choose a search source or between one and 300 job boards.')
     ordinary = [i for i, company in enumerate(companies) if company['provider'] != 'workday']
@@ -469,7 +486,7 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2, *, search_fet
             for first_seen, body, landed in db.execute(
                     'SELECT first_seen,body,landed FROM search_backlog WHERE profile_id=?', (profile['id'],)):
                 job = json.loads(body)
-                if job['provider'] == 'workday':
+                if not shadow and job['provider'] == 'workday':
                     cache_day = job.get('workday_details_read_on', first_seen)
                     expired = not landed and cache_day < refresh_before and not too_old(job, today)
                     known_workday_links.setdefault(job['company'], {})[job['link']] = job, expired
@@ -477,6 +494,7 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2, *, search_fet
     policy = {**profiles.WORKDAY_DEFAULTS, **profile['search']}
     workday.sort(key=lambda i: progress.get(workday_key(companies[i]), ('', 0, 0))[0])
     board_reads = [None] * len(companies)
+    shadow_boards = {i: [] for i in range(len(companies))}
 
     def attempts():
         for index in ordinary:
@@ -567,6 +585,9 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2, *, search_fet
                             result.update(postedOn=cached['posted_on'], dateSource=cached['date_source'])
                     reading['seen'].append([result['posting_id'], result['link'], result['role'], result['location']])
                     job = discovery.employer_job(result)
+                    if shadow:
+                        job['open'] = raw.get('isListed') is not False
+                        job['board'] = company['board']
                     if is_workday:
                         if exclusion_reason(profile, job):
                             counts['excluded'] += 1
@@ -590,6 +611,8 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2, *, search_fet
                             company['provider'].title(), 'returned a row with no posting id or link', 200,
                             reading.get('page', 1), None, reading['rows']))
             fetched.extend(found)
+            if shadow:
+                shadow_boards[index].extend(found)
             if is_workday and rows.attempted and not worldwide:
                 key = workday_key(company)
                 updates.append((profile['id'], key, day, rows.start_offset, rows.next_offset))
@@ -607,7 +630,7 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2, *, search_fet
 
     feeds = {}
     search_enabled = use_workable or bool(discovery_sources)
-    tracker_titles, tracker_links = tracker_repeats(tracker if search_enabled else None, profile['id'])
+    tracker_titles, tracker_links = tracker_repeats(tracker if search_enabled and not shadow else None, profile['id'])
     employer_keys = {job_key(job['company'], job['title']) for job in fetched}
     prior_keys, landed_keys = set(), set()
 
@@ -618,7 +641,7 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2, *, search_fet
             return link_reason
         return title_reason or link_reason or (ON_TRACKER if key in landed_keys else '')
 
-    if search_enabled:
+    if search_enabled and not shadow:
         with connect(backlog) as db:
             for body, landed in db.execute('SELECT body,landed FROM search_backlog WHERE profile_id=?', (profile['id'],)):
                 job = json.loads(body)
@@ -633,25 +656,42 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2, *, search_fet
     search_jobs = []
     if use_workable:
         def skip_detail(job):
+            if shadow:
+                return exclusion_reason(profile, job)
             return (repeat_reason(job)
                     or (EMPLOYER_COPY if job_key(job['company'], job['title']) in employer_keys else '')
                     or exclusion_reason(profile, job))
 
         search_jobs, search_runs, reading = workable.read(
-            profile, queries, today, boards, search_fetch or partial(workable.fetch_text, boards=boards), skip_detail)
+            profile, planned_queries[workable.SOURCE] if shadow else queries, today, boards,
+            search_fetch or partial(workable.fetch_text, boards=boards), skip_detail)
         feeds[workable.SOURCE] = ({job['posting_id']: job for job in search_jobs},
                                   {run['query']: run for run in search_runs}, reading)
 
     if discovery_sources:
         for source in discovery_sources:
-            feeds[source] = discovery.read(source, profile, queries, countries.values(), boards,
+            feeds[source] = discovery.read(source, profile, planned_queries[source] if shadow else queries,
+                                          countries.values(), boards,
                                           discovery_fetch or partial(discovery.fetch_json, boards=boards),
-                                          partial(connect, backlog))
+                                          partial(connect, backlog), shadow=shadow, jobicy_pages=jobicy_pages)
         workable_keys = {job_key(job['company'], job['title']) for job in search_jobs
                          if job['open'] is True and not job.get('fact_reason')}
         follow_discovery(profile, today, {source: feeds[source] for source in discovery_sources},
-                         employer_keys | workable_keys, prior_keys, repeat_reason,
-                         fetch, search_fetch, partial(connect, backlog))
+                         set() if shadow else employer_keys | workable_keys, prior_keys, repeat_reason,
+                         fetch, search_fetch, partial(connect, backlog), shadow_query=shadow_query)
+    if shadow:
+        results = []
+        for entry in planned_searches:
+            source, query = entry['source'], entry['words']
+            jobs, runs, reading = feeds[source]
+            row = runs.get(query, {})
+            found = [jobs[token] for token in row.get('posting_ids', [])]
+            reason = row.get('reason') or reading['reason']
+            results.append((source, query, found, row.get('total', 0 if not reason else None), reason))
+        results.extend((company['provider'], company['board'], shadow_boards[i], len(shadow_boards[i]),
+                        (board_reads[i] or {}).get('reason', 'This board could not be read.'))
+                       for i, company in enumerate(companies))
+        return results
     if search_enabled:
         tracker_titles, tracker_links = tracker_repeats(tracker, profile['id'])
 
