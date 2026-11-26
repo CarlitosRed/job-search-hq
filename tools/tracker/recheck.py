@@ -166,7 +166,9 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
     report = dict(dry_run=dry_run, checked=0, seen=0, missed=0, closed=[], reopened=[],
                   not_checked=[], no_information=[], link_checked=0, errors=[])
     jobs = {r['id']: dict(r) for r in db.execute('SELECT * FROM jobs')}
-    posts = [dict(r) for r in db.execute('SELECT * FROM postings WHERE profile_id=?', (profile,))]
+    # Archived jobs retain their posting history, but only active rows are re-checked.
+    posts = [dict(r) for r in db.execute('SELECT * FROM postings WHERE profile_id=?', (profile,))
+             if r['job_id'] in jobs]
     before = {key: posting_status(storage, key) for key in jobs}
     touched, observed, plans, boards = set(), {}, [], {}
 
@@ -273,6 +275,10 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
                    for p, action, seen, _ in plans if action == 'seen' and seen[0]}
     # Fetch all planned links before opening the write transaction.
     requests = [(p['job_id'], p['id'], p['link']) for p, action, _, _ in plans if action == 'missed']
+    direct = {p['id']: p for p in posts if p['source'] == 'owner_review'
+              and p['provider'] not in ('greenhouse', 'lever', 'ashby', 'workday')
+              and p['state'] != 'closed' and p['link'] and jobs[p['job_id']]['status'] != 'Skipped'}
+    requests.extend((p['job_id'], p['id'], p['link']) for p in direct.values())
     for job_id, job in jobs.items():
         if not storage.postings_for(job_id) and job['status'] != 'Skipped' and job.get('link') and before[job_id]['state'] != 'closed':
             requests.append((job_id, None, job['link']))
@@ -400,10 +406,18 @@ def recheck(storage, snapshot, today, run_id, link_check, backlog=None, dry_run=
         for job_id, pid, link in requests:
             if pid is None and valid(job_id):
                 link_result(job_id, pid)
+            elif pid in direct and valid(job_id, direct[pid]):
+                _, detail, state = link_result(job_id, pid)
+                if state == 'closed':
+                    db.execute("UPDATE postings SET state='closed',closed_on=?,close_reason=? WHERE id=?",
+                               (today, detail[:200], pid))
 
         if backlog and Path(backlog).is_file():
             with closing(sqlite3.connect(Path(backlog).resolve().as_uri() + '?mode=ro', uri=True)) as queue:
-                for identity, body in queue.execute('SELECT identity,body FROM search_backlog WHERE profile_id=? AND landed=0', (profile,)):
+                exists = queue.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='search_backlog'").fetchone()
+                waiting = queue.execute('SELECT identity,body FROM search_backlog WHERE profile_id=? AND landed=0',
+                                        (profile,)) if exists else ()
+                for identity, body in waiting:
                     job = json.loads(body)
                     board = observed.get((job['provider'], job['company']))
                     if not board:

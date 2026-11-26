@@ -473,6 +473,7 @@ def pending_jobs(storage, snapshot=None, profile=None, *, backlog=None, link_rea
                                      'FROM jobs ORDER BY first_seen DESC, id')
             if open_stage(row['status'])]
     judged = {row[0] for row in db.execute('SELECT job_id FROM judgements WHERE pass=? AND current=1', (PASS,))}
+    queued = {row[0] for row in db.execute("SELECT job_id FROM postings WHERE source='owner_review'")}
     failed = {row[0] for row in db.execute('''SELECT job_id FROM judgements WHERE error IS NOT NULL AND id IN
         (SELECT MAX(id) FROM judgements WHERE pass=? GROUP BY job_id)''', (PASS,))}
     backlog, link_cache = posting_paths(db, backlog)
@@ -496,7 +497,7 @@ def pending_jobs(storage, snapshot=None, profile=None, *, backlog=None, link_rea
         posting = saved_posting(storage, row, profile, backlog, link_reads) if profile else None
         read_failed = not posting and bool(link_reads.get(row['link'], {}).get('error'))
         last_failed = row['id'] in failed or read_failed
-        return (last_failed, row['id'] in judged, {'Apply': 0, 'Review': 1}.get(stage, 2),
+        return (last_failed, row['id'] in judged, row['id'] not in queued, {'Apply': 0, 'Review': 1}.get(stage, 2),
                 place_order(row, posting), not row['starred'])
 
     return [row['id'] for row in sorted(rows, key=order)]
@@ -523,7 +524,8 @@ def usage_used(path, profile_id, day):
 def qualification_usage(db, profile_id, day):
     return db.execute("""SELECT COALESCE(SUM(attempts), 0) FROM ai_usage WHERE profile_id=? AND day=?
                          AND (run_id IS NULL OR (run_id NOT LIKE 'shadow:plan:%'
-                              AND run_id NOT LIKE 'shadow:triage:%'))""",
+                              AND run_id NOT LIKE 'shadow:triage:%'
+                              AND run_id NOT LIKE 'review-search:%'))""",
                       (profile_id, day)).fetchone()[0]
 
 
@@ -567,6 +569,19 @@ def _save(db, record, retire_id=None):
     db.execute(f"INSERT INTO judgements ({names}) VALUES ({','.join('?' for _ in record)})", tuple(record.values()))
     if record['current'] or retired:
         db.execute('UPDATE jobs SET fit=? WHERE id=?', (record.get('fit'), record['job_id']))
+    if record['current']:
+        job = db.execute("""SELECT j.fields,l.header FROM jobs j JOIN layouts l ON l.sheet=j.sheet AND l.source='main'
+                         WHERE j.id=? AND j.notes='Being scored' AND EXISTS
+                         (SELECT 1 FROM postings p WHERE p.job_id=j.id AND p.source='owner_review')""",
+                         (record['job_id'],)).fetchone()
+        if job:
+            values, header = json.loads(job['fields']), json.loads(job['header'])
+            column = next((key for key, label in header.items() if label == 'Notes'), None)
+            if column is not None:
+                values[column] = None
+                db.execute('UPDATE jobs SET notes=NULL,fields=? WHERE id=?',
+                           (json.dumps(values, ensure_ascii=False), record['job_id']))
+                db.execute("UPDATE meta SET value=1 WHERE key='mirror_stale'")
 
 
 def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dry_run=False, postings=None,
@@ -583,6 +598,7 @@ def judge_pending(storage, profile, evidence, today, run_id, complete, limit, dr
     Daily runs pass `read_link` to fill missing text for never-judged jobs.
     """
     db = storage.db
+    limit = min(20, limit)
     run_day = date.fromisoformat(today) if isinstance(today, str) else today
     day = run_day.isoformat()
     roles = work_history(profile, evidence)

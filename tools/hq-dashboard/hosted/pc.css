@@ -16,9 +16,9 @@
 @media (max-width:900px){.pc-acts{flex:1 1 100%}.pc-acts .btn{flex:1 1 0;justify-content:center}.cvl .pc-dl{margin-left:auto}}
 /* Allow fractional flex shrink */
 @media (max-width:560px){.seg button{flex:1 1 auto;padding:7px 2px;gap:4px}}
-.trial-posting{border-top:1px solid var(--line);padding:16px 0;overflow-wrap:anywhere}
-.trial-posting form{display:flex;flex-wrap:wrap;align-items:end;gap:8px}
-.trial-posting form label{display:grid;gap:4px;flex:1 1 220px;min-width:0}
+.review-posting{border-top:1px solid var(--line);padding:16px 0;overflow-wrap:anywhere}
+.review-actions{display:flex;flex-wrap:wrap;align-items:end;gap:8px}
+.review-actions label{display:grid;gap:4px;flex:1 1 220px;min-width:0}
 
 /* Live company-board search */
 .pc-search-help{margin:-6px 0 0;font-size:12px;line-height:1.5;color:var(--mute)}
@@ -53,3 +53,6 @@
 #pc-saves .btn{color:inherit;border:1px solid currentColor;min-height:44px;white-space:normal}
 #pc-saves.pc-save-fade{opacity:0}
 @media (prefers-reduced-motion:reduce){#pc-saves{transition:none}}
+
+.review-actions[hidden]{display:none}
+.review-posting h2{font-size:1.1rem}

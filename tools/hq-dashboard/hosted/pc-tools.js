@@ -9,7 +9,7 @@ async function pcState(){
  if(CUR){const fresh=POSTINGS.find(p=>p._id===CUR._id);if(fresh){CUR=fresh;renderResult(CUR)}}return data;
 }
 async function pcInit(){
- pcTrialInit();
+ pcReviewInit();
  CAP.sample={};CAP.downloads={};
  CAP.db={doc:path=>({update:async patch=>{
   if(!path.startsWith('postings/')||Object.keys(patch).some(k=>k!=='jobId'))throw Error('This change requires a separate reviewer.');
@@ -211,85 +211,127 @@ $('.seg').addEventListener('click',e=>{if(e.target.closest('[data-v="search"]'))
 
 const pcTrackerRender=renderInner;
 renderInner=function(){
- const section=$('#v-trial'),show=S.view==='trial',wasHidden=section.hidden;
+ const section=$('#v-to-review'),show=S.view==='to-review',wasHidden=section.hidden;
  pcTrackerRender();
  section.hidden=!show;
- if(show&&wasHidden)pcTrialRefresh();
+ if(show&&wasHidden)pcReviewRefresh();
 };
 
-async function pcTrialInit(){
- try{await pcFetch('/api/trial')}catch{return}
+async function pcReviewInit(){
+ try{await pcFetch('/api/to-review')}catch{return}
  const tab=document.createElement('button');
  tab.type='button';
- tab.dataset.v='trial';
- tab.id='trial-tab';
+ tab.dataset.v='to-review';
+ tab.id='to-review-tab';
  tab.setAttribute('role','tab');
- tab.setAttribute('aria-controls','v-trial');
+ tab.setAttribute('aria-controls','v-to-review');
  tab.setAttribute('aria-selected','false');
  const label=document.createElement('span');
  label.className='l';
- label.textContent='Trial';
+ label.textContent='To review';
  tab.append(label);
- tab.onclick=()=>{S.view='trial';render()};
+ tab.onclick=()=>{S.view='to-review';render()};
  $('.seg').append(tab);
- if(location.hash==='#trial')tab.click();
+ if(location.hash==='#to-review')tab.click();
 }
 
-function pcTrialDate(day){
- return new Intl.DateTimeFormat(undefined,{dateStyle:'long',timeZone:'UTC'}).format(new Date(day+'T00:00:00Z'));
-}
+const REVIEW_FILTERS={
+ years_minimum:'Minimum years asked',years_maximum:'Maximum years asked',
+ title_drop:'Drop titles containing',title_keep:'Keep titles containing',place_words:'Places containing'
+};
 
-async function pcTrialRefresh(){
- const status=$('#trial-status'),days=$('#trial-days');
- status.textContent='Loading Trial results…';
- days.replaceChildren();
+async function pcReviewSave(path,payload){
+ const status=$('#to-review-status'),section=$('#v-to-review');
+ const disabled=Array.from(section.querySelectorAll('button:not([disabled])'));
+ disabled.forEach(button=>button.disabled=true);
  try{
-  const data=await pcFetch('/api/trial');
-  status.textContent=data.days.length?'':'The Trial has no results yet.';
-  for(const day of data.days){
-   const group=document.createElement('section');
-   group.className='panel';
-   group.innerHTML=`<h2>${esc(pcTrialDate(day.day))}</h2><p>${esc(day.detail)}</p>`;
-   for(const job of day.jobs){
-    const card=document.createElement('article');
-    card.className='trial-posting';
-    const link=pcSearchLink(job.link);
-    card.innerHTML=`<h3>${esc(job.title)} · ${esc(job.company)}</h3>
-     ${fitChip({judgement:{score:job.score,action:job.action}})}
-     <ul>${job.reasons.map(reason=>`<li>${esc(reason)}</li>`).join('')}</ul>
-     <p><strong>Found by</strong> ${esc(job.found_by)}</p>
-     ${job.repost_note?`<p>${esc(job.repost_note)}</p>`:''}
-     ${link?`<p><a href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open posting <span class="sr">(opens a new tab)</span></a></p>`:''}`;
-    const feedback=document.createElement('p');
-    feedback.setAttribute('role','status');
-    const saved=(choice,reason)=>{feedback.textContent=(choice==='keep'?'Kept':'Skipped')+(reason?' · '+reason:'')};
-    if(job.answer){saved(job.answer,job.answer_reason)}
-    else{
-     const form=document.createElement('form');
-     form.innerHTML=`<label>Reason (optional) <input class="inp" name="reason" maxlength="500"></label>
-       <button class="btn ghost" type="submit" value="keep">Keep</button>
-       <button class="btn ghost" type="submit" value="skip">Skip</button>`;
-     form.onsubmit=async event=>{
-      event.preventDefault();
-      if(!event.submitter)return;
-      const choice=event.submitter.value,reason=form.elements.reason.value.trim();
-      const buttons=Array.from(form.querySelectorAll('button'));
-      buttons.forEach(button=>button.disabled=true);
-      try{
-       const answer=await pcFetch('/api/trial/answer',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({day:day.day,identity:job.identity,choice,reason})});
-       form.remove();
-       saved(answer.choice,answer.reason);
-       feedback.tabIndex=-1;
-       feedback.focus();
-      }catch(error){feedback.textContent=error.message;buttons.forEach(button=>button.disabled=false)}
-     };
-     card.append(form);
-    }
-    card.append(feedback);
-    group.append(card);
-   }
-   days.append(group);
-  }
- }catch(error){status.textContent=error.message}
+  const result=await pcFetch('/api/to-review/'+path,{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify(payload)});
+  const message=path==='filter'?'Filter choice saved.':result.answered===1?'1 answer saved.':result.answered+' answers saved.';
+  await pcReviewRefresh(message);
+  status.tabIndex=-1;
+  status.focus();
+ }catch(error){status.textContent=error.message;disabled.forEach(button=>button.disabled=false)}
 }
+
+async function pcReviewRefresh(message=''){
+ const status=$('#to-review-status'),jobs=$('#to-review-jobs'),bulk=$('#to-review-bulk');
+ const filters=$('#to-review-filters'),suggestions=$('#to-review-suggestions');
+ const filtered=$('#to-review-filtered'),filteredJobs=$('#to-review-filtered-jobs');
+ status.textContent='Loading jobs…';
+ try{
+  const data=await pcFetch('/api/to-review');
+  status.textContent=(message?message+' ':'')+(data.remaining===1?'1 job left to review.':data.remaining+' jobs left to review.');
+  jobs.replaceChildren();
+  suggestions.replaceChildren();
+  bulk.hidden=!data.jobs.length;
+  filters.hidden=!data.suggestions.length;
+  $('#to-review-note').value='';
+  for(const job of data.jobs){
+   const card=document.createElement('article');
+   card.className='review-posting';
+   const link=pcSearchLink(job.link);
+   const source=pcSearchLink(job.source_link);
+   card.innerHTML=`<h2>${esc(job.title)} · ${esc(job.company)}</h2>
+    <p>${esc(job.place_text)} · Posted <time datetime="${esc(job.posted_on)}">${esc(job.posted_on)}</time></p>
+    <p>Found by ${source?`<a href="${esc(source)}" target="_blank" rel="noopener noreferrer">${esc(job.found_by)}</a>`:esc(job.found_by || 'Employer search')}</p>
+    ${job.repost_note?`<p>${esc(job.repost_note)}</p>`:''}
+    ${link?`<p><a href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open posting <span class="sr">(opens a new tab)</span></a></p>`:''}
+    <label><input type="checkbox" class="review-check"> Check ${esc(job.title)} for a bulk answer</label>
+    <form class="review-actions">
+     <label>Note with No (optional) <input class="inp" name="reason" maxlength="500"></label>
+     <button class="btn ghost" type="submit" value="yes">${job.pending_yes?'Finish saving Yes':'Yes'}</button>
+     <button class="btn ghost" type="submit" value="no" ${job.pending_yes?'disabled':''}>No</button>
+    </form>`;
+   card.querySelector('.review-check').value=job.identity;
+   const form=card.querySelector('form');
+   form.onsubmit=event=>{
+    event.preventDefault();
+    if(!event.submitter)return;
+    const choice=event.submitter.value;
+    pcReviewSave('answer',{choice,identities:[job.identity],reason:choice==='no'?form.elements.reason.value.trim():''});
+   };
+   jobs.append(card);
+  }
+  const dropped=data.filtered_out||[];
+  filtered.querySelector('summary').textContent=`Filtered out (${dropped.length})`;
+  filteredJobs.replaceChildren();
+  for(const job of dropped){
+   const card=document.createElement('article');
+   card.className='review-posting';
+   const link=pcSearchLink(job.link);
+   card.innerHTML=`<h2>${esc(job.title)} · ${esc(job.company)}</h2>
+    <p>${esc(job.reason)}</p>
+    ${link?`<p><a href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open posting <span class="sr">(opens a new tab)</span></a></p>`:''}`;
+   filteredJobs.append(card);
+  }
+  filtered.hidden=false;
+  for(const filter of data.suggestions){
+   const card=document.createElement('article');
+   card.className='review-posting';
+   const heading=document.createElement('h3'),reason=document.createElement('p'),actions=document.createElement('div');
+   heading.textContent=(REVIEW_FILTERS[filter.kind]||filter.kind)+': '+filter.value;
+   reason.textContent=filter.why;
+   actions.className='review-actions';
+   const buttons=filter.state==='approved'?[['undo','Undo approval']]:[['approve','Approve'],['reject','Reject']];
+   for(const [action,label] of buttons){
+    const button=document.createElement('button');
+    button.type='button';
+    button.className='btn ghost';
+    button.textContent=label;
+    button.onclick=()=>pcReviewSave('filter',{id:filter.id,action});
+    actions.append(button);
+   }
+   card.append(heading,reason,actions);
+   suggestions.append(card);
+  }
+ }catch(error){filtered.hidden=true;filteredJobs.replaceChildren();status.textContent=error.message}
+}
+
+$('#to-review-bulk').addEventListener('click',event=>{
+ const choice=event.target.closest('[data-review-bulk]')?.dataset.reviewBulk;
+ if(!choice)return;
+ const identities=Array.from(document.querySelectorAll('.review-check:checked'),input=>input.value);
+ if(!identities.length){$('#to-review-status').textContent='Check at least one job first.';return}
+ pcReviewSave('answer',{choice,identities,reason:choice==='no'?$('#to-review-note').value.trim():''});
+});

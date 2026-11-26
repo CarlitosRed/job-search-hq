@@ -52,6 +52,19 @@ def load(root=None, defaults_root=None):
     if not isinstance(values['cv_tool_groups'], list) or any(
             not isinstance(name, str) or not name.strip() for name in values['cv_tool_groups']):
         raise ValueError('cv_tool_groups must be a list of skill group names.')
+    engines = values.setdefault('search_engines', {})
+    if not isinstance(engines, dict) or any(
+            not isinstance(options, dict) or type(options.get('enabled', True)) is not bool
+            for options in engines.values()):
+        raise ValueError('Search engine settings must be objects with a true or false enabled setting.')
+    hosts = values['no_automatic_read_hosts']
+    label = r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
+    if not isinstance(hosts, list) or any(
+            not isinstance(host, str) or len(host.rstrip('.')) > 253
+            or not re.fullmatch(rf'{label}(?:\.{label})*\.?', host, re.ASCII | re.IGNORECASE)
+            for host in hosts):
+        raise ValueError('no_automatic_read_hosts must be a list of host names.')
+    values['no_automatic_read_hosts'] = [host.lower().rstrip('.') for host in hosts]
     sections = values['cv_fixed_sections']
     if not isinstance(sections, list):
         raise ValueError('cv_fixed_sections must be a list.')

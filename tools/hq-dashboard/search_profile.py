@@ -125,8 +125,10 @@ def load(path):
     sources = items(search.setdefault('search_sources', []), 'search.search_sources')
     if any(source not in SEARCH_SOURCES for source in sources):
         problems.append('search.search_sources may only include ' + ', '.join(SEARCH_SOURCES) + '.')
-    companies = items(search.get('companies', [] if sources else None), 'search.companies', not sources)
-    if sources:
+    review_enabled = search.get('review_queue', search.get('ai_shadow')) is True
+    companies = items(search.get('companies', [] if sources or review_enabled else None),
+                      'search.companies', not sources and not review_enabled)
+    if sources or review_enabled:
         search.setdefault('companies', companies)
     if len(companies) > 300:
         problems.append('search.companies may have at most 300 boards.')
@@ -160,6 +162,8 @@ def load(path):
             problems.append('search.' + key + f' must be a whole number of at least {minimum}.')
     if type(search.setdefault('ai_shadow', False)) is not bool:
         problems.append('search.ai_shadow must be true or false.')
+    if type(search.setdefault('review_queue', search['ai_shadow'])) is not bool:
+        problems.append('search.review_queue must be true or false.')
     landing_score = search.setdefault('landing_score', 3.0)
     if type(landing_score) not in (int, float) or not float('-inf') < landing_score < float('inf'):
         problems.append('search.landing_score must be a finite number.')

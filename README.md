@@ -12,7 +12,7 @@ The qualification judge uses **your own evidence** to assess saved postings. You
 ## What it does
 
 - **Board, list, overview and contacts** over your tracker, with durable saves. Edits queue and conflicts are shown instead of overwritten. In Excel mode, edits wait while the workbook is open.
-- **Search** uses the profile's public Greenhouse, Lever, Ashby and Workday boards. `daily_search.py` ranks results in a SQLite backlog and saves a JSON landing set. Leave `search.search_sources` empty to use only the configured boards, or add any of `"workable_search"`, `"himalayas"` and `"jobicy"`. These sources are off by default. Himalayas and Jobicy leads need a matching employer posting to be kept for review. Source findings stay in the backlog with their decision and are excluded from landing. The daily-run panel shows how many Himalayas and Jobicy leads were found, kept or hidden and why. `search.landing_max_age_days` defaults to 14 for the fact checks. Company-board landing still uses 45 days.
+- **Search and review** reads public employer systems, web search and job feeds. The owner gets a newest-first To review list of matching, open postings dated within 14 days. Yes adds a job as Tracked with “Being scored” in Notes. No records a permanent skip and can include a note.
 - **Scores and stars.** List, Board and Top opportunities show a 1.0 to 5.0 score and an action. The bands start at 4.5 for Apply now, 4.0 for Worth applying, 3.5 for Only with a reason, and 3.0 for Worth a look. Lower scores and postings outside your work rules show Skip. Unscored jobs show Not scored yet. The drawer shows quoted reasons and main requirements with evidence titles. Highest score first puts starred jobs first, then sorts by score and date. With SQLite you can star or unstar a job.
 - **Review a posting.** Paste text or add photos, review requirements and gaps, then ask for a CV or letter.
 - **Evidence first**: the model is asked to use entries in `evidence/` that are marked `verified` or `stated`, `public-safe: yes`
@@ -52,15 +52,57 @@ Known limits: one pending edit at a time; a changed tracker produces a conflict 
 AI tasks that were running at a restart are marked interrupted rather than rerun (queued tasks can still run);
 page fit uses font metrics and needs visual review in Word or Pages.
 
-## AI search Trial
+## Search and To review
 
-Set `search.ai_shadow` to `true` in the profile to run the Trial with the enabled daily run or a manual run. While the Trial is on, the daily run skips landing, so nothing is added to the board. With `search.ai_shadow` set to `false` (the default), the daily run lands jobs as usual. Sign in as the profile owner to see the Trial tab. It shows checked scores of 3.0 and higher, the search that found each job, and any repost note. Keep and Skip, with an optional reason, inform future searches. Trial results and answers stay in the search backlog database.
+Set `search.review_queue` to `true` in your profile and sign in as its owner. The default is `false`. An existing `search.ai_shadow` setting supplies the default when `review_queue` is absent. The daily run records “Jobs reach the tracker only when you say yes” with either setting. With the queue off, the existing board search still supplies re-check snapshots.
 
-The Trial asks the configured judge provider for one plan a day. The plan uses goals, eligible judge evidence, the last 60 days of Keep and Skip choices, and yesterday’s search counts. Posting descriptions are used only for sorting and judging. The plan can use the profile’s enabled search sources and select up to five configured employer boards. A Trial posting needs a confirmed open employer listing, an employer publication date within 14 days, and an eligible place. If the AI becomes unavailable or the call budget runs out, the Trial can reuse yesterday’s usable plan once and stops asking the AI. The Trial gets at most 25 AI calls per day per profile, and its scores count toward the qualification judge’s daily limit.
+When review is enabled, the daily run uses two local times from `daily_run.times` in private `settings.json`. The defaults are `["06:00", "22:00"]`. Start the scheduler using the existing data root.
 
-Two profile search settings are reserved for a future landing switch. `search.landing_score` is a number that defaults to `3.0`. `search.daily_land_cap` is a whole number from 1 through 10 and defaults to `10`.
+```powershell
+python -I tools/tracker/daily_run.py --watch
+```
 
-A removed or archived job can reappear once for a newer employer publication. If the tracker has no date for the previous posting, a current posting that passes the 14-day check can reappear once. A job you skipped stays hidden. To record a removal separately, use the following command with the original posting link and removal date.
+Leave the scheduler running while the PC is on, or schedule the same script without `--watch` at both configured times. An invocation checks the most recent due slot. `daily_run.enabled: false` pauses scheduled runs. Run once with `python -I tools/tracker/daily_run.py --trigger manual` to start a search immediately.
+
+Each run makes one search AI attempt, up to two attempts per profile each day. It uses the profile, evidence, owner choices and skip notes, tracker outcomes and yesterday’s engine counts. The search AI suggests role queries, places, employers and filters. Search runs automatically. Suggested filters take effect after Approve, and Undo approval removes the filter. During an outage the last valid plan can be reused once, then the profile’s lanes and words are used. The judge has a separate budget of up to 20 calls a day. It fills in the score and reasons when it can reach the AI.
+
+### Search engines
+
+Configured boards are a starting set. Public web results, named employers and aggregator leads can surface new employer boards. The search remembers boards whose public API responds and stops using a discovered board after 30 days of errors or empty results. Employer pages that require sign-in or a bot check, or return HTTP 403 or 429, are skipped with a reason. Aggregator leads require independent confirmation from the employer. Engine counts and hidden reasons are saved in `work/search-backlog.sqlite3`.
+
+Set credentials in the private `search_engines` settings object. This example lists the supported keys with empty values.
+
+```json
+{
+  "search_engines": {
+    "web_search": {"provider": "brave", "key": ""},
+    "adzuna": {"id": "", "key": "", "country": "us"},
+    "jooble": {"key": ""},
+    "careerjet": {"key": "", "locale": "en_US"},
+    "linkedin": {"path": ""}
+  }
+}
+```
+
+Brave, Adzuna, Jooble and Careerjet are off until their credentials are supplied. Remotive, Remote OK, Arbeitnow, employer careers pages, the configured board readers, Workable, Himalayas and Jobicy are enabled for review by default. Set an engine’s `enabled` to `false` to switch it off. Engine IDs include `careers_page`, `configured_boards`, `workday`, `workable_search`, `himalayas`, `jobicy`, `remotive`, `remoteok` and `arbeitnow`.
+
+The LinkedIn reader goes live with the email feature when you provide a local folder of alert `.eml` files, an `.eml` file, or an exported mbox file. The path is empty by default. It reads the export locally and never signs in to or scrapes LinkedIn.
+
+The top-level `no_automatic_read_hosts` setting in private `settings.json` defaults to `["amazon.jobs", "amazon.com", "smartrecruiters.com"]`. It applies to posting links, re-checks, employer careers pages and public board requests. Each entry is a bare host name and covers its subdomains. Set `"no_automatic_read_hosts": []` to allow HQ to attempt public reads from those hosts. Pages that require sign-in, present a bot check or block access are still skipped.
+
+The legacy `search.landing_score` and `search.daily_land_cap` values are still validated for profiles that contain them. The review flow does not use them.
+
+### Replay a copy of the tracker
+
+Point `JOB_SEARCH_HQ_DATA` at a test data folder containing a profile and a migrated SQLite tracker under `work/`. Enable `search.review_queue` in that profile and start the site using the same data root.
+
+```powershell
+python -I tools/hq-dashboard/ai_shadow.py --replay --days 14
+```
+
+Omit `--days` to consider all active rows. The 14-day filter still applies. Replay reads the saved tracker data, ignores the already-on-tracker rule, uses saved posting status where available and writes only to the review queue. A Yes on an existing tracker row reuses it. No records a skip. Replay makes no network or AI calls.
+
+A removed or archived job may return once when the employer publishes a new posting. To record a removal separately, use the original link and removal date.
 
 ```powershell
 python -I tools/hq-dashboard/ai_shadow.py --company "Fable Workshop" --title "Research Analyst" --link "https://example.invalid/posting/1" --removed-on 2026-11-18
@@ -103,6 +145,7 @@ python -I tools/hq-dashboard/test_search_profile.py
 python -I tools/hq-dashboard/test_daily_search.py
 python -I tools/hq-dashboard/test_discovery_sources.py
 python -I tools/hq-dashboard/test_ai_shadow.py
+python -I tools/hq-dashboard/test_review_search.py
 python -I tools/hq-dashboard/test_board_reads.py
 python -I tools/tracker/test_store.py
 python -I tools/tracker/test_stages.py
