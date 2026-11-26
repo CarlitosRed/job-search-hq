@@ -115,7 +115,7 @@ def normalized(value):
     return ' '.join(re.findall(r'[^\W_]+', unicodedata.normalize('NFKC', value).casefold()))
 
 
-def query_guard(profile, evidence):
+def query_guard(profile, evidence, *, protect_evidence=False):
     private = []
     for section in (profile, profile.get('owner'), profile.get('contact'), profile.get('identity')):
         if isinstance(section, dict):
@@ -129,13 +129,17 @@ def query_guard(profile, evidence):
         private.extend(row['employer'] for row in history if isinstance(row, dict) and
                        isinstance(row.get('employer'), str))
     private.extend(row['employer'] for row in judge.work_history({}, evidence).values())
+    if protect_evidence:
+        private.extend(part for entry in evidence.values() for field in ('title', 'what', 'bullets', 'role', 'limit')
+                       for part in re.split(r'[.!?\n]', entry.get(field) or '') if len(normalized(part).split()) >= 2)
     phrases = {normalized(value).replace(' ', '') for value in private if normalized(value)}
 
-    def allowed(words, empty=False):
+    def allowed(words, empty=False, public_url=False):
         compact = normalized(words).replace(' ', '')
-        return ((bool(compact) or empty and not words.strip()) and len(words) <= 300
+        limit = 2000 if public_url else 300
+        return ((bool(compact) or empty and not words.strip()) and len(words) <= limit
                 and not any(unicodedata.category(char).startswith('C') for char in words)
-                and '@' not in words and not re.search(r'\d(?:[\d\s().+-]*\d){5}', words)
+                and '@' not in words and (public_url or not re.search(r'\d(?:[\d\s().+-]*\d){5}', words))
                 and not any(value in compact for value in phrases))
     return allowed
 
@@ -486,14 +490,20 @@ def review(backlog, owner, day=None, profile=None):
             job = json.loads(body)
             if not pending and profile and fact_reason(profile, job, day, filters=filters):
                 continue
-            jobs.append({key: job.get(key, '') for key in
-                         ('title', 'company', 'link', 'place_text', 'posted_on', 'found_by', 'repost_note', 'source_link')}
-                        | {'identity': identity, 'pending_yes': bool(pending)})
+            row = {key: job.get(key, '') for key in
+                   ('title', 'company', 'link', 'place_text', 'posted_on', 'found_by', 'repost_note', 'source_link')}
+            if job.get('agent_reason'):
+                row['agent_reason'] = job['agent_reason']
+            jobs.append(dict(row, identity=identity, pending_yes=bool(pending)))
         suggestions = [dict(id=id_, kind=kind, value=value, why=why, state=state)
                        for id_, kind, value, why, state in db.execute("""SELECT id,kind,value,why,state
                         FROM review_filters WHERE profile_id=? AND state IN ('pending','approved') ORDER BY id""", (owner,))]
         filtered_out = []
-        for body, reason in db.execute("""SELECT body,reason FROM review_hidden WHERE profile_id=?1 AND run_id=COALESCE(
+        status = db.execute("""SELECT reason FROM search_runs WHERE profile_id=? AND source='agent_search'
+                              AND run_id=(SELECT run_id FROM review_latest_run WHERE profile_id=?)""",
+                            (owner, owner)).fetchone()
+        for body, reason in db.execute("""SELECT body,reason FROM review_hidden
+                WHERE profile_id=?1 AND source!='agent_search' AND run_id=COALESCE(
                 (SELECT run_id FROM review_latest_run WHERE profile_id=?1),
                 (SELECT run_id FROM search_runs WHERE profile_id=?1 AND run_id IS NOT NULL ORDER BY rowid DESC LIMIT 1))
                 ORDER BY rowid""", (owner,)):
@@ -503,6 +513,8 @@ def review(backlog, owner, day=None, profile=None):
     result = dict(jobs=jobs, remaining=len(jobs), suggestions=suggestions)
     if filtered_out:
         result['filtered_out'] = filtered_out
+    if status and status[0]:
+        result['agent_status'] = status[0]
     return result
 
 
@@ -597,7 +609,7 @@ def plan_prompt(profile, evidence, choices, runs, enabled_engines):
 
 
 def run(profile, evidence, day, run_id, backlog, tracker, usage, complete, *, fetch=None,
-        reader=None, jobicy_pages=None, settings=None, profile_root=None, board_reads=None):
+        reader=None, jobicy_pages=None, settings=None, profile_root=None, board_reads=None, agent_http=None):
     owner, stamp = profile['id'], day.isoformat()
     with database(backlog) as db:
         db.execute('INSERT OR IGNORE INTO review_plans(profile_id,run_id,day) VALUES (?,?,?)', (owner, run_id, stamp))
@@ -646,9 +658,20 @@ def run(profile, evidence, day, run_id, backlog, tracker, usage, complete, *, fe
     if reader:
         batches = reader(profile, plan, fetch, backlog, day)
     else:
+        feedback, agent_allowed = [], None
+        if engines.enabled(settings, 'agent_search'):
+            agent_allowed = query_guard(profile, evidence, protect_evidence=True)
+            with database(backlog) as db:
+                feedback = [dict(title=title, company=company, answer='Yes' if value == 'keep' else 'No')
+                            for title, company, value in db.execute("""SELECT title,company,value FROM choice_signals
+                                WHERE profile_id=? AND value IN ('keep','skip') AND at>=? AND at<?
+                                ORDER BY at DESC,id DESC LIMIT 12""",
+                                (owner, (day - timedelta(days=59)).isoformat(),
+                                 (day + timedelta(days=1)).isoformat()))]
         batches = engines.find(profile, plan, day, backlog, settings, board_fetch=fetch,
                                board_reads=board_reads, jobicy_pages=jobicy_pages, allowed=query_guard(profile, evidence),
-                               stopped=stopped)
+                               stopped=stopped, usage=usage, run_id=run_id, profile_root=profile_root,
+                               agent_http=agent_http, agent_feedback=feedback, agent_allowed=agent_allowed)
     count = enqueue(profile, day, backlog, tracker, batches, run_id=run_id, profile_root=profile_root)
     detail = f'{count} jobs ready to review.' + fallback
     if keys_error:

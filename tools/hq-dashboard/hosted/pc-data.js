@@ -101,7 +101,9 @@ async function boot(){
  await pcInit();
  const b=document.createElement('button');b.className='btn ghost';b.textContent='Sign out';
  b.onclick=async()=>{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),3000);try{await pcFetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:controller.signal})}catch{}finally{clearTimeout(timer);location.assign('/login')}};
- $('#sync').parentNode.append(b);
+ const settings=document.createElement('a');
+ settings.className='btn ghost';settings.href='/settings';settings.textContent='Settings';
+ $('#sync').parentNode.append(settings,b);
  setInterval(async()=>{if(busy||document.hidden)return;await pcWrites();await pcHealth();try{const d=await pcFetch('/api/version');if(d.version!==D.version||d.fitVersion!==D.fitVersion)await reloadJobs(true)}catch{}},5000);
 }
 async function waitForChoiceSave(id){

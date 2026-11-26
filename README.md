@@ -87,6 +87,8 @@ Set provider, country, locale, LinkedIn path, and per-engine `enabled` flags in 
 
 Brave, Adzuna, Jooble and Careerjet are off until their credentials are supplied. Remotive, Remote OK, Arbeitnow, employer careers pages, the configured board readers, Workable, Himalayas and Jobicy are enabled for review by default. Set an engine’s `enabled` to `false` to switch it off. Engine IDs include `careers_page`, `configured_boards`, `workday`, `workable_search`, `himalayas`, `jobicy`, `remotive`, `remoteok` and `arbeitnow`.
 
+The optional `agent_search` engine is off by default. It uses OpenAI web search on the profile's own API account or eligible ChatGPT plan. The employer's posting must pass HQ's review checks before it appears in **To review**. [Set up the search agent](SETUP.md#optional-openai-search-agent).
+
 The LinkedIn reader goes live with the email feature when you provide a local folder of alert `.eml` files, an `.eml` file, or an exported mbox file. The path is empty by default. It reads the export locally and never signs in to or scrapes LinkedIn.
 
 The top-level `no_automatic_read_hosts` setting in private `settings.json` defaults to `["amazon.jobs", "amazon.com", "smartrecruiters.com"]`. It applies to posting links, re-checks, employer careers pages and public board requests. Each entry is a bare host name and covers its subdomains. Set `"no_automatic_read_hosts": []` to allow HQ to attempt public reads from those hosts. Pages that require sign-in, present a bot check or block access are still skipped.

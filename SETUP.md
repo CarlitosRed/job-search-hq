@@ -280,6 +280,14 @@ python -I tools/hq-dashboard/cv_onepage.py work/CV_example.md work/CV_example-1p
 
 Supply your reviewed source file first; the demo does not create it. Inspect the exported layout before use.
 
+### Optional OpenAI search agent
+
+With the review queue and the careers page engine enabled, add `"agent_search": {"enabled": true}` inside `search_engines` in your local `settings.json`. The agent is off by default. Open **Settings** in the PC dashboard and choose **API key** or **ChatGPT plan**. Save your own OpenAI API key or sign in with ChatGPT, then save the payment method. Sign in with ChatGPT works only from the browser on the PC that runs Job Search HQ. The plan option uses OpenAI's preview, and available models can vary by plan.
+
+The API key defaults to `gpt-5-mini`. The plan defaults to the first listed model with known prices. If all listed models lack prices, HQ reports usage in searches and applies the dollar setting as a search-count limit using $0.01 per search. You can choose a model in Settings or configure the installation defaults with `model` for API keys and `plan_model` for ChatGPT plans. `max_searches` defaults to 10 and `max_dollars` to $0.30 per run. Daily caps are twice those values. HQ counts usage from the provider response and discards results from a request that reports an overage. OpenAI may still bill that request.
+
+Credentials live in the ignored `work/agent-auth/` directory under your data root. Usage totals persist in `work/ai-usage.sqlite3`. The ChatGPT connection refreshes during scheduled searches. Reconnect from Settings if it expires. Use `revocation_endpoint` in the agent configuration if your installation requires an alternate HTTPS revocation endpoint.
+
 ## 8. Phone access with Tailscale and Funnel
 
 Funnel exposes the app publicly over HTTPS. Anyone with the URL can reach sign-in. A signed-in visitor can read tracker data/documents, edit, and request AI tasks. There is one shared password, not separate accounts. Keep the listener on loopback; do not forward router ports or expose the plain tracker on 8765.

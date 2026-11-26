@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 work/
+work/agent-auth/
 .env*
 *.docx
 !examples/*.docx

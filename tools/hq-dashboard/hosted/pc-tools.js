@@ -262,6 +262,7 @@ async function pcReviewRefresh(message=''){
  try{
   const data=await pcFetch('/api/to-review');
   status.textContent=(message?message+' ':'')+(data.remaining===1?'1 job left to review.':data.remaining+' jobs left to review.');
+  if(data.agent_status)status.textContent+=' Search agent: '+data.agent_status;
   jobs.replaceChildren();
   suggestions.replaceChildren();
   bulk.hidden=!data.jobs.length;
@@ -275,6 +276,7 @@ async function pcReviewRefresh(message=''){
    card.innerHTML=`<h2>${esc(job.title)} · ${esc(job.company)}</h2>
     <p>${esc(job.place_text)} · Posted <time datetime="${esc(job.posted_on)}">${esc(job.posted_on)}</time></p>
     <p>Found by ${source?`<a href="${esc(source)}" target="_blank" rel="noopener noreferrer">${esc(job.found_by)}</a>`:esc(job.found_by || 'Employer search')}</p>
+    ${job.agent_reason?`<p>Search agent’s reason: ${esc(job.agent_reason)}</p>`:''}
     ${job.repost_note?`<p>${esc(job.repost_note)}</p>`:''}
     ${link?`<p><a href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open posting <span class="sr">(opens a new tab)</span></a></p>`:''}
     <label><input type="checkbox" class="review-check"> Check ${esc(job.title)} for a bulk answer</label>
