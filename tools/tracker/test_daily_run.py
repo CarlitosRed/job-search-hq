@@ -109,29 +109,31 @@ class Base(unittest.TestCase):
 
 
 class Phases(Base):
-    def test_trial_skips_landing_when_search_found_jobs(self):
-        profile = fixtures.ops_profile(ai_shadow=True)
+    def test_review_search_never_lands_without_an_answer(self):
+        profile = fixtures.ops_profile(review_queue=True)
         (self.root / 'profile.json').write_text(json.dumps(profile), encoding='utf-8')
         before = self.jobs()
-        with mock.patch.object(self.dr.ai_shadow, 'run', return_value='Trial test.'):
+        with mock.patch.object(self.dr.ai_shadow, 'run', return_value='Review test.') as search:
             out = self.run_daily()
+        search.assert_called_once()
         snapshot = self.work / 'daily-runs' / (out['run_id'] + '.json')
-        self.assertTrue(json.loads(snapshot.read_text(encoding='utf-8'))['landing'])
+        self.assertEqual(json.loads(snapshot.read_text(encoding='utf-8'))['landing'], [])
         self.assertEqual(out['phases']['land'], {
-            'status': 'skipped', 'detail': 'The Trial is on, so nothing is added to the board.'})
-        self.assertEqual(len(self.jobs()), len(before))
-        self.assertEqual(self.landed(), 0)
-        for name in ('search', 'trial', 'recheck', 'judge'):
+            'status': 'skipped', 'detail': 'Jobs reach the tracker only when you say yes.'})
+        self.assertEqual(self.jobs(), before)
+        for name in ('search', 'recheck', 'judge'):
             self.assertEqual(out['phases'][name]['status'], 'done')
 
-    def test_daily_search_lands_jobs_when_trial_is_off(self):
-        profile = fixtures.ops_profile(ai_shadow=False)
+    def test_daily_search_never_lands_even_when_review_is_off(self):
+        profile = fixtures.ops_profile(review_queue=False)
         (self.root / 'profile.json').write_text(json.dumps(profile), encoding='utf-8')
-        before = len(self.jobs())
-        out = self.run_daily()
-        self.assertEqual(out['phases']['land']['status'], 'done')
-        self.assertGreater(self.landed(), 0)
-        self.assertEqual(len(self.jobs()), before + self.landed())
+        before = self.jobs()
+        with mock.patch.object(self.dr.land_search, 'land') as land:
+            out = self.run_daily()
+        land.assert_not_called()
+        self.assertEqual(out['phases']['land']['status'], 'skipped')
+        self.assertEqual(self.landed(), 0)
+        self.assertEqual(self.jobs(), before)
 
     def test_workable_is_opt_in_and_never_lands_skipped_or_archived_copies(self):
         with closing(store.Store(self.db_file)) as storage, storage.db:
@@ -163,7 +165,7 @@ class Phases(Base):
         self.assertEqual([url for url in fake.calls if '/view/' in url],
                          [f'{fake.origin}/view/{fake.uid(2)}'])
         self.assertEqual(self.jobs(), before)
-        self.assertEqual(out['phases']['land']['status'], 'done')
+        self.assertEqual(out['phases']['land']['status'], 'skipped')
         with closing(sqlite3.connect(self.work / 'search-backlog.sqlite3')) as db:
             reasons = {job['title']: job['fact_reason'].lower() for (body,) in db.execute(
                 "SELECT body FROM search_backlog WHERE landed=0") if (job := json.loads(body))['provider'] == 'workable_search'}
@@ -196,7 +198,7 @@ class Phases(Base):
                 self.assertIn(f'Workable: {checked} postings checked, {kept} kept for review.', search['detail'])
                 self.assertEqual(out['status'], 'done')
 
-    def test_failed_workable_read_warns_and_other_boards_still_land(self):
+    def test_failed_workable_read_warns_and_keeps_other_board_reads(self):
         profile = fixtures.ops_profile(search_sources=['workable_search'])
         (self.root / 'profile.json').write_text(json.dumps(profile), encoding='utf-8')
         fake = fixtures.FakeWorkable(error=(403, {}))
@@ -206,10 +208,10 @@ class Phases(Base):
         self.assertEqual(search['status'], 'partial')
         self.assertIn('Workable: 0 postings checked, 0 kept for review.', search['detail'])
         self.assertIn('HTTP 403', search['detail'])
-        self.assertEqual(out['phases']['land']['status'], 'done')
+        self.assertEqual(out['phases']['land']['status'], 'skipped')
         self.assertEqual(out['status'], 'done_with_warnings')
 
-    def test_one_run_searches_lands_and_records_every_phase(self):
+    def test_one_run_searches_and_records_every_phase(self):
         out = self.run_daily()
         self.assertEqual(out['status'], 'done')
         self.assertEqual(out['slot'], '2026-03-10')
@@ -217,13 +219,13 @@ class Phases(Base):
         phases = out['phases']
         self.assertEqual([name for name in phases], ['search', 'land', 'recheck', 'judge'])
         self.assertEqual(phases['search']['status'], 'done')
-        self.assertEqual(phases['land']['status'], 'done')
+        self.assertEqual(phases['land']['status'], 'skipped')
         self.assertEqual(phases['recheck']['status'], 'done')
         self.assertEqual(phases['judge']['status'], 'done')
         self.assertIn('judged', phases['judge']['detail'])
         added = [row for row in self.jobs() if row[0] == 'Daily search']
-        self.assertTrue(added, 'found jobs land on the standing Daily search sheet')
-        self.assertEqual(self.landed(), len(added), 'the backlog is marked only for jobs the tracker took')
+        self.assertEqual(added, [], 'daily search never creates a tracker row')
+        self.assertEqual(self.landed(), 0)
         snapshot = self.work / 'daily-runs' / (out['run_id'] + '.json')
         self.assertTrue(snapshot.is_file(), 'the search snapshot is kept with the run')
         with closing(sqlite3.connect(self.record)) as db:
@@ -236,13 +238,13 @@ class Phases(Base):
     def test_no_new_sheet_per_day(self):
         self.run_daily()
         self.run_daily(datetime(2026, 3, 11, 6, 0))
-        self.assertEqual(self.sheets(), ['Daily search', 'Jobs'])
+        self.assertEqual(self.sheets(), ['Jobs'])
 
-    def test_some_boards_down_is_partial_and_still_lands(self):
+    def test_some_boards_down_is_partial_and_adds_nothing(self):
         out = self.run_daily(fetch=fixtures.FakeBoards(broken=['api.lever.co']))
         self.assertEqual(out['phases']['search']['status'], 'partial')
         self.assertIn('1', out['phases']['search']['detail'])
-        self.assertEqual(out['phases']['land']['status'], 'done')
+        self.assertEqual(out['phases']['land']['status'], 'skipped')
         self.assertEqual(out['status'], 'done_with_warnings')
 
     def test_run_report_shows_workday_coverage(self):
@@ -312,6 +314,21 @@ class Steps(Base):
 
 
 class CatchUp(Base):
+    def test_review_has_two_independent_local_slots(self):
+        profile = fixtures.ops_profile(review_queue=True)
+        (self.root / 'profile.json').write_text(json.dumps(profile), encoding='utf-8')
+        self.assertEqual(self.dr.configuration(self.root)['times'], ['06:00', '22:00'])
+        self.settings(times=['05:45', '21:15'])
+        with mock.patch.object(self.dr.ai_shadow, 'run', return_value='Review list updated.') as search:
+            first = self.run_daily(MORNING.replace(hour=5, minute=45))
+            again = self.run_daily(MORNING.replace(hour=20))
+            second = self.run_daily(MORNING.replace(hour=21, minute=15))
+        self.assertEqual(first['slot'], '2026-03-10T05:45')
+        self.assertEqual(again['status'], 'up_to_date')
+        self.assertEqual(second['slot'], '2026-03-10T21:15')
+        self.assertNotEqual(first['run_id'], second['run_id'])
+        self.assertEqual(search.call_count, 2)
+
     def test_up_to_date_until_the_next_slot(self):
         first = self.run_daily()
         fetch = fixtures.FakeBoards()
@@ -376,21 +393,22 @@ class Paused(Base):
 
 
 class Resume(Base):
-    def test_a_failed_landing_resumes_with_the_same_run_id_without_searching_again(self):
-        real = self.dr.land_search.land
-        with mock.patch.object(self.dr.land_search, 'land', side_effect=OSError('tracker busy')):
+    def test_failed_recheck_resumes_without_refetching_or_adding(self):
+        before = self.jobs()
+        with mock.patch.object(self.dr.recheck, 'recheck', side_effect=OSError('tracker busy')):
             first = self.run_daily()
         self.assertEqual(first['status'], 'failed')
         self.assertEqual(first['phases']['search']['status'], 'done')
-        self.assertEqual(first['phases']['land']['status'], 'failed')
-        self.assertEqual(self.landed(), 0, 'nothing is marked landed when the tracker did not take it')
+        self.assertEqual(first['phases']['land']['status'], 'skipped')
+        self.assertEqual(first['phases']['recheck']['status'], 'failed')
+        self.assertEqual(self.landed(), 0)
         fetch = fixtures.FakeBoards()
-        with mock.patch.object(self.dr.land_search, 'land', side_effect=real):
-            second = self.run_daily(datetime(2026, 3, 10, 7, 0), fetch=fetch)
+        second = self.run_daily(datetime(2026, 3, 10, 7, 0), fetch=fetch)
         self.assertEqual(second['run_id'], first['run_id'])
         self.assertEqual(fetch.calls, [], 'the saved snapshot is reused')
         self.assertEqual(second['status'], 'done')
-        self.assertEqual(second['phases']['land']['status'], 'done')
+        self.assertEqual(second['phases']['land']['status'], 'skipped')
+        self.assertEqual(self.jobs(), before)
         with closing(sqlite3.connect(self.record)) as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM runs').fetchone()[0], 1)
 
@@ -466,11 +484,11 @@ class ReviewFixes(Base):
     def test_unexpected_error_is_written_to_stderr(self):
         import io
         stream = io.StringIO()
-        with mock.patch.object(self.dr.land_search, 'land', side_effect=RuntimeError('boom in land')), \
+        with mock.patch.object(self.dr.recheck, 'recheck', side_effect=RuntimeError('boom in recheck')), \
                 mock.patch('sys.stderr', stream):
             out = self.run_daily()
-        self.assertEqual(out['phases']['land']['status'], 'failed')
-        self.assertIn('boom in land', stream.getvalue())
+        self.assertEqual(out['phases']['recheck']['status'], 'failed')
+        self.assertIn('boom in recheck', stream.getvalue())
         self.assertIn('Traceback', stream.getvalue())
 
     def test_crash_after_snapshot_reuses_it(self):
@@ -486,13 +504,11 @@ class ReviewFixes(Base):
         self.assertEqual(again['status'], 'done')
 
     def test_search_done_but_snapshot_missing_searches_again(self):
-        real = self.dr.land_search.land
-        with mock.patch.object(self.dr.land_search, 'land', side_effect=OSError('tracker busy')):
+        with mock.patch.object(self.dr.recheck, 'recheck', side_effect=OSError('tracker busy')):
             first = self.run_daily()
         (self.work / 'daily-runs' / (first['run_id'] + '.json')).unlink()
         fetch = fixtures.FakeBoards()
-        with mock.patch.object(self.dr.land_search, 'land', side_effect=real):
-            again = self.run_daily(datetime(2026, 3, 10, 7, 0), fetch=fetch)
+        again = self.run_daily(datetime(2026, 3, 10, 7, 0), fetch=fetch)
         self.assertTrue(fetch.calls, 'without its snapshot the search runs again')
         self.assertEqual(again['status'], 'done')
 
@@ -530,13 +546,13 @@ class Cli(Base):
 
 
 class RecheckPhase(Base):
-    """Piece 3 (card 03): the re-check runs after landing; preview mode writes nothing."""
+    """Piece 3 (card 03): the re-check runs after search; preview mode writes nothing."""
 
     def checks(self):
         with closing(sqlite3.connect(self.db_file)) as db:
             return db.execute('SELECT COUNT(*) FROM checks').fetchone()[0]
 
-    def test_recheck_runs_after_landing_and_records_checks(self):
+    def test_recheck_runs_after_search_and_records_checks(self):
         out = self.run_daily()
         self.assertEqual(out['phases']['recheck']['status'], 'done')
         self.assertIn('checked', out['phases']['recheck']['detail'])
@@ -571,7 +587,7 @@ class RecheckPhase(Base):
         before = hashlib.sha256(self.db_file.read_bytes()).hexdigest()
         out = self.run_daily(now=MORNING.replace(day=11), fetch=fixtures.FakeBoards())
         self.assertEqual(out['phases']['recheck']['status'], 'done')
-        # Search and landing may write; the re-check preview itself must not.
+        # A search and a re-check preview leave the tracker unchanged.
         report = json.loads((self.work / 'daily-runs' / (out['run_id'] + '-recheck-preview.json')).read_text(encoding='utf-8'))
         self.assertTrue(report['dry_run'])
         with closing(sqlite3.connect(self.db_file)) as db:
@@ -609,6 +625,24 @@ class RecheckPhase(Base):
 class JudgePhase(Base):
     """Piece 4a-1 (card 04a): the judge runs after the re-check; AI out never fails the run."""
 
+    def setUp(self):
+        super().setUp()
+        self.accept_jobs(3)
+
+    def accept_jobs(self, count):
+        profile = fixtures.ops_profile()
+        queue = self.work / 'search-backlog.sqlite3'
+        shadow = self.dr.ai_shadow
+        jobs = [dict(provider='careers_page', company=f'Fixture Workshop {i}', title='Partner Operations Analyst',
+                     posting_id=str(i), link=f'https://example.invalid/role/{i}',
+                     place_text='Exampleland', remote=False, open=True, posted_on='2026-03-10',
+                     date_source='careers_page', found_by='Fixture', description=f'Write reports. Role {i}.')
+                for i in range(count)]
+        shadow.enqueue(profile, MORNING.date(), queue, self.db_file, [('careers_page', '', jobs, len(jobs), '')])
+        items = shadow.review(queue, profile['id'], MORNING.date())['jobs']
+        shadow.answer_review(queue, profile['id'], [item['identity'] for item in items],
+                             'yes', xlsx=self.xlsx, now=MORNING)
+
     def judgements(self):
         with closing(sqlite3.connect(self.db_file)) as db:
             return db.execute('SELECT COUNT(*) FROM judgements').fetchone()[0]
@@ -617,6 +651,19 @@ class JudgePhase(Base):
         out = self.run_daily()
         self.assertEqual(out['phases']['judge']['status'], 'done')
         self.assertGreater(self.judgements(), 0)
+        with closing(sqlite3.connect(self.db_file)) as db:
+            score, details = db.execute('SELECT score,requirements FROM judgements WHERE current=1').fetchone()
+            self.assertEqual(score, 4.2)
+            self.assertTrue(json.loads(details))
+
+    def test_twenty_accepted_jobs_are_scored_and_the_rest_stay_queued(self):
+        self.accept_jobs(21)
+        complete = mock.Mock(side_effect=judge_answer)
+        self.run_daily(complete=complete)
+        self.assertEqual(complete.call_count, 20)
+        self.assertEqual(self.judgements(), 20)
+        with closing(sqlite3.connect(self.db_file)) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM jobs WHERE notes='Being scored'").fetchone()[0], 1)
 
     def test_ai_out_skips_the_judge_and_the_run_still_succeeds(self):
         def out_of_service(prompt, schema):
@@ -626,6 +673,8 @@ class JudgePhase(Base):
         self.assertIn('AI unavailable', out['phases']['judge']['detail'])
         self.assertIn(out['status'], ('done', 'done_with_warnings'))
         self.assertEqual(self.judgements(), 0)
+        with closing(sqlite3.connect(self.db_file)) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM jobs WHERE notes='Being scored'").fetchone()[0], 3)
 
     def test_judge_preview_writes_nothing_and_saves_named_results(self):
         self.settings(judge='preview')

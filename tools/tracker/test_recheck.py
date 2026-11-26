@@ -283,6 +283,22 @@ class LinkChecks(Base):
 
 
 class Identity(Base):
+    def test_archived_posting_is_skipped_and_active_posting_is_checked(self):
+        spec = importlib.util.spec_from_file_location('archive_fixture', Path(__file__).with_name('archive_old.py'))
+        archive = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(archive)
+        archived_id = self.ids['Data Analyst']
+        active_id = self.ids['Report Analyst']
+        with self.storage.db:
+            self.storage.db.execute("UPDATE jobs SET status='Tracked', posted_on='2000-01-01' WHERE id=?", (archived_id,))
+            self.assertEqual(archive.move(self.storage.db)['moved'], 1)
+        replacement = list(read('999'))
+        replacement[2] = 'Data Analyst'
+        report = self.run_check(date(2026, 3, 10), [board([tuple(replacement), read('102')])])
+        self.assertEqual(report['seen'], 1)
+        self.assertTrue(self.storage.postings_for(archived_id))
+        self.assertEqual(self.storage.postings_for(active_id)[0]['last_seen'], '2026-03-10')
+
     def test_workday_link_match_when_id_changes(self):
         lead = ['JR-9', 'https://bigex.wd1.myworkdayjobs.com/Careers/job/Remote/Partner-Lead_R100', 'Partner Lead']
         for day in (DAY1, DAY2):

@@ -145,7 +145,7 @@ EMPLOYER_COPY = 'The employer board already has this posting.'
 SEARCH_COPY = 'This search already found another copy of the posting.'
 
 
-def posting_facts(profile, job, today, repeat='', *, shadow=False):
+def posting_facts(profile, job, today, repeat=''):
     """Return one review decision for a posting from any daily search source."""
     if repeat:
         return repeat
@@ -159,9 +159,9 @@ def posting_facts(profile, job, today, repeat='', *, shadow=False):
             or job.get('date_source') not in (*profiles.PROVIDERS, workable.SOURCE)
             or posted > today.isoformat()):
         return 'The employer posting date could not be confirmed.'
-    earliest = posted if shadow else min(posted, job['first_seen'], job.get('earliest_posted_on') or posted,
-                                         job.get('workday_earliest_posted_on') or posted)
-    limit = 14 if shadow else profile['search'].get('landing_max_age_days', profiles.DEFAULTS['landing_max_age_days'])
+    earliest = min(posted, job['first_seen'], job.get('earliest_posted_on') or posted,
+                   job.get('workday_earliest_posted_on') or posted)
+    limit = profile['search'].get('landing_max_age_days', profiles.DEFAULTS['landing_max_age_days'])
     if (today - date.fromisoformat(earliest)).days > limit:
         return f'The posting is older than {limit} days.'
     if place_facts(profile, job)[0] != 'ok':
@@ -276,7 +276,7 @@ def lane_queries(profile):
 
 
 def follow_discovery(profile, today, feeds, known_keys, prior_keys, repeat_reason,
-                     fetch, search_fetch, backlog_connect, *, shadow_query=None):
+                     fetch, search_fetch, backlog_connect):
     eligible = {}
     discovered = (lead for leads, _, _ in feeds.values() for lead in leads.values())
     for position, lead in enumerate(discovered):
@@ -295,7 +295,7 @@ def follow_discovery(profile, today, feeds, known_keys, prior_keys, repeat_reaso
     groups = {name: [lead for _, _, lead in ordered[name]] for name in sorted(
         ordered, key=lambda name: (*ordered[name][0][:2], -len(ordered[name])))}
     matches, errors = discovery.confirm(profile, today, groups, boards, workable, fetch, search_fetch,
-                                        backlog_connect, job_key, shadow_query=shadow_query)
+                                        backlog_connect, job_key)
     for leads, _, _ in feeds.values():
         for token, lead in leads.items():
             if lead.get('fact_reason'):
@@ -397,6 +397,24 @@ def workday_progress(backlog, profile_id):
             'SELECT board_key,run_date,start_offset,next_offset FROM workday_progress WHERE profile_id=?', (profile_id,))}
 
 
+def save_workday_progress(db, updates, detail_updates, facet_updates):
+    if updates:
+        db.executemany('''INSERT INTO workday_progress VALUES (?,?,?,?,?)
+            ON CONFLICT(profile_id, board_key) DO UPDATE SET run_date=excluded.run_date,
+                start_offset=excluded.start_offset, next_offset=excluded.next_offset
+            WHERE excluded.run_date >= workday_progress.run_date''', updates)
+        db.executemany('''INSERT INTO workday_detail_progress VALUES (?,?,?,?,?,?)
+            ON CONFLICT(profile_id, board_key) DO UPDATE SET run_date=excluded.run_date,
+                started_with_details=excluded.started_with_details, resume_with_details=excluded.resume_with_details,
+                failed_details=excluded.failed_details
+            WHERE excluded.run_date >= workday_detail_progress.run_date''', detail_updates)
+    if facet_updates:
+        db.executemany('''INSERT INTO workday_country_facets VALUES (?,?,?,?,?)
+            ON CONFLICT(profile_id, board_key) DO UPDATE SET countries=excluded.countries,
+                facets=excluded.facets, run_date=excluded.run_date
+            WHERE excluded.run_date >= workday_country_facets.run_date''', facet_updates)
+
+
 def boards_read(result):
     # Workday can supply usable postings before a board stops. A partial Workable
     # read completed at least one search query, which can validly find no matches.
@@ -410,7 +428,7 @@ def boards_read(result):
 
 
 def run(profile, fetch, backlog, today, mark_landed=False, wait=2, *, search_fetch=None, tracker=None,
-        discovery_fetch=None, shadow_plan=None, shadow_query=None, jobicy_pages=None):
+        discovery_fetch=None, review_queries=None, review_reads=None, jobicy_pages=None):
     """Fetch and rank all candidates; return a landing set without importing it."""
     if isinstance(today, str):
         today = date.fromisoformat(today)
@@ -435,21 +453,11 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2, *, search_fet
     def home_first(text):
         return any(boards.phrase_matches(country, text) for country in countries.values())
 
-    shadow = shadow_plan is not None
+    shadow = review_queries is not None
     companies = profile['search'].get('companies', [])
     sources = profile['search'].get('search_sources', [])
     if shadow:
-        if shadow_query is None:
-            raise ValueError('The Trial needs a checked plan before searching.')
-        configured = {(c['provider'], c['board']): c for c in companies}
-        companies = [configured[key] for entry in shadow_plan['boards']
-                     if (key := (entry['provider'], entry['board'])) in configured
-                     and key[0] in profiles.PROVIDERS and shadow_query(key[1])]
-        planned_searches = [entry for entry in shadow_plan['searches'] if entry['source'] in sources
-                            and entry['source'] in profiles.SEARCH_SOURCES and shadow_query(entry['words'])]
-        planned_queries = {}
-        for entry in planned_searches:
-            planned_queries.setdefault(entry['source'], []).append(entry['words'])
+        planned_queries = review_queries
         sources = list(planned_queries)
     use_workable = workable.SOURCE in sources
     discovery_order = sources if shadow else discovery.LABELS
@@ -678,17 +686,18 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2, *, search_fet
                          if job['open'] is True and not job.get('fact_reason')}
         follow_discovery(profile, today, {source: feeds[source] for source in discovery_sources},
                          set() if shadow else employer_keys | workable_keys, prior_keys, repeat_reason,
-                         fetch, search_fetch, partial(connect, backlog), shadow_query=shadow_query)
+                         fetch, search_fetch, partial(connect, backlog))
     if shadow:
+        if updates or facet_updates:
+            with connect(backlog) as db, db:
+                save_workday_progress(db, updates, detail_updates, facet_updates)
         results = []
-        for entry in planned_searches:
-            source, query = entry['source'], entry['words']
+        if review_reads is not None:
+            review_reads.extend(row for row in board_reads if row)
+        for source in sources:
             jobs, runs, reading = feeds[source]
-            row = runs.get(query, {})
-            found = [jobs[token] for token in row.get('posting_ids', [])]
-            reason = row.get('reason') or reading['reason']
-            results.append((source, query, found, row.get('total', 0 if not reason else None), reason))
-        results.extend((company['provider'], company['board'], shadow_boards[i], len(shadow_boards[i]),
+            results.append((source, '', list(jobs.values()), reading['rows'], reading['reason']))
+        results.extend((company['provider'], company['board'], shadow_boards[i], (board_reads[i] or {}).get('rows', 0),
                         (board_reads[i] or {}).get('reason', 'This board could not be read.'))
                        for i, company in enumerate(companies))
         return results
@@ -797,21 +806,7 @@ def run(profile, fetch, backlog, today, mark_landed=False, wait=2, *, search_fet
             mark_jobs(db, profile['id'], landing)
         counts['backlog_waiting'] = len(waiting) - (len(landing) if mark_landed else 0)
         counts['landing'] = len(landing)
-        if updates:
-            db.executemany('''INSERT INTO workday_progress VALUES (?,?,?,?,?)
-                ON CONFLICT(profile_id, board_key) DO UPDATE SET run_date=excluded.run_date,
-                    start_offset=excluded.start_offset, next_offset=excluded.next_offset
-                WHERE excluded.run_date >= workday_progress.run_date''', updates)
-            db.executemany('''INSERT INTO workday_detail_progress VALUES (?,?,?,?,?,?)
-                ON CONFLICT(profile_id, board_key) DO UPDATE SET run_date=excluded.run_date,
-                    started_with_details=excluded.started_with_details, resume_with_details=excluded.resume_with_details,
-                    failed_details=excluded.failed_details
-                WHERE excluded.run_date >= workday_detail_progress.run_date''', detail_updates)
-        if facet_updates:
-            db.executemany('''INSERT INTO workday_country_facets VALUES (?,?,?,?,?)
-                ON CONFLICT(profile_id, board_key) DO UPDATE SET countries=excluded.countries,
-                    facets=excluded.facets, run_date=excluded.run_date
-                WHERE excluded.run_date >= workday_country_facets.run_date''', facet_updates)
+        save_workday_progress(db, updates, detail_updates, facet_updates)
     workday_read = sum(board_reads[i]['read'] == 'complete' for i in workday)
     return {'metadata': {'date': day, 'read_at': datetime.now().isoformat(timespec='minutes'), 'profile_id': profile['id'],
                          'profile_revision': profile['revision'], 'counts': counts,

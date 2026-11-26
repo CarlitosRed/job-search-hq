@@ -1,8 +1,20 @@
-<section id="v-trial" role="tabpanel" aria-labelledby="trial-tab" hidden><div class="tool-in">
- <h1 class="ov-title">Trial</h1>
- <p class="ov-subtitle">Jobs the AI search found for you. Keep or Skip helps plan future searches.</p>
- <p id="trial-status" role="status"></p>
- <div id="trial-days"></div>
+<section id="v-to-review" role="tabpanel" aria-labelledby="to-review-tab" hidden><div class="tool-in">
+ <h1 class="ov-title">To review</h1>
+ <p id="to-review-status" role="status"></p>
+ <div id="to-review-bulk" class="review-actions" hidden>
+  <button class="btn ghost" type="button" data-review-bulk="yes">Yes to checked</button>
+  <button class="btn ghost" type="button" data-review-bulk="no">No to checked</button>
+  <label>Note for checked jobs (optional) <input id="to-review-note" class="inp" maxlength="500"></label>
+ </div>
+ <div id="to-review-jobs"></div>
+ <details id="to-review-filtered" hidden>
+  <summary>Filtered out (0)</summary>
+  <div id="to-review-filtered-jobs"></div>
+ </details>
+ <section id="to-review-filters" hidden>
+  <h2>Suggested search filters</h2>
+  <div id="to-review-suggestions"></div>
+ </section>
 </div></section>
 <section id="v-search" hidden><div class="tool-in">
  <div class="ov-header">

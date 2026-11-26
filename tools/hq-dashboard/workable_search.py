@@ -269,13 +269,20 @@ def read(profile, queries, today, boards, fetch, skip_detail):
         reading['reason'] = guard_reason
         return [], runs, reading
 
-    for query in queries:
+    for request_query in queries:
+        if isinstance(request_query, dict):
+            query = request_query['words']
+            place = request_query['place']
+        else:
+            query, place = request_query, ''
         if remaining['list'] <= 0:
             reading['reason'] = 'Workable reached its listing request limit.'
             break
         run = dict(query=query, total=None, reason='', posting_ids=[])
         runs.append(run)
         parameters = dict(scope, query=query)
+        if place:
+            parameters['location'] = place
         try:
             markdown = request(f'{ORIGIN}/jobs.md?{urlencode(parameters)}', 'list')
             total = listing_total(markdown)

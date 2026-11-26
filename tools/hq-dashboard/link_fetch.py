@@ -21,29 +21,35 @@ MAX_TEXT = 40000
 BROWSER_SECONDS = 30
 AGENT = 'Mozilla/5.0 (compatible; JobSearchHQ posting reader)'
 _BOT_CHECK = object()  # A recognized challenge ends the read, unlike a bare 403.
-NO_AUTOMATIC_READ_HOSTS = ('amazon.jobs', 'amazon.com', 'smartrecruiters.com')
 READ_DISALLOWED = 'automatic_reading_disallowed'
 READ_DISALLOWED_REASON = 'This site does not allow automatic reading.'
 MANUAL_POSTING_MESSAGE = READ_DISALLOWED_REASON + ' Paste the posting text or add a photo.'
 
 
-def automatic_read_disallowed(url):
+def automatic_read_disallowed(url, hosts=None):
     """Match a listed hostname or its subdomains, including DNS spelling variants."""
+    if hosts is None:
+        hosts = _owner_settings().load()['no_automatic_read_hosts']
     try:
         host = urlsplit(url or '').hostname or ''
         host = unquote(host).encode('idna').decode('ascii').lower().rstrip('.')
     except ValueError:
         return False
-    return any(host == name or host.endswith('.' + name) for name in NO_AUTOMATIC_READ_HOSTS)
+    return any(host == name or host.endswith('.' + name) for name in hosts)
 
 
 @cache
-def _recheck():
+def _owner_settings():
     settings_spec = importlib.util.spec_from_file_location(
         'hq_owner_settings', Path(__file__).with_name('hq_settings.py'))
     hq_settings = importlib.util.module_from_spec(settings_spec)
     settings_spec.loader.exec_module(hq_settings)
-    path = hq_settings.app_root() / 'tools' / 'tracker' / 'recheck.py'
+    return hq_settings
+
+
+@cache
+def _recheck():
+    path = _owner_settings().app_root() / 'tools' / 'tracker' / 'recheck.py'
     spec = importlib.util.spec_from_file_location('hq_reader_recheck', path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -180,7 +186,8 @@ def public_url(url, resolve, deadline):
     return (parts, port, ip) if ip else None
 
 
-def _get(url, accept, deadline=None, with_status=False):
+def _get(url, accept, deadline=None, with_status=False, *, agent=AGENT, stop_at_login=False,
+         include_final_url=False):
     """GET with manual redirects, returning the final URL or status, content type, and body."""
     deadline = deadline or Deadline()
     for _ in range(MAX_HOPS + 1):
@@ -193,7 +200,7 @@ def _get(url, accept, deadline=None, with_status=False):
             return None
         parts, port, ip = checked
         target = (parts.path or '/') + ('?' + parts.query if parts.query else '')
-        headers = {'Host': parts.netloc.split('@')[-1], 'User-Agent': AGENT, 'Accept': accept,
+        headers = {'Host': parts.netloc.split('@')[-1], 'User-Agent': agent, 'Accept': accept,
                    'Accept-Encoding': 'identity', 'Connection': 'close'}
         code = None
         try:
@@ -221,6 +228,10 @@ def _get(url, accept, deadline=None, with_status=False):
             location = response.getheader('Location') if redirect else None
             if location:
                 location = urljoin(url, location)
+                if stop_at_login and re.search(r'/(?:login|log-in|signin|sign-in|sso)(?:/|$)',
+                                               urlsplit(location).path, re.I):
+                    conn.close()
+                    return (401, '', '')
                 if automatic_read_disallowed(location):
                     conn.close()
                     return (READ_DISALLOWED, '', '') if with_status else None
@@ -254,7 +265,8 @@ def _get(url, accept, deadline=None, with_status=False):
             continue
         if len(body) > MAX_BYTES or kind not in ('text/html', 'application/json', 'text/plain', 'application/xhtml+xml'):
             return (code, '', '') if code != 200 else None
-        return (code if with_status else url), kind, body.decode('utf-8', 'replace')
+        result = ((code if with_status else url), kind, body.decode('utf-8', 'replace'))
+        return (*result, url) if include_final_url else result
     return None
 
 

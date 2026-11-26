@@ -307,8 +307,7 @@ def employer_job(result):
                 link=result['link'], description=result['description'])
 
 
-def confirm(profile, today, groups, boards, workable, fetch, fetch_workable, backlog_connect, job_key,
-            *, shadow_query=None):
+def confirm(profile, today, groups, boards, workable, fetch, fetch_workable, backlog_connect, job_key):
     """Resolve employer copies and return transient misses by company."""
     if not groups:
         return {}, {}
@@ -329,7 +328,6 @@ def confirm(profile, today, groups, boards, workable, fetch, fetch_workable, bac
     matched, errors, updates, expired = {}, {}, [], []
     refused_hosts = {}
     configured = {(board['provider'], board['board']) for board in profile['search'].get('companies', [])}
-    enabled = {provider for provider, _ in configured} | set(profile['search'].get('search_sources', []))
 
     def request(read, method, url):
         host = urlsplit(url).hostname
@@ -407,8 +405,6 @@ def confirm(profile, today, groups, boards, workable, fetch, fetch_workable, bac
     companies = 0
     for name, leads in groups.items():
         cached, checked, stored = remembered.get(name, (None, None, None))
-        if shadow_query is not None and (cached == NO_BOARD or cached and cached['provider'] not in enabled):
-            cached = None
         if cached == NO_BOARD:
             continue
         if companies == 15:
@@ -421,13 +417,10 @@ def confirm(profile, today, groups, boards, workable, fetch, fetch_workable, bac
             for provider in ('greenhouse', 'lever', 'ashby')]
         if not cached:
             options.append(dict(provider=workable.SOURCE))
-        if shadow_query is not None:
-            options = [board for board in options if board['provider'] in enabled
-                       and shadow_query(board.get('board') or company)]
         chosen, workable_match = None, False
         exhausted = False
         for board in options:
-            if shadow_query is None and (board['provider'], board.get('board')) in configured:
+            if (board['provider'], board.get('board')) in configured:
                 continue
             try:
                 if board['provider'] == workable.SOURCE:
@@ -455,8 +448,6 @@ def confirm(profile, today, groups, boards, workable, fetch, fetch_workable, bac
             updates.append((owner, name, day, json.dumps(chosen or NO_BOARD)))
         if exhausted:
             break
-    if shadow_query is not None:
-        return matched, errors
     with backlog_connect() as db, db:
         db.executemany('DELETE FROM discovery_boards WHERE profile_id=? AND company=? AND checked_on=? AND board=?',
                        expired)

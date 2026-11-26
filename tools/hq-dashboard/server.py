@@ -221,7 +221,7 @@ def fit_version(db):
                       (daily_run.judge.PASS,)).fetchone()[0]
 
 
-def trial_access(session_profile, configured_profile, requested_profile=None):
+def review_access(session_profile, configured_profile, requested_profile=None):
     return bool(session_profile and session_profile == configured_profile and
                 (requested_profile is None or requested_profile == session_profile))
 
@@ -240,7 +240,7 @@ class App:
             raise ValueError('Public origin must use HTTPS.')
         self.host = u.netloc
         self.sessions = {}
-        self.trial_sessions = {}
+        self.review_sessions = {}
         self.auth_lock = threading.RLock()
         self.db_path = self.state / 'login-throttle.sqlite3'
         with closing(sqlite3.connect(self.db_path)) as db, db:
@@ -302,24 +302,24 @@ class App:
                 return None, 401
             db.execute('UPDATE throttle SET failures=0,until=0 WHERE id=1')
             self.sessions = {k: expiry for k, expiry in self.sessions.items() if expiry > now}
-            self.trial_sessions = {k: owner for k, owner in self.trial_sessions.items() if k in self.sessions}
+            self.review_sessions = {k: owner for k, owner in self.review_sessions.items() if k in self.sessions}
             token = secrets.token_urlsafe(32)
             key = hashlib.sha256(token.encode()).hexdigest()
             self.sessions[key] = now + 43200
-            self.trial_sessions[key] = self.trial_profile()
+            self.review_sessions[key] = self.review_profile()
             return token, 200
 
-    def trial_profile(self, *, enabled=False):
+    def review_profile(self, *, enabled=False):
         try:
             profile = daily_run.daily_search.profiles.load(ROOT / 'profile.json')
         except ValueError:
             return None
-        return profile['id'] if not enabled or profile['search']['ai_shadow'] else None
+        return profile['id'] if not enabled or profile['search']['review_queue'] else None
 
-    def trial_owner(self, cookie, requested=None):
+    def review_owner(self, cookie, requested=None):
         with self.auth_lock:
-            owner = self.trial_sessions.get(self.session_key(cookie))
-        return owner if trial_access(owner, self.trial_profile(enabled=True), requested) else None
+            owner = self.review_sessions.get(self.session_key(cookie))
+        return owner if review_access(owner, self.review_profile(enabled=True), requested) else None
 
     def session_key(self, cookie):
         try:
@@ -376,7 +376,8 @@ class App:
                 if not isinstance(config, dict):
                     config = {}
                 d['daily_run'] = daily_run.status(self.tracker.XLSX.parent / 'daily-runs.sqlite3',
-                                                  datetime.now(), at=config.get('at', '06:00'),
+                                                  datetime.now(), at=(config.get('times', ['06:00', '22:00']) if self.review_profile(enabled=True)
+                                                      else config.get('at', '06:00')),
                                                   enabled=config.get('enabled', True))
             except (OSError, ValueError, sqlite3.Error, KeyError, TypeError):
                 d['daily_run'] = dict(state='failed', tone='r',
@@ -568,12 +569,16 @@ def handler(app):
                 return self.send(401, {'error': 'Sign in required.'}) if self.path.startswith('/api/') else self.send(303, headers={'Location': '/login'})
             try:
                 url = urlsplit(self.path)
-                if url.path == '/api/trial':
+                if url.path == '/api/to-review':
                     requested = parse_qs(url.query, keep_blank_values=True).get('profile', [None])
-                    owner = app.trial_owner(self.headers.get('Cookie', ''), requested[0])
+                    owner = app.review_owner(self.headers.get('Cookie', ''), requested[0])
                     if not owner or len(requested) != 1:
-                        return self.send(404, {'error': 'Trial is unavailable.'})
-                    return self.send(200, daily_run.ai_shadow.trial(ROOT / 'work' / 'search-backlog.sqlite3', owner))
+                        return self.send(404, {'error': 'The review list is unavailable.'})
+                    profile = daily_run.daily_search.profiles.load(ROOT / 'profile.json')
+                    if profile['id'] != owner or not profile['search']['review_queue']:
+                        return self.send(404, {'error': 'The review list is unavailable.'})
+                    return self.send(200, daily_run.ai_shadow.review(ROOT / 'work' / 'search-backlog.sqlite3', owner,
+                                                                     profile=profile))
                 if self.path in ('/', '/index.html'):
                     return self.send(200, (HERE / 'pc-index.html').read_bytes(), 'text/html; charset=utf-8')
                 if self.path == '/api/data':
@@ -674,11 +679,11 @@ def handler(app):
                     with app.auth_lock:
                         session = app.session_key(self.headers.get('Cookie', ''))
                         app.sessions.pop(session, None)
-                        app.trial_sessions.pop(session, None)
+                        app.review_sessions.pop(session, None)
                     return self.send(200, {'ok': True}, headers={'Set-Cookie': 'hq_session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0'})
                 if self.path not in ('/api/add', '/api/update', '/api/rounds', '/api/star', '/api/writes/dismiss',
                                      '/api/ai/submit', '/api/ai/link', '/api/ai/export', '/api/search/submit',
-                                     '/api/trial/answer',
+                                     '/api/to-review/answer', '/api/to-review/filter',
                                      '/api/ai/cv-trim/preview', '/api/ai/cv-trim/apply'):
                     return self.send(404)
                 if content_type != 'application/json':
@@ -686,14 +691,28 @@ def handler(app):
                 payload = json.loads(raw)
                 if not isinstance(payload, dict):
                     return self.send(400)
-                if self.path == '/api/trial/answer':
-                    owner = app.trial_owner(self.headers.get('Cookie', ''), payload.get('profile'))
+                if self.path in ('/api/to-review/answer', '/api/to-review/filter'):
+                    owner = app.review_owner(self.headers.get('Cookie', ''), payload.get('profile'))
                     if not owner:
-                        return self.send(404, {'error': 'Trial is unavailable.'})
+                        return self.send(404, {'error': 'The review list is unavailable.'})
+                    queue = ROOT / 'work' / 'search-backlog.sqlite3'
                     try:
-                        answer = daily_run.ai_shadow.answer(ROOT / 'work' / 'search-backlog.sqlite3', owner,
-                                                           payload.get('day'), payload.get('identity'),
-                                                           payload.get('choice'), payload.get('reason', ''))
+                        if self.path.endswith('/filter'):
+                            answer = daily_run.ai_shadow.filter_choice(queue, owner, payload.get('id'),
+                                                                        payload.get('action'))
+                        else:
+                            profile = daily_run.daily_search.profiles.load(ROOT / 'profile.json')
+                            if profile['id'] != owner or not profile['search']['review_queue']:
+                                return self.send(404, {'error': 'The review list is unavailable.'})
+                            if payload.get('choice') == 'yes':
+                                with app.tracker.LOCK, app.tracker.workbook_lock(app.tracker.XLSX):
+                                    answer = daily_run.ai_shadow.answer_review(
+                                        queue, owner, payload.get('identities'), 'yes',
+                                        xlsx=app.tracker.XLSX, profile=profile)
+                            else:
+                                answer = daily_run.ai_shadow.answer_review(
+                                    queue, owner, payload.get('identities'), payload.get('choice'),
+                                    payload.get('reason', ''), profile=profile)
                     except LookupError as error:
                         return self.send(404, {'error': str(error)})
                     except ValueError as error:

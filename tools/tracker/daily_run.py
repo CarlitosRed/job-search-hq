@@ -77,7 +77,7 @@ def read_runs(db):
 
 
 def missed_slot(runs, slot):
-    successes = [date.fromisoformat(r['slot']) for r in runs if r['status'] in SUCCESS]
+    successes = [date.fromisoformat(r['slot'][:10]) for r in runs if r['status'] in SUCCESS]
     if not successes:
         return None
     first = max(successes) + timedelta(days=1)
@@ -93,7 +93,7 @@ def configuration(root):
     config = settings.load(root, defaults_root=settings.app_root())['daily_run']
     if not isinstance(config, dict):
         raise ValueError('Daily settings must be an object.')
-    config = {'at': '06:00', 'enabled': True, 'before': [], 'copies': [], 'recheck': 'on',
+    config = {'at': '06:00', 'times': ['06:00', '22:00'], 'enabled': True, 'before': [], 'copies': [], 'recheck': 'on',
               'judge': 'on', 'judge_ai': 'codex', **config}
     if not isinstance(config['enabled'], bool):
         raise ValueError('The daily enabled setting must be true or false.')
@@ -111,6 +111,14 @@ def configuration(root):
             raise ValueError()
     except ValueError:
         raise ValueError('The daily start time must look like 06:00.') from None
+    times = config['times']
+    try:
+        if (not isinstance(times, list) or len(times) != 2 or
+                any(not isinstance(value, str) or time.fromisoformat(value).strftime('%H:%M') != value
+                    for value in times) or times[0] == times[1]):
+            raise ValueError()
+    except ValueError:
+        raise ValueError('Choose two different daily search times in HH:MM format.') from None
     for group in ('before', 'copies'):
         if not isinstance(config[group], list):
             raise ValueError('Daily steps must be a list.')
@@ -150,22 +158,37 @@ def command_step(step, root):
         return 'failed', 'Command could not run: ' + str(error)[-500:]
 
 
+def review_schedule(now, times):
+    return max(datetime.combine(slot_date(now, at), time.fromisoformat(at)) for at in times)
+
+
 def run_daily(root, now, fetch=None, force=False, trigger='scheduled', link_check=None, complete=None):
     root = Path(root)
     config = configuration(root)  # Validate every command before any writable work.
     slot = slot_date(now, config['at'])
-    empty = dict(run_id=None, status='already_running', slot=slot.isoformat(), phases={}, missed_since=None)
+    try:
+        profile = daily_search.profiles.load(root / 'profile.json')
+    except (OSError, ValueError):
+        profile = None
+    review_on = profile is not None and profile['search']['review_queue']
+    scheduled = review_schedule(now, config['times']) if review_on else None
+    slot_key = scheduled.isoformat(timespec='minutes') if scheduled else slot.isoformat()
+    if scheduled:
+        slot = now.date() if trigger == 'manual' else scheduled.date()
+        if trigger == 'manual':
+            slot_key = now.isoformat(timespec='seconds')
+    empty = dict(run_id=None, status='already_running', slot=slot_key, phases={}, missed_since=None)
     if not config['enabled'] and trigger != 'manual':
         return dict(empty, status='paused')
     try:
         with run_lock(root):
             return run_locked(root, now, fetch or daily_search.boards.fetch_json, force, trigger, config, slot,
-                              link_check or recheck.link_status, complete)
+                              link_check or recheck.link_status, complete, slot_key, review_on)
     except RunBusy:
         return empty
 
 
-def run_locked(root, now, fetch, force, trigger, config, slot, link_check, complete):
+def run_locked(root, now, fetch, force, trigger, config, slot, link_check, complete, slot_key, review_on):
     work = root / 'work'
     with closing(sqlite3.connect(work / 'daily-runs.sqlite3')) as db:
         db.executescript('''
@@ -175,7 +198,7 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                 finished TEXT, detail TEXT, PRIMARY KEY(run_id, name));
         ''')
         runs = read_runs(db)
-        current = [r for r in runs if r['slot'] == slot.isoformat()]
+        current = [r for r in runs if r['slot'] == slot_key]
         successful = [r for r in current if r['status'] in SUCCESS]
         if successful and not force:
             run = successful[-1]
@@ -186,7 +209,7 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
         stamp = now.isoformat(timespec='seconds')
         with db:
             db.execute('INSERT OR IGNORE INTO runs VALUES (?,NULL,?,?,?,NULL,?,?)',
-                       (run_id, slot.isoformat(), trigger, stamp, 'running', missed))
+                       (run_id, slot_key, trigger, stamp, 'running', missed))
             db.execute("UPDATE runs SET status='running', finished=NULL WHERE run_id=?", (run_id,))
         phases = phases_for(db, run_id)
         missed = db.execute('SELECT missed_since FROM runs WHERE run_id=?', (run_id,)).fetchone()[0]
@@ -234,18 +257,30 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
         def finish(state):
             with db:
                 db.execute('UPDATE runs SET status=?, finished=? WHERE run_id=?', (state, timestamp(), run_id))
-            return dict(run_id=run_id, status=state, slot=slot.isoformat(), phases=phases, missed_since=missed)
+            return dict(run_id=run_id, status=state, slot=slot_key, phases=phases, missed_since=missed)
 
         def search():
             if profile is None:
                 return 'failed', 'The search profile is missing or invalid. Check the profile before retrying.'
             with db:
                 db.execute('UPDATE runs SET profile_id=? WHERE run_id=?', (profile['id'], run_id))
+            if review_on:
+                if saved is not None:
+                    return 'done', saved.get('review_detail', 'The review list was updated.')
+                readings = []
+                detail = search_for_owner(profile, readings)
+                result = dict(metadata=dict(date=now.date().isoformat(), profile_id=profile['id'],
+                                            read_at=timestamp()), boards=readings, landing=[], source_errors=[],
+                              review_detail=detail)
+                snapshot.parent.mkdir(parents=True, exist_ok=True)
+                temp = snapshot.with_suffix('.tmp')
+                temp.write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
+                temp.replace(snapshot)
+                return 'done', detail
             result = saved
             if result is None:
-                options = {'jobicy_pages': jobicy_pages} if trial_on else {}
                 result = daily_search.run(profile, fetch, backlog, slot, mark_landed=False,
-                                          tracker=work / 'applications-tracker.sqlite3', **options)
+                                          tracker=work / 'applications-tracker.sqlite3')
                 snapshot.parent.mkdir(parents=True, exist_ok=True)
                 temp = snapshot.with_suffix('.tmp')
                 temp.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
@@ -286,19 +321,13 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
             return ('partial' if failed or workable_failed or discovery_failed else 'done'), detail
 
         def land():
-            if trial_on:
-                return 'skipped', 'The Trial is on, so nothing is added to the board.'
-            if profile is None:
-                return 'failed', 'The search profile is missing or invalid. Check the profile before retrying.'
-            report = land_search.land(work / 'applications-tracker.xlsx', snapshot, backlog,
-                                      apply=True, today=now.date())
-            if not report['ok']:
-                return 'failed', 'The tracker could not take the search results. Please retry.'
-            return 'done', jobs_text(report['added'])
+            return 'skipped', 'Jobs reach the tracker only when you say yes.'
 
         def check_postings():
             preview = config['recheck'] == 'preview'
             tracker = work / 'applications-tracker.sqlite3'
+            if not tracker.is_file():
+                return 'skipped', 'Migrate the tracker to SQLite to re-check tracked jobs.'
             with closing(land_search.store.Store(':memory:' if preview else tracker)) as storage:
                 if preview:
                     with closing(sqlite3.connect(tracker.resolve().as_uri() + '?mode=ro', uri=True)) as source:
@@ -327,6 +356,8 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
         def judge_jobs():
             preview = config['judge'] == 'preview'
             tracker = work / 'applications-tracker.sqlite3'
+            if not tracker.is_file():
+                return 'skipped', 'Migrate the tracker to SQLite to score jobs.'
             excluded = settings.load(root, defaults_root=settings.app_root())['excluded_evidence_ids']
             evidence = judge.judge_evidence(root, excluded)
             with closing(land_search.store.Store(':memory:' if preview else tracker)) as storage:
@@ -340,7 +371,7 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                 engine = config['judge_ai']
                 ask = complete or (lambda prompt, schema: judge.seam.complete(prompt, schema, engine=engine))
                 report = judge.judge_pending(storage, profile, evidence, now.date(), run_id, ask,
-                                             profile['search']['judge_budget'], dry_run=preview,
+                                             min(20, profile['search']['judge_budget']), dry_run=preview,
                                              deadline=clock.monotonic() + 30 * 60, backlog=backlog,
                                              # Previews run on a copy, so the real usage file is named here.
                                              usage=work / 'ai-usage.sqlite3',
@@ -377,22 +408,18 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
                 return 'partial', detail + ' The AI became unavailable; the remaining jobs keep their current scores.'
             return 'done', detail
 
-        def shadow_jobs(profile):
+        def search_for_owner(profile, readings):
             owner = settings.load(root, defaults_root=settings.app_root())
             evidence = judge.judge_evidence(root, owner['excluded_evidence_ids'])
             profile = dict(profile, owner_name=owner.get('owner_name'),
-                           owner_short_name=owner.get('owner_short_name'))
+                           owner_short_name=owner.get('owner_short_name'), owner_contact=owner.get('owner_contact'))
             engine = config['judge_ai']
             ask = complete or (lambda prompt, schema: judge.seam.complete(prompt, schema, engine=engine))
-            detail = ai_shadow.run(profile, evidence, now.date(), run_id, backlog,
-                                   work / 'applications-tracker.sqlite3', work / 'ai-usage.sqlite3',
-                                   ask, fetch=None if fetch is daily_search.boards.fetch_json else fetch,
-                                   jobicy_pages=jobicy_pages)
-            return 'done', detail
-
-        def trial():
-            if trial_on:
-                phase('trial', lambda: shadow_jobs(profile))
+            return ai_shadow.run(profile, evidence, now.date(), run_id, backlog,
+                                 work / 'applications-tracker.sqlite3', work / 'ai-usage.sqlite3',
+                                 ask, fetch=None if fetch is daily_search.boards.fetch_json else fetch,
+                                 settings=owner.get('search_engines'), profile_root=root,
+                                 board_reads=readings, jobicy_pages=jobicy_pages)
 
         for step in config['before']:
             if phase('before:' + step['name'], lambda step=step: command_step(step, root)) == 'failed':
@@ -401,15 +428,10 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
             profile = daily_search.profiles.load(root / 'profile.json')
         except (OSError, ValueError):
             profile = None
-        trial_on = profile is not None and profile['search']['ai_shadow']
         if phase('search', search) == 'failed':
-            trial()
-            phase('land', land if trial_on else lambda: ('skipped', 'Search did not finish.'))
+            phase('land', land)
             return finish('failed')
-        if phase('land', land) == 'failed':
-            trial()
-            return finish('failed')
-        trial()
+        phase('land', land)
         if phase('recheck', check_postings) == 'failed':
             return finish('failed')
         phase('judge', judge_jobs)
@@ -431,8 +453,16 @@ def status(record_path, now, at='06:00', enabled=True):
     if paused:
         result.update(state='paused', message='Daily search is paused.')
     else:
-        slot = slot_date(now, at)
-        overdue = slot == now.date() and now - datetime.combine(slot, time.fromisoformat(at)) > timedelta(minutes=60)
+        if isinstance(at, list):
+            scheduled = review_schedule(now, at)
+            slot = scheduled.date()
+            slot_key = scheduled.isoformat(timespec='minutes')
+            at = scheduled.strftime('%H:%M')
+        else:
+            slot = slot_date(now, at)
+            slot_key = slot.isoformat()
+            scheduled = datetime.combine(slot, time.fromisoformat(at))
+        overdue = slot == now.date() and now - scheduled > timedelta(minutes=60)
     path = Path(record_path)
     if not path.is_file():
         return result
@@ -475,7 +505,7 @@ def status(record_path, now, at='06:00', enabled=True):
                 day = date.fromisoformat(result['missed_since'])
                 result.update(state='missed', tone='a', message=f'Daily search missed since {day:%b} {day.day}. '
                               'A catch-up starts automatically.')
-            elif overdue and not any(r['slot'] == slot.isoformat() for r in successful):
+            elif overdue and not any(r['slot'] == slot_key for r in successful):
                 result.update(state='missed', tone='a', message=f"Today's {at} search hasn't run yet.")
             elif latest['status'] in SUCCESS:
                 finished = datetime.fromisoformat(latest['finished'])
@@ -505,8 +535,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--now', type=datetime.fromisoformat, default=None)
     parser.add_argument('--force', action='store_true')
+    parser.add_argument('--watch', action='store_true', help='Check the configured schedule once a minute.')
     parser.add_argument('--trigger', choices=('scheduled', 'catch-up', 'manual'), default='scheduled')
     args = parser.parse_args()
+    if args.watch:
+        if args.now or args.force or args.trigger == 'manual':
+            parser.error('Use --watch by itself.')
+        while True:
+            try:
+                run_daily(settings.data_root(), datetime.now())
+            except (OSError, ValueError, sqlite3.Error):
+                print('Daily search failed: check the daily settings and writable data folder.', flush=True)
+            except KeyboardInterrupt:
+                return 0
+            try:
+                clock.sleep(60)
+            except KeyboardInterrupt:
+                return 0
     try:
         result = run_daily(settings.data_root(), args.now or datetime.now(), force=args.force, trigger=args.trigger)
     except (OSError, ValueError, sqlite3.Error):

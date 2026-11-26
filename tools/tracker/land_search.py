@@ -105,7 +105,7 @@ def row_values(job, meta, number):
     posted = 'Unknown'
     if job['posted_on']:
         provider = {'greenhouse': 'Greenhouse', 'lever': 'Lever', 'ashby': 'Ashby', 'workday': 'Workday'}
-        label = provider.get(job['date_source'], provider[job['provider']])
+        label = provider.get(job['date_source'], provider.get(job['provider'], 'Employer'))
         posted = ('about ' if job['date_source'] == 'workday-about' else '') + job['posted_on'] + f' ({label})'
     found = date.fromisoformat(job['first_seen'])
     notes = (f'Status: Availability needs checking (found {found.day} {found:%b %Y}). You have not applied.\n'
@@ -119,6 +119,38 @@ def row_values(job, meta, number):
     return [number, job['company'], job['title'], job['place_text'], posted, None, None,
             store.stages.NEW_ROW, None, None, 'Daily search ' + meta['date'], job['link'], notes,
             'Not independently spot-checked', agent]
+
+
+def insert_job(storage, job, meta, identity, *, review=False):
+    db = storage.db
+    layout = db.execute("SELECT * FROM layouts WHERE source='main' AND sheet=?", (LANDING_SHEET,)).fetchone()
+    if layout is None:
+        position = db.execute("SELECT COALESCE(MAX(position), -1)+1 FROM layouts WHERE source='main'").fetchone()[0]
+        widths = {chr(65 + i): width for i, width in enumerate(
+            (16, 24, 44, 28, 26, 10, 18, 18, 16, 24, 28, 48, 70, 32, 70))}
+        db.execute('INSERT INTO layouts VALUES (?,?,?,?,?,?,?,?)',
+                   ('main', LANDING_SHEET, position, store.encode(HEADER), json.dumps(widths), 'A2', 1, 1))
+        head, last_row = HEADER, 1
+    else:
+        head, last_row = store.decode(layout['header']), layout['max_row']
+    next_row = max(last_row, db.execute('SELECT COALESCE(MAX(row), 1) FROM jobs WHERE sheet=?',
+                                       (LANDING_SHEET,)).fetchone()[0]) + 1
+    prefix = 'S' + date.fromisoformat(meta['date']).strftime('%m%d') + '-'
+    numbers = [store.decode(r[0])[0] for table in ('jobs', 'old_jobs')
+               for r in db.execute(f'SELECT fields FROM {table} WHERE fields IS NOT NULL')]
+    sequence = max([int(n[len(prefix):]) for n in numbers if isinstance(n, str) and
+                    n.startswith(prefix) and n[len(prefix):].isdigit()], default=0) + 1
+    values = dict(zip(HEADER, row_values(job, meta, prefix + f'{sequence:02d}')))
+    if review:
+        values.update(Notes='Being scored', Source=job.get('found_by') or 'Search review', **{'Agent notes': ''})
+    storage.put_row('jobs', LANDING_SHEET, next_row, head, [values.get(h) for h in head], history=True)
+    job_id = db.execute('SELECT id FROM jobs WHERE sheet=? AND row=?', (LANDING_SHEET, next_row)).fetchone()[0]
+    db.execute('UPDATE jobs SET first_seen=?, posted_on=?, date_source=? WHERE id=?',
+               (job['first_seen'], job['posted_on'] or None, job['date_source'], job_id))
+    db.execute("UPDATE layouts SET max_row=? WHERE source='main' AND sheet=?", (next_row, LANDING_SHEET))
+    storage.link_posting(job_id, *identity, link=job['link'], seen=job['first_seen'],
+                         source='owner_review' if review else 'search', title=job['title'], place=job['place_text'])
+    return job_id
 
 
 def land_jobs(storage, snapshot, today):
@@ -152,30 +184,7 @@ def land_jobs(storage, snapshot, today):
         elif job['link'] in links or job['link'] in seen:
             report['skipped_duplicates'] += 1
         else:
-            layout = db.execute("SELECT * FROM layouts WHERE source='main' AND sheet=?", (LANDING_SHEET,)).fetchone()
-            if layout is None:
-                position = db.execute("SELECT COALESCE(MAX(position), -1)+1 FROM layouts WHERE source='main'").fetchone()[0]
-                widths = {chr(65 + i): width for i, width in enumerate(
-                    (16, 24, 44, 28, 26, 10, 18, 18, 16, 24, 28, 48, 70, 32, 70))}
-                db.execute('INSERT INTO layouts VALUES (?,?,?,?,?,?,?,?)',
-                           ('main', LANDING_SHEET, position, store.encode(HEADER), json.dumps(widths), 'A2', 1, 1))
-                head, last_row = HEADER, 1
-            else:
-                head, last_row = store.decode(layout['header']), layout['max_row']
-            next_row = max(last_row, db.execute('SELECT COALESCE(MAX(row), 1) FROM jobs WHERE sheet=?',
-                                               (LANDING_SHEET,)).fetchone()[0]) + 1
-            prefix = 'S' + date.fromisoformat(meta['date']).strftime('%m%d') + '-'
-            numbers = [store.decode(r[0])[0] for table in ('jobs', 'old_jobs')
-                       for r in db.execute(f'SELECT fields FROM {table} WHERE fields IS NOT NULL')]
-            sequence = max([int(n[len(prefix):]) for n in numbers if isinstance(n, str) and
-                            n.startswith(prefix) and n[len(prefix):].isdigit()], default=0) + 1
-            values = dict(zip(HEADER, row_values(job, meta, prefix + f'{sequence:02d}')))
-            storage.put_row('jobs', LANDING_SHEET, next_row, head, [values.get(h) for h in head], history=True)
-            job_id = db.execute('SELECT id FROM jobs WHERE sheet=? AND row=?', (LANDING_SHEET, next_row)).fetchone()[0]
-            db.execute('UPDATE jobs SET first_seen=?, posted_on=?, date_source=? WHERE id=?',
-                       (job['first_seen'], job['posted_on'] or None, job['date_source'], job_id))
-            db.execute("UPDATE layouts SET max_row=? WHERE source='main' AND sheet=?", (next_row, LANDING_SHEET))
-            storage.link_posting(job_id, *identity, link=job['link'], seen=job['first_seen'], source='search', title=job['title'], place=job['place_text'])
+            job_id = insert_job(storage, job, meta, identity)
             live[key] = job_id
             links.add(job['link'])
             report['added'] += 1
@@ -186,6 +195,59 @@ def land_jobs(storage, snapshot, today):
         storage.set_meta('mirror_stale', 1)
     report['marked_landed'] = len(landed)
     return report, landed
+
+
+def backup_before_add(source, target):
+    folder = target.parent / '.tracker-backups'
+    folder.mkdir(exist_ok=True)
+    backup = folder / f'{target.stem}-{date.today().isoformat()}.sqlite3'
+    if not backup.exists():
+        with closing(sqlite3.connect(backup)) as saved:
+            source.backup(saved)
+    for old in sorted(folder.glob(f'{target.stem}-????-??-??.sqlite3'))[:-7]:
+        old.unlink()
+
+
+def add_review(xlsx, owner, jobs, today):
+    """Save one acknowledged batch using the tracker’s normal row and mirror path."""
+    target = store.db_path(Path(xlsx))
+    if not target.is_file():
+        raise ValueError('Migrate the tracker to SQLite before accepting jobs.')
+    with closing(sqlite3.connect(target.resolve().as_uri() + '?mode=ro', uri=True)) as source:
+        backup_before_add(source, target)
+    identities = []
+    with closing(store.Store(target)) as storage, storage.db as db:
+        db.execute('BEGIN IMMEDIATE')
+        changed = False
+        for job in jobs:
+            provider = job['provider']
+            board = job.get('tracker_board') or job['company']
+            token = job['posting_id']
+            if job.get('repost_date'):
+                token += '@' + job['repost_date']
+            identity = (owner, provider, board, token)
+            job_id = storage.job_for_posting(*identity)
+            active = list(db.execute('SELECT id,company,role,link FROM jobs'))
+            if job_id not in {row['id'] for row in active}:
+                key = daily_search.job_key(job['company'], job['title'])
+                job_id = next((row['id'] for row in active if row['link'] == job['link']
+                               or daily_search.job_key(row['company'], row['role']) == key), None)
+            if job_id is None:
+                prepared = dict(job, first_seen=today.isoformat(), lane='', score=0, judge=True,
+                                place='ok', place_sentence='', matched_titles=[], matched_duties=[])
+                meta = dict(date=today.isoformat(), profile_id=owner, profile_revision=1)
+                job_id = insert_job(storage, prepared, meta, identity, review=True)
+                changed = True
+            elif storage.job_for_posting(*identity) is None:
+                storage.link_posting(job_id, *identity, link=job['link'], seen=today.isoformat(),
+                                     source='owner_review', title=job['title'], place=job['place_text'])
+                changed = True
+            identities.append((job_id, provider, board, token))
+        if changed:
+            storage.set_meta('revision', int(storage.meta('revision')) + 1)
+            storage.set_meta('mirror_stale', 1)
+    store.rebuild_mirror(xlsx)
+    return identities
 
 
 def land(xlsx, snapshot_path, backlog_path, apply=False, today=None):
@@ -200,14 +262,7 @@ def land(xlsx, snapshot_path, backlog_path, apply=False, today=None):
                                      'skipped_old', 'marked_landed'), 0))
     with closing(sqlite3.connect(target.resolve().as_uri() + '?mode=ro', uri=True)) as source:
         if apply:
-            folder = target.parent / '.tracker-backups'
-            folder.mkdir(exist_ok=True)
-            backup = folder / f'{target.stem}-{date.today().isoformat()}.sqlite3'
-            if not backup.exists():
-                with closing(sqlite3.connect(backup)) as saved:
-                    source.backup(saved)
-            for old in sorted(folder.glob(f'{target.stem}-????-??-??.sqlite3'))[:-7]:
-                old.unlink()
+            backup_before_add(source, target)
         storage = store.Store(target if apply else ':memory:')
         try:
             if not apply:
