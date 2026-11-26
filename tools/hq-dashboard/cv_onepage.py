@@ -59,7 +59,7 @@ def entries(items):
     """Group a section's lines into [title, bullet, bullet...] entries; plain lines stay alone."""
     out = []
     for line in items:
-        if line.startswith('**') or not out:
+        if not out or layout.role(line) is not None or line.startswith('**'):
             out.append([line])
         else:
             out[-1].append(line)
@@ -137,7 +137,9 @@ def claim_tokens(text):
 
 
 def support_lines(sections):
-    return [l for s in sections if s['name'] not in ('Summary', 'Skills') for l in s['items']]
+    return [line for section in sections
+            if layout.section_heading('## ' + section['name']) not in ('summary', 'skills', 'technical skills')
+            for line in section['items']]
 
 
 def supported(sentence, lines, have=None):
@@ -153,7 +155,7 @@ def supported(sentence, lines, have=None):
 
 def unsupported_summary(sections):
     """Kept Summary sentences that no kept line supports (see the heuristic above)."""
-    summary = next((s for s in sections if s['name'] == 'Summary'), None)
+    summary = next((s for s in sections if layout.section_heading('## ' + s['name']) == 'summary'), None)
     if not summary:
         return []
     lines = support_lines(sections)
@@ -161,14 +163,15 @@ def unsupported_summary(sections):
     return [x.strip() for item in summary['items'] for x in sentences(item) if not supported(x, lines, have)]
 
 
-def trim(md, focus=()):
-    head, sections = parse(drop_markers(md))
-    by = {s['name']: s for s in sections}
-    exp = by.get('Experience')
+def trim(md, focus=(), *, whole_lines=False):
+    head, sections = layout.parse(drop_markers(md), with_spans=whole_lines)
+    by = {layout.section_heading('## ' + s['name']): s for s in sections}
+    exp = by.get('experience')
     roles = entries(exp['items']) if exp else []
-    proj = entries(by['Projects']['items']) if 'Projects' in by else []
-    summary = by.get('Summary')
-    parts = sentences(summary['items'][0]) if summary and summary['items'] else []
+    projects = by.get('selected projects') or by.get('projects')
+    proj = entries(projects['items']) if projects else []
+    summary = by.get('summary')
+    parts = (list(summary['items']) if whole_lines else sentences(summary['items'][0])) if summary and summary['items'] else []
     focus = set(focus)
     ai = bool(focus & AI_WORDS)
 
@@ -185,10 +188,13 @@ def trim(md, focus=()):
     def apply():
         if exp:
             exp['items'] = [l for r in roles for l in r]
-        if 'Projects' in by:
-            by['Projects']['items'] = [l for r in proj for l in r]
+        if projects:
+            projects['items'] = [l for r in proj for l in r]
         if summary and summary['items']:
-            summary['items'][0] = ' '.join(p.strip() for p in parts)
+            if whole_lines:
+                summary['items'] = list(parts)
+            else:
+                summary['items'][0] = ' '.join(p.strip() for p in parts)
 
     def state():
         apply()
@@ -223,10 +229,11 @@ def trim(md, focus=()):
     for entry in proj:
         while len(entry) - 1 > OLDER_CAP:
             drop_weakest(entry, force=True)
-    while len(parts) > SUMMARY_SENTENCES:
-        parts.pop()
-    while len(parts) > 2 and len(' '.join(parts).split()) > SUMMARY_WORDS:
-        parts.pop()
+    if not whole_lines:
+        while len(parts) > SUMMARY_SENTENCES:
+            parts.pop()
+        while len(parts) > 2 and len(' '.join(parts).split()) > SUMMARY_WORDS:
+            parts.pop()
 
     # 2: to fit one page (with the estimator's slack), lowest value first
     def oldest_first(floor_of, force=False):
@@ -294,8 +301,11 @@ def trim(md, focus=()):
     bullets_and_projects(force=True)
     oldest_first(lambda idx: 1, force=True)
     oldest_first(lambda idx: 1 if idx < 2 else 0, force=True)
-    for x in orphans():
-        parts[:] = [p for p in parts if p.strip() != x]
+    unsupported = orphans()
+    if whole_lines:
+        parts[:] = [line for line in parts if not any(p.strip() in unsupported for p in sentences(line))]
+    else:
+        parts[:] = [p for p in parts if p.strip() not in unsupported]
     if summary and not parts:
         sections.remove(summary)
     if over():
@@ -307,6 +317,33 @@ def trim(md, focus=()):
             del sec['page_break']
     state()
     return head, sections
+
+
+def trim_lines(source, focus=()):
+    """Project the trim onto the original lines, preserving formatting and line endings."""
+    if problem := markers.draft_problem(source, 'cv'):
+        raise SystemExit(problem)
+    _, sections = trim(source, focus, whole_lines=True)
+    _, original = layout.parse(source, with_spans=True)
+    kept_sections = {section['start']: section['items'] for section in sections}
+    lines = re.findall(r'[^\n]*\n|[^\n]+$', source)
+    removed = set()
+    for section, end in zip(original, [s['start'] for s in original[1:]] + [len(lines)]):
+        start = section['start']
+        if start not in kept_sections:
+            removed.add(start)
+        kept = iter(kept_sections.get(start, ()))
+        next_line = next(kept, None)
+        for index in range(start + 1, end):
+            line = lines[index].rstrip()
+            if line == next_line:
+                next_line = next(kept, None)
+            elif line.strip() and not re.fullmatch(r'\s*[-*_]{3,}\s*', line):
+                removed.add(index)
+        if next_line is not None:
+            raise SystemExit('The trim could not preserve the original CV lines.')
+    return (''.join(line for index, line in enumerate(lines) if index not in removed),
+            [lines[index].rstrip('\r\n') for index in sorted(removed)])
 
 
 def verify_summary_support(sections):
@@ -323,16 +360,21 @@ def render_md(head, sections):
 
 
 def contexts(text):
-    """Yield (context, normalized line): context is the section plus the role/project title the line sits under."""
-    section = title = ''
+    """Yield each normalized line with its section, role heading and bold heading."""
+    section = role_title = bold_title = ''
     for line in text.replace('\r\n', '\n').split('\n'):
         if not line.strip():
             continue
-        if line.startswith('## '):
-            section, title = line.strip(), ''
-        elif line.startswith('**'):
-            title = re.sub(r'\s+', ' ', line.strip())
-        yield (section, title if not line.startswith('**') else ''), re.sub(r'\s+', ' ', line.strip())
+        normalized = re.sub(r'\s+', ' ', line.strip())
+        if re.match(r'^##\s+', line):
+            section, role_title, bold_title = normalized, '', ''
+        is_role = layout.role(line) is not None
+        is_bold = line.startswith('**')
+        yield (section, '' if is_role else role_title, '' if is_role or is_bold else bold_title), normalized
+        if is_role:
+            role_title, bold_title = normalized, ''
+        if is_bold:
+            bold_title = normalized
 
 
 def verify_subset(source, result):

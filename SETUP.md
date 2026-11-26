@@ -49,15 +49,17 @@ PowerShell on Windows:
 ```powershell
 py -3.12 -m venv .venv
 & .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.txt
 ```
+
+`requirements.txt` pins exact versions with hashes and is generated from `requirements.in` using the `uv` command in its header, while Playwright is installed separately for the optional phone-browser test.
 
 Git Bash on Windows:
 
 ```bash
 py -3.12 -m venv .venv
 source .venv/Scripts/activate
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.txt
 ```
 
 macOS / Linux, with Python 3.12 installed:
@@ -65,10 +67,10 @@ macOS / Linux, with Python 3.12 installed:
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.txt
 ```
 
-Requirements are `openpyxl`, `python-docx`, and `Pillow`; versions are unpinned. Playwright is optional for the app but required for both browser cases in the full PC suite. These commands work in either shell:
+Playwright is required for both browser cases in the full PC suite. These commands work in either shell:
 
 ```powershell
 python -m pip install playwright
@@ -78,7 +80,7 @@ python -m playwright install webkit
 Downloads need internet access. Activate the environment in each new terminal. `.venv/` is git-ignored here: never stage or commit it. If PowerShell blocks activation, use the interpreter directly without changing machine-wide policy:
 
 ```powershell
-& .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+& .\.venv\Scripts\python.exe -m pip install --require-hashes -r requirements.txt
 ```
 
 Use that interpreter in place of `python` in later Windows commands if activation was skipped.
@@ -354,7 +356,7 @@ For a clean personal clone on `main`, after reviewing local changes:
 git status --short
 git switch main
 git pull --ff-only
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.txt
 python -I tools/hq-dashboard/port_tracker.py --backend pc
 python -I tools/hq-dashboard/test_ai_tasks.py
 python -I tools/hq-dashboard/test_cv_onepage.py
@@ -406,7 +408,7 @@ Maintainer checklist before merge:
 2. **Runtime validation and timings.** Python and Git execution were prohibited for this change. Installation, build, tests, update, screenshots, and cleanup sequences are **Unverified** at runtime. Follow the guide in fresh Windows and Mac clones, record test counts/times, and verify local links before merge.
 3. **Platform portability.** Windows mutexes, fixed Git OpenSSL, and fixed Windows Arial paths prevent complete Mac/Linux validation. Verify the limited Mac tracker preview and obtain Windows test/screenshot evidence for PC additions.
 4. **Local HTTP login.** Cookies are always Secure; automated browser coverage uses HTTPS. Browser acceptance of loopback HTTP is **Unverified**. Verify supported browsers or provide a supported local HTTPS route separately.
-5. **Dependencies and worker.** Packages and CLI are unpinned, while worker flags are specific. Compatible versions, live-call success on a fresh install, account allowance, and per-task cost are **Unverified**. Record tested versions; keep paid checks outside offline tests.
+5. **Dependencies and worker.** Playwright and the CLI are unpinned, while worker flags are specific. Compatible versions, live-call success on a fresh install, account allowance, and per-task cost are **Unverified**. Record tested versions; keep paid checks outside offline tests.
 6. **Phone and boot.** Funnel commands follow official guidance, but fresh-device proxy headers, sign-in, reboot recovery, and pre-login Tailscale/Codex readiness are **Unverified** here. Confirm task interpreter and account.
 7. **Automation and exports.** The daily search command needs separate scheduling. No hosted-store sync service is included. Export copying is not backup; AI exports do not automatically enter the `work/` Documents list.
 8. **Draft truth and pagination.** Evidence-map checks do not prove claim coverage or support. Page fit uses font metrics; actual Word/Pages rendering is **Unverified** here. Human wording and layout review remain necessary.

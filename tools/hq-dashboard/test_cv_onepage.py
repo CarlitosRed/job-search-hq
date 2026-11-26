@@ -21,6 +21,12 @@ SOURCE = '# EXAMPLE PERSON\nTagline | Example\nCity | x@example.com\n\n## Summar
     f'**Role {r} | Company {r}** | 2020 to 2021\n' + ''.join(f'- Fictional bullet {r}.{b} ' + 'filler words ' * 14 + '\n' for b in range(1, 7)) for r in range(1, 7)) + '\n## Skills\nOne, two, three\n'
 
 
+SITE_CV = ("## Experience\n"
+           "### Analyst | Example Works | 2024 to 2025\n- Built reports.\n"
+           "### Associate | Sample Labs | 2022 to 2023\n- Checked data.\n"
+           "### Assistant | Demo Studio | 2020 to 2021\n- Organized files.\n")
+
+
 class Trim(unittest.TestCase):
     def run_trim(self, source=SOURCE):
         head, sections = c.trim(source)
@@ -114,9 +120,51 @@ class Trim(unittest.TestCase):
         with self.assertRaises(SystemExit):
             c.verify_subset(SOURCE, moved)
 
+    def test_site_cv_keeps_three_employers_with_their_own_bullets(self):
+        text, _, _ = self.run_trim(SITE_CV)
+        self.assertEqual(text.strip(), SITE_CV.strip())
+        c.verify_subset(SITE_CV, text)
+
+    def test_site_cv_refuses_a_bullet_moved_to_another_employer(self):
+        for intro in ('', '**Work** included these tasks.\n'):
+            with self.subTest(intro=intro):
+                source = SITE_CV.replace('\n- ', '\n' + intro + '- ')
+                moved = source.replace('- Built reports.\n', '').replace('- Checked data.\n', '- Built reports.\n- Checked data.\n')
+                with self.assertRaises(SystemExit):
+                    c.verify_subset(source, moved)
+
     def test_moved_sentences_are_refused(self):
         with self.assertRaises(SystemExit):
             c.verify_subset(SOURCE, '## Summary\nFictional filler words two. Fictional filler words one.')
+
+
+class BoldProjects(unittest.TestCase):
+    def test_bold_titles_with_trailing_text_start_separate_entries(self):
+        items = ['**Project Alpha** - tool', '- Built reports.',
+                 '**Project Beta** - tool', '- Checked data.',
+                 '### Project Gamma', '- Organized files.']
+        self.assertEqual(c.entries(items), [items[:2], items[2:4], items[4:]])
+
+    def test_bullet_moved_between_bold_projects_is_refused(self):
+        source = '## Projects\n**Project Alpha** - tool\n- Built reports.\n**Project Beta** - tool\n- Checked data.\n'
+        moved = source.replace('- Built reports.\n', '').replace('- Checked data.', '- Built reports.\n- Checked data.')
+        c.verify_subset(source, source)
+        with self.assertRaises(SystemExit):
+            c.verify_subset(source, moved)
+
+    def test_whole_line_trim_does_not_shorten_a_summary_line(self):
+        summary = 'Analyst with years of work. More years of work. Several years of work. Many years of work.'
+        source = '## Summary\n' + summary + '\n\n' + SITE_CV
+        _, sections = c.trim(source, whole_lines=True)
+        self.assertEqual(sections[0]['items'], [summary])
+
+    def test_trim_preserves_kept_line_endings_and_whitespace(self):
+        source = ('##   Experience\r\n### Analyst | Fictional Studio | 2024\r\n'
+                  '- Built reports.  \r\n- Checked data.\r\n- Organized files.\r\n- Reviewed notes.')
+        result, removed = c.trim_lines(source)
+        self.assertEqual(removed, ['- Reviewed notes.'])
+        self.assertEqual(result, source.removesuffix('- Reviewed notes.'))
+        c.verify_subset(source, result)
 
 
 def make_source(roles, bullets, filler):

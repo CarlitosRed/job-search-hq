@@ -148,6 +148,10 @@ on PC startup with `--trigger catch-up` to catch up a missed slot. The Jobs view
 shows the last search, missed days and any failure or warning. Judging runs
 after the re-check (see the qualification judge below).
 
+`daily_run.enabled` is an optional boolean that defaults to `true`. Set it to
+`false` to pause scheduled and catch-up runs and show the pause in the Jobs view.
+Use `--trigger manual` to run the search while paused.
+
 <!-- # Card 03: closing and re-check. -->
 After landing, re-checking records board reads and posting observations. Two
 misses on complete reads on different days close a posting; 404 or 410 closes

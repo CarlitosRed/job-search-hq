@@ -19,7 +19,7 @@ python -I tools/hq-dashboard/port_tracker.py --backend pc
 
 - `tools/hq-dashboard/*.py` (server, login, saving, AI tasks, document export)
 - `tools/tracker/server.py`, `workbook_lock.py`
-- `.github/workflows/`, `requirements.txt`, `LICENSE`
+- `.github/workflows/`, `requirements.txt`, `requirements.in`, `LICENSE`
 - `evidence/`, `rules.example.md` (rules for what drafts may claim)
 
 Private `rules.md` and all private data are also outside UI scope. Contributors must not edit `port_tracker.py`. If a UI edit changes an anchor string that the build expects, tell the owner exactly which string changed so the owner can adjust the script.

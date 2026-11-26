@@ -170,12 +170,13 @@ def _export_draft(state,posting_id,kind,record,copy_dir,work,store_path,blocked_
     if not re.fullmatch(r'[0-9a-f-]{36}',posting_id) or kind not in ('cv','letter'):
         raise ValueError('Invalid document request.')
     field='cv_markdown' if kind=='cv' else 'cover_letter_markdown'
-    content=record.get('fit',{}).get(field)
+    fit=record.get('fit',{})
+    content=fit.get(field)
     if not content:raise ValueError('Create this draft first.')
     problems=converter().readability_problems(content,SETTINGS['cv_blocked_terms'] if blocked_terms is None else blocked_terms)
     if problems:raise ValueError(' '.join(problems))
     convert=converter().md_to_docx if kind=='cv' else converter().letter_to_docx
-    rationale=record.get('fit',{}).get('cv_rationale') if kind=='cv' else None
+    rationale=fit.get('cv_rationale') if kind=='cv' else None
     fingerprint='draft:'+hashlib.sha256((content+('\nRATIONALE\n'+rationale if rationale else '')).encode()).hexdigest()
     directory=Path(work) if work is not None else ROOT/'work'
     directory.mkdir(parents=True,exist_ok=True)
@@ -219,7 +220,7 @@ def _export_draft(state,posting_id,kind,record,copy_dir,work,store_path,blocked_
             if storage:
                 storage.add_document(kind,path.name,hashlib.sha256(path.read_bytes()).hexdigest(),'site',
                                      datetime.now(timezone.utc).isoformat(),job_id=record.get('jobId') or None,
-                                     posting_id=posting_id,evidence_ids=record.get('fit',{}).get('sources',[]),
+                                     posting_id=posting_id,evidence_ids=fit.get(kind+'_sources',fit.get('sources',[])),
                                      checks=['markers','readability',fingerprint])
             if cache:
                 cache.parent.mkdir(parents=True,exist_ok=True)

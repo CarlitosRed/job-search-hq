@@ -467,6 +467,259 @@ class Integration(unittest.TestCase):
         self.assertEqual(banner['message'], "Daily search hasn't run yet.")
         self.assertFalse((self.book.parent / 'daily-runs.sqlite3').exists())
 
+    def test_data_reports_paused_daily_search_before_first_run(self):
+        self.login()
+        load = hq.hq_settings.load
+        with mock.patch.object(hq.hq_settings, 'load', side_effect=lambda: dict(load(), daily_run={'enabled': False})):
+            banner = self.data()['daily_run']
+        self.assertEqual(banner['tone'], 'n')
+        self.assertEqual(banner['message'], 'Daily search is paused.')
+        self.assertIsNone(banner['last_success'])
+
+    def test_data_handles_non_mapping_daily_run(self):
+        self.login()
+        load = hq.hq_settings.load
+        for config in (None, False, 'paused', ['06:00']):
+            with self.subTest(config=config), mock.patch.object(
+                    hq.hq_settings, 'load', side_effect=lambda: dict(load(), daily_run=config)):
+                self.assertEqual(self.data()['daily_run']['state'], 'never')
+
+    def cv_trim_fixture(self, roles=4, bullets=7, tail=''):
+        posting_id = str(uuid.uuid4())
+        lines, claims, entries = ['## Experience'], [], {}
+        for role in range(roles):
+            title = f'Analyst | Fictional Studio {role} | 2024'
+            lines.append('### ' + title)
+            for bullet in range(bullets):
+                key = f'E-{100 + role * bullets + bullet:03}'
+                claim = (f'Checked sample {role}.{bullet} and prepared fictional records for the monthly reporting '
+                         'exercise and comprehensive documentation reconciliation.')
+                lines.append('- ' + claim)
+                claims.append({'text': claim, 'evidence': [key]})
+                entries[key] = {'text': claim, 'roles': [title]}
+        content = '\n'.join(lines) + '\n' + tail
+        record = {'role': 'Fictional analyst', 'reviewed': True, 'review': {'result': 'clear'},
+                  'fit': {'cv_markdown': content, 'cv_claims': claims, 'sources': list(entries)}}
+        self.app.ai.bank_loader = lambda: {'entries': entries}
+        with self.app.ai.connect() as db, db:
+            db.execute('INSERT INTO postings VALUES (?, ?)', (posting_id, json.dumps(record)))
+        return posting_id, record
+
+    def cv_trim_request(self, action, posting_id, **fields):
+        status, _, body = self.request('POST', '/api/ai/cv-trim/' + action, {'id': posting_id, **fields})
+        return status, json.loads(body)
+
+    def test_cv_page_warning_is_only_for_long_drafts(self):
+        self.login()
+        short, _ = self.cv_trim_fixture(roles=1, bullets=1)
+        long, _ = self.cv_trim_fixture()
+        status, _, body = self.request('GET', '/api/ai/state')
+        self.assertEqual(status, 200, body)
+        fits = {posting['_id']: posting['fit'] for posting in json.loads(body)['postings']}
+        self.assertNotIn('cv_page_warning', fits[short])
+        self.assertRegex(fits[long]['cv_page_warning'], r'^About \d+\.\d pages\. A CV should fit on one\.$')
+
+    def test_cv_trim_preview_is_read_only_and_apply_deletes_exactly_its_lines(self):
+        self.login()
+        posting_id, record = self.cv_trim_fixture()
+        status, preview = self.cv_trim_request('preview', posting_id)
+        self.assertEqual(status, 200, preview)
+        self.assertTrue(preview['removed'])
+        self.assertLessEqual(preview['pages'], 1)
+        self.assertEqual(self.app.ai.posting(posting_id), record)
+        status, reply = self.cv_trim_request('apply', posting_id, draftHash=preview['draftHash'],
+                                             previewHash=preview['previewHash'])
+        self.assertEqual(status, 200, reply)
+        saved = self.app.ai.posting(posting_id)
+        expected = record['fit']['cv_markdown'].splitlines()
+        for line in preview['removed']:
+            expected.remove(line)
+        self.assertEqual(saved['fit']['cv_markdown'].splitlines(), expected)
+        claims = [claim for claim in record['fit']['cv_claims'] if claim['text'] in saved['fit']['cv_markdown']]
+        self.assertEqual(saved['fit']['cv_claims'], claims)
+        self.assertEqual(saved['fit']['sources'], [claim['evidence'][0] for claim in claims])
+        self.assertFalse(saved['reviewed'])
+        self.assertIsNone(saved['review'])
+
+    def test_cv_trim_apply_refuses_a_changed_draft(self):
+        self.login()
+        posting_id, record = self.cv_trim_fixture()
+        status, preview = self.cv_trim_request('preview', posting_id)
+        self.assertEqual(status, 200, preview)
+        with self.app.ai.connect() as db, db, self.app.ai.edit_posting(db, posting_id) as latest:
+            latest['fit']['cv_markdown'] += '\n'
+        changed = self.app.ai.posting(posting_id)
+        status, reply = self.cv_trim_request('apply', posting_id, draftHash=preview['draftHash'],
+                                             previewHash=preview['previewHash'])
+        self.assertEqual(status, 400, reply)
+        self.assertIn('changed', reply['error'])
+        self.assertEqual(self.app.ai.posting(posting_id), changed)
+
+    def test_cv_trim_apply_refuses_a_draft_that_still_does_not_fit(self):
+        self.login()
+        posting_id, record = self.cv_trim_fixture(tail='## Training\n' + 'Fictional course.\n' * 72)
+        status, preview = self.cv_trim_request('preview', posting_id)
+        self.assertEqual(status, 200, preview)
+        self.assertGreater(preview['pages'], 1)
+        status, reply = self.cv_trim_request('apply', posting_id, draftHash=preview['draftHash'],
+                                             previewHash=preview['previewHash'])
+        self.assertEqual(status, 400, reply)
+        self.assertIn('still', reply['error'])
+        self.assertEqual(self.app.ai.posting(posting_id), record)
+
+    def test_cv_trim_routes_require_sign_in(self):
+        posting_id, record = self.cv_trim_fixture()
+        for action in ('preview', 'apply'):
+            with self.subTest(action=action):
+                self.assertEqual(self.cv_trim_request(action, posting_id)[0], 401)
+        self.assertEqual(self.app.ai.posting(posting_id), record)
+
+    def test_cv_trim_refuses_tag_lines(self):
+        self.login()
+        posting_id, record = self.cv_trim_fixture(tail='[DRAFT]\n')
+        status, reply = self.cv_trim_request('preview', posting_id)
+        self.assertEqual(status, 400, reply)
+        self.assertIn('came back with a marker line', reply['error'])
+        self.assertEqual(self.app.ai.posting(posting_id), record)
+
+    def test_cv_trim_system_exit_is_a_normal_error(self):
+        self.login()
+        posting_id, record = self.cv_trim_fixture()
+        loader = mock.Mock(side_effect=SystemExit('The original lines could not be preserved.'))
+        with mock.patch.dict(self.app.ai.preview_cv_trim.__globals__, _load_cv_onepage=loader):
+            status, reply = self.cv_trim_request('preview', posting_id)
+        self.assertEqual(status, 400, reply)
+        self.assertEqual(reply['error'], 'The original lines could not be preserved.')
+        self.assertEqual(self.app.ai.posting(posting_id), record)
+
+    def test_cv_trim_does_not_apply_a_different_proposal(self):
+        self.login()
+        posting_id, record = self.cv_trim_fixture()
+        status, preview = self.cv_trim_request('preview', posting_id)
+        self.assertEqual(status, 200, preview)
+        status, reply = self.cv_trim_request('apply', posting_id, draftHash=preview['draftHash'],
+                                             previewHash='0' * 64)
+        self.assertEqual(status, 400, reply)
+        self.assertIn('proposed trim changed', reply['error'])
+        self.assertEqual(self.app.ai.posting(posting_id), record)
+
+    def test_cv_trim_preserves_evidence_for_kept_headings_and_cover_letter(self):
+        self.login()
+        posting_id, _ = self.cv_trim_fixture()
+        tasks = self.app.ai
+        bank = tasks.bank_loader()
+        title = 'Coordinator | Fictional Studio | 2022'
+        bank['entries']['E-901'] = {'text': 'Fictional position.', 'roles': [title]}
+        bank['entries']['E-902'] = {'text': 'Fictional letter.'}
+        letter_claims = [{'text': 'Fictional letter.', 'evidence': ['E-902']}]
+        with tasks.connect() as db, db, tasks.edit_posting(db, posting_id) as record:
+            fit = record['fit']
+            fit['cv_markdown'] += '### ' + title + '\n'
+            fit['sources'] += ['E-901', 'E-902']
+            fit.update(cover_letter_markdown='Fictional letter.', letter_claims=letter_claims)
+        status, preview = self.cv_trim_request('preview', posting_id)
+        self.assertEqual(status, 200, preview)
+        status, reply = self.cv_trim_request('apply', posting_id, draftHash=preview['draftHash'],
+                                             previewHash=preview['previewHash'])
+        self.assertEqual(status, 200, reply)
+        fit = tasks.posting(posting_id)['fit']
+        self.assertIn('E-901', fit['cv_sources'])
+        self.assertNotIn('E-902', fit['cv_sources'])
+        self.assertEqual(fit['letter_sources'], ['E-902'])
+        self.assertEqual(fit['letter_claims'], letter_claims)
+
+    def test_cv_trim_refuses_when_remaining_claims_no_longer_match_the_bank(self):
+        self.login()
+        posting_id, record = self.cv_trim_fixture()
+        status, preview = self.cv_trim_request('preview', posting_id)
+        self.assertEqual(status, 200, preview)
+        for entry in self.app.ai.bank_loader()['entries'].values():
+            entry['text'] = 'Different fictional evidence.'
+        status, reply = self.cv_trim_request('apply', posting_id, draftHash=preview['draftHash'],
+                                             previewHash=preview['previewHash'])
+        self.assertEqual(status, 400, reply)
+        self.assertIn('evidence', reply['error'])
+        self.assertEqual(self.app.ai.posting(posting_id), record)
+
+    def test_cv_trim_keeps_sources_for_generated_skills_and_fixed_lines(self):
+        self.login()
+        posting_id, _ = self.cv_trim_fixture()
+        tasks = self.app.ai
+        bank = tasks.bank_loader()
+        bank['entries'].update({
+            'E-901': {'text': 'Fictional spreadsheet practice.', 'skills': ['Spreadsheets']},
+            'E-902': {'text': 'Fictional diploma.'},
+            'E-903': {'text': 'Fictional course.'},
+        })
+        fixed = {'name': 'Education', 'lines': [
+            {'from': 'text', 'entries': ['E-902', 'E-903'], 'join': ' | '}]}
+        fixed_claim = {'text': 'Fictional diploma. | Fictional course.', 'kind': 'bullet',
+                       'evidence': ['E-902', 'E-903']}
+        with tasks.connect() as db, db, tasks.edit_posting(db, posting_id) as record:
+            fit = record['fit']
+            fit['cv_markdown'] += ('## Skills\n- **Tools:** Spreadsheets\n## Education\n'
+                                   + fixed_claim['text'] + '\n')
+            fit['sources'] += ['E-901', 'E-902', 'E-903']
+            fit['cv_claims'].append(fixed_claim)
+        settings = tasks.apply_cv_trim.__func__.__globals__['SETTINGS']
+        with mock.patch.dict(settings, cv_fixed_sections=[fixed], cv_skills_placement='end',
+                             cv_skill_groups={'Tools': ['Spreadsheets']}):
+            status, preview = self.cv_trim_request('preview', posting_id)
+            self.assertEqual(status, 200, preview)
+            status, reply = self.cv_trim_request('apply', posting_id, draftHash=preview['draftHash'],
+                                                 previewHash=preview['previewHash'])
+        self.assertEqual(status, 200, reply)
+        fit = tasks.posting(posting_id)['fit']
+        self.assertEqual(fit['cv_sources'][-3:], ['E-901', 'E-902', 'E-903'])
+        self.assertIn(fixed_claim, fit['cv_claims'])
+
+    def test_link_and_draft_preserve_each_others_updates_in_both_orders(self):
+        self.login()
+        job_id = self.data()['jobs'][0]['_id']
+        tasks = self.app.ai
+        tasks.bank_loader = lambda: {'rubric_version': 'v3.2', 'rules': 'Fictional evidence only.',
+                                     'entries': {'E-999': {'text': 'Fictional letter.'}}}
+        letter = {'cover_letter_markdown': 'Fictional letter.', 'sources': ['E-999'],
+                  'claims': [{'text': 'Fictional letter.', 'evidence': ['E-999']}]}
+        for first in ('link', 'draft'):
+            with self.subTest(first=first):
+                posting_id = str(uuid.uuid4())
+                record = {'jobId': '', 'text': 'Fictional posting.', 'reviewed': True, 'review': {},
+                          'fit': {'cv_markdown': 'Fictional CV.'}}
+                with tasks.connect() as db, db:
+                    db.execute('INSERT INTO postings VALUES (?, ?)', (posting_id, json.dumps(record)))
+                task_id = tasks.submit({'kind': 'letter', 'postingId': posting_id, 'withoutSentiment': True,
+                                        'requestId': str(uuid.uuid4())})
+
+                def link():
+                    status, _, body = self.request('POST', '/api/ai/link', {'id': posting_id, 'jobId': job_id})
+                    self.assertEqual(status, 200, body)
+
+                if first == 'link':
+                    def runner(*args):
+                        link()
+                        return letter
+
+                    tasks.runner = runner
+                    tasks.process_one()
+                else:
+                    tasks.runner = lambda *args: letter
+                    app_data = self.app.data
+
+                    def data_after_draft():
+                        tasks.process_one()
+                        return app_data()
+
+                    with mock.patch.object(self.app, 'data', side_effect=data_after_draft):
+                        link()
+                task = next(task for task in tasks.list_tasks() if task['id'] == task_id)
+                self.assertEqual(task['status'], 'done', task['message'])
+                saved = tasks.posting(posting_id)
+                self.assertEqual(saved['jobId'], job_id)
+                self.assertEqual(saved['fit']['cover_letter_markdown'], 'Fictional letter.')
+                self.assertEqual(saved['fit']['cv_markdown'], 'Fictional CV.')
+                self.assertFalse(saved['reviewed'])
+
     def test_authentication_and_logout(self):
         self.assertEqual(self.request('GET', '/')[0], 303)
         self.assertEqual(self.request('GET', '/api/data')[0], 401)
@@ -1052,6 +1305,51 @@ try {
             self.assertEqual(saved, 'Rejected')
             context.close()
             browser.close()
+
+    def test_overview_stale_boards_are_collapsed_counted_and_escaped(self):
+        from playwright.sync_api import sync_playwright, expect
+
+        self.serve_tls()
+        app_data = self.app.data
+        origin = urlsplit(self.app.origin)
+        samples = [{'board': f'Example <i>Board</i> {n}', 'since': '2026-01-01',
+                    'reason': 'Incomplete <b>results</b>'} for n in range(1, 30)]
+        boards = []
+
+        def guard(route):
+            url = urlsplit(route.request.url)
+            if (url.scheme, url.netloc) == (origin.scheme, origin.netloc):
+                route.continue_()
+            else:
+                route.abort()
+
+        with mock.patch.object(self.app, 'data', side_effect=lambda: dict(app_data(), stale_boards=boards)):
+            with sync_playwright() as p:
+                browser = p.webkit.launch()
+                context = browser.new_context(ignore_https_errors=True)
+                context.route('**/*', guard)
+                page = context.new_page()
+                self.browser_login(page)
+                for count in (0, 1, 29):
+                    with self.subTest(count=count):
+                        boards = samples[:count]
+                        page.reload()
+                        expect(page.locator('#sync')).to_contain_text('1 jobs')
+                        page.click('.seg [data-v="overview"]')
+                        details = page.locator('#main details').filter(has_text='not fully read')
+                        if not count:
+                            expect(details).to_have_count(0)
+                            continue
+                        summary = details.locator('summary')
+                        expect(summary).to_have_text(f"{count} job board{'s' if count != 1 else ''} not fully read")
+                        rows = details.locator('li')
+                        expect(rows.first).to_be_hidden()
+                        summary.click()
+                        expect(rows).to_have_count(count)
+                        expect(rows.first).to_be_visible()
+                        expect(rows.first).to_have_text('Example <i>Board</i> 1: not fully read since Jan 1 (Incomplete <b>results</b>)')
+                        expect(rows.locator('i, b')).to_have_count(0)
+                browser.close()
 
     def test_overview_empty_history_and_same_origin_browser(self):
         from playwright.sync_api import sync_playwright, expect

@@ -24,7 +24,7 @@
     },
     "cv_ai_role_words": ["AI", "agent", "agentic", "LLM", "automation", "machine learning", "prompt"],
     "copy_folder":  "",
-    "daily_run": {"at": "06:00", "before": [], "copies": [], "judge": "on", "judge_ai": "codex"},
+    "daily_run": {"at": "06:00", "enabled": true, "before": [], "copies": [], "judge": "on", "judge_ai": "codex"},
     "copy_subfolder":  "Drafts from HQ",
     "home_places_pattern":  "",
     "home_country_label":  "Home country",

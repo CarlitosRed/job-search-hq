@@ -92,7 +92,10 @@ def configuration(root):
     config = settings.load(root, defaults_root=settings.app_root())['daily_run']
     if not isinstance(config, dict):
         raise ValueError('Daily settings must be an object.')
-    config = {'at': '06:00', 'before': [], 'copies': [], 'recheck': 'on', 'judge': 'on', 'judge_ai': 'codex', **config}
+    config = {'at': '06:00', 'enabled': True, 'before': [], 'copies': [], 'recheck': 'on',
+              'judge': 'on', 'judge_ai': 'codex', **config}
+    if not isinstance(config['enabled'], bool):
+        raise ValueError('The daily enabled setting must be true or false.')
     if config['recheck'] not in ('on', 'preview'):
         raise ValueError('The daily recheck setting must be on or preview.')
     # Card 04a: qualification judge.
@@ -151,6 +154,8 @@ def run_daily(root, now, fetch=None, force=False, trigger='scheduled', link_chec
     config = configuration(root)  # Validate every command before any writable work.
     slot = slot_date(now, config['at'])
     empty = dict(run_id=None, status='already_running', slot=slot.isoformat(), phases={}, missed_since=None)
+    if not config['enabled'] and trigger != 'manual':
+        return dict(empty, status='paused')
     try:
         with run_lock(root):
             return run_locked(root, now, fetch or daily_search.boards.fetch_json, force, trigger, config, slot,
@@ -385,11 +390,20 @@ def run_locked(root, now, fetch, force, trigger, config, slot, link_check, compl
         return finish('done_with_warnings' if warning else 'done')
 
 
-def status(record_path, now, at='06:00'):
+def last_search_label(finished, now):
+    day = 'today' if finished.date() == now.date() else f'on {finished:%b} {finished.day}'
+    return f'Last search {day} at {finished:%H:%M}'
+
+
+def status(record_path, now, at='06:00', enabled=True):
     result = dict(state='never', tone='n', message="Daily search hasn't run yet.",
                   last_success=None, last_run=None, missed_since=None)
-    slot = slot_date(now, at)
-    overdue = slot == now.date() and now - datetime.combine(slot, time.fromisoformat(at)) > timedelta(minutes=60)
+    paused = enabled is False
+    if paused:
+        result.update(state='paused', message='Daily search is paused.')
+    else:
+        slot = slot_date(now, at)
+        overdue = slot == now.date() and now - datetime.combine(slot, time.fromisoformat(at)) > timedelta(minutes=60)
     path = Path(record_path)
     if not path.is_file():
         return result
@@ -402,8 +416,13 @@ def status(record_path, now, at='06:00'):
             successful = [r for r in runs if r['status'] in SUCCESS]
             success = successful[-1] if successful else None
             result.update(last_run=latest['finished'] or latest['started'],
-                          last_success=success['finished'] if success else None,
-                          missed_since=missed_slot(runs, slot))
+                          last_success=success['finished'] if success else None)
+            if paused:
+                if result['last_success']:
+                    finished = datetime.fromisoformat(result['last_success'])
+                    result['message'] += ' ' + last_search_label(finished, now) + '.'
+                return result
+            result['missed_since'] = missed_slot(runs, slot)
             phases = phases_for(db, latest['run_id'])
             if latest['status'] == 'running':
                 stale = now - datetime.fromisoformat(latest['started']) > timedelta(hours=3)
@@ -431,8 +450,7 @@ def status(record_path, now, at='06:00'):
                 result.update(state='missed', tone='a', message=f"Today's {at} search hasn't run yet.")
             elif latest['status'] in SUCCESS:
                 finished = datetime.fromisoformat(latest['finished'])
-                day = 'today' if finished.date() == now.date() else f'on {finished:%b} {finished.day}'
-                prefix = f'Last search {day} at {finished:%H:%M}'
+                prefix = last_search_label(finished, now)
                 warnings = [name[5:] + ': ' + last_output_line(p['detail']) for name, p in phases.items()
                             if name.startswith('copy:') and p['status'] == 'failed']
                 if phases.get('search', {}).get('status') == 'partial':
@@ -449,7 +467,8 @@ def status(record_path, now, at='06:00'):
             else:
                 result.update(state='warning', tone='a', message='The daily search is running or was interrupted. It resumes at the next run.')
     except (OSError, ValueError, sqlite3.Error, KeyError, TypeError):
-        result.update(state='failed', tone='r', message='The daily search record could not be read.')
+        if not paused:
+            result.update(state='failed', tone='r', message='The daily search record could not be read.')
     return result
 
 
@@ -469,6 +488,8 @@ def main():
         print("Up to date: today's search already ran.")
     elif state == 'already_running':
         print('Daily search is already running.')
+    elif state == 'paused':
+        print('Daily search is paused.')
     elif state == 'failed':
         print(status(settings.data_root() / 'work' / 'daily-runs.sqlite3', args.now or datetime.now())['message'])
     else:

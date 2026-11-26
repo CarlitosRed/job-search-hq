@@ -13,6 +13,7 @@ from copy import copy
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from stat import S_ISREG
 
 import openpyxl
 import importlib.util
@@ -35,6 +36,7 @@ hq_settings = importlib.util.module_from_spec(_settings_spec)
 _settings_spec.loader.exec_module(hq_settings)
 XLSX = Path(os.environ.get("TRACKER_XLSX") or hq_settings.data_root() / "work" / "applications-tracker.xlsx").resolve()
 PORT = int(os.environ.get("TRACKER_PORT") or 8765)
+MAX_POST_BYTES = 262144
 BACKUPS = XLSX.parent / ".tracker-backups"
 LOCK = threading.Lock()
 # Same order as the data-validation list in the workbook.
@@ -181,14 +183,32 @@ def excel_open():
     return (XLSX.parent / ("~$" + XLSX.name)).exists()
 
 
+def _rotate_daily_backups(stem, today):
+    pattern = re.compile(rf"{re.escape(stem)}-([0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}){re.escape(today.suffix)}")
+    daily = []
+    for path in today.parent.iterdir():
+        match = pattern.fullmatch(path.name)
+        if not match:
+            continue
+        try:
+            day = date.fromisoformat(match[1])
+            if S_ISREG(path.lstat().st_mode):
+                daily.append((day, path))
+        except (ValueError, FileNotFoundError):
+            continue
+
+    # Today takes one slot even when the other copies have later dates.
+    daily.sort(key=lambda entry: (entry[1] == today, entry[0]), reverse=True)
+    for _, path in daily[7:]:
+        path.unlink(missing_ok=True)
+
+
 def backup():
     BACKUPS.mkdir(exist_ok=True)
     today = BACKUPS / f"{XLSX.stem}-{date.today().isoformat()}{XLSX.suffix}"
     if not today.exists():
         shutil.copy2(XLSX, today)
-    olds = sorted(BACKUPS.glob(f"{XLSX.stem}-*{XLSX.suffix}"))
-    for old in olds[:-7]:
-        old.unlink(missing_ok=True)
+    _rotate_daily_backups(XLSX.stem, today)
 
 
 def backup_database(storage):
@@ -200,9 +220,7 @@ def backup_database(storage):
             storage.db.backup(target)
         finally:
             target.close()
-    olds = sorted(BACKUPS.glob(f"{XLSX.stem}-*.sqlite3"))
-    for old in olds[:-7]:
-        old.unlink(missing_ok=True)
+    _rotate_daily_backups(XLSX.stem, today)
 
 
 def save(wb):
@@ -502,8 +520,14 @@ class H(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path not in ("/api/update", "/api/add", "/api/rounds") or not self.local():
             return self.send(404, "not found", "text/plain")
+        length = self.headers.get("Content-Length", "")
+        if not re.fullmatch(r"[0-9]+", length):
+            return self.send(400, json.dumps({"error": "Invalid Content-Length"}), "application/json")
+        length = length.lstrip("0") or "0"
+        if len(length) > len(str(MAX_POST_BYTES)) or int(length) > MAX_POST_BYTES:
+            return self.send(413, json.dumps({"error": "Request body is too large"}), "application/json")
         try:
-            p = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            p = json.loads(self.rfile.read(int(length)))
             with LOCK, workbook_lock(XLSX):
                 if path in ("/api/update", "/api/rounds"):
                     (rounds if path == "/api/rounds" else update)(p)
