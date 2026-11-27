@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Search agent settings · Job Search HQ</title>
+<style>
+ body{font:16px/1.5 system-ui;color:#182034;background:#f5f6fa;margin:0;padding:24px}
+ main{max-width:660px;margin:auto}
+ section{background:white;padding:20px;margin:16px 0;border-radius:12px}
+ h2{margin-top:0}
+ label{display:block;margin-top:10px}
+ input,button,select{box-sizing:border-box;font:inherit;padding:8px;border:1px solid #afb7c8;border-radius:6px}
+ input,select{display:block;width:100%;margin:4px 0 12px}
+ button{cursor:pointer;background:white;color:inherit;margin:4px 4px 4px 0}
+ button[type=submit]{background:#244acb;color:white}
+ button:disabled{opacity:.55;cursor:default}
+ a{color:#244acb}
+</style>
+<main>
+ <a href="/">Back to Job Search HQ</a>
+ <h1>Search agent settings</h1>
+ <p id="engine"></p>
+ <noscript>Enable JavaScript to manage search agent settings.</noscript>
+ <p id="status" role="status"></p>
+ <section>
+  <h2>Payment method</h2>
+  <form id="preferences">
+   <label for="mode">Pay with</label>
+   <select id="mode"><option value="api_key">API key</option><option value="plan">ChatGPT plan</option></select>
+   <label for="model">Model</label>
+   <select id="model"><option value="">Automatic</option></select>
+   <p id="model-note"></p>
+   <button type="submit" disabled>Save payment method and model</button>
+  </form>
+ </section>
+ <section>
+  <h2>OpenAI API key</h2>
+  <p id="key-state"></p>
+  <form id="api-key">
+   <label for="key">OpenAI API key</label>
+   <input id="key" type="password" autocomplete="off" maxlength="515" required>
+   <button type="submit" disabled>Save or replace key</button>
+   <button type="button" id="remove-key" disabled>Remove key</button>
+  </form>
+ </section>
+ <section>
+  <h2>ChatGPT plan</h2>
+  <p>Sign in with ChatGPT works only from the browser on the PC that runs Job Search HQ.</p>
+  <p id="plan-state"></p>
+  <button type="button" id="authorize" disabled>Sign in with ChatGPT</button>
+  <button type="button" id="sign-out" disabled>Sign out of ChatGPT</button>
+ </section>
+</main>
+<script>
+const get=id=>document.getElementById(id);
+const base='/api/agent-settings';
+let saved, modelRequest=0, busy=false, signInTab;
+
+async function request(action='', payload){
+ const options=payload===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)};
+ const response=await fetch(base+action,options);
+ const data=await response.json();
+ if(!response.ok)throw Error(data.error || 'Search agent settings are unavailable.');
+ return data;
+}
+
+async function models(){
+ const revision=++modelRequest;
+ const mode=get('mode').value;
+ const select=get('model');
+ select.replaceChildren(new Option('Automatic',''));
+ get('model-note').textContent='';
+ let listed;
+ if(mode==='api_key')listed=saved.priced_models;
+ else if(saved.signed_in){
+  get('model-note').textContent='Loading models…';
+  try{
+   const data=await request('/models');
+   if(revision!==modelRequest)return;
+   listed=data.models;
+   get('model-note').textContent=data.note || (!listed.length?'Your plan has no listed models.':'');
+  }catch(error){if(revision===modelRequest)get('model-note').textContent=error.message}
+ }
+ if(!listed || revision!==modelRequest)return;
+ const anyPriced=listed.some(model=>saved.priced_models.includes(model));
+ for(const slug of listed){
+  const option=new Option(slug,slug);
+  option.disabled=anyPriced && !saved.priced_models.includes(slug);
+  select.add(option);
+ }
+ if(mode===saved.mode && listed.includes(saved.model))select.value=saved.model;
+}
+
+function render(view){
+ saved=view;
+ let description='The search agent is enabled.';
+ if(!view.enabled)description='The search agent is off in the installation settings.';
+ else if(view.mode==='plan' && !view.signed_in)description='The search agent is off until you sign in with ChatGPT.';
+ else if(view.mode==='api_key' && !view.key_hint)description='The search agent is off until you save an OpenAI API key.';
+ get('engine').textContent=description;
+ get('key-state').textContent=view.key_hint?'Saved key '+view.key_hint:'No API key saved.';
+ get('plan-state').textContent=view.signed_in?'Connected to ChatGPT.':'Signed out of ChatGPT.';
+ get('mode').value=view.mode;
+ get('remove-key').disabled=!view.key_hint;
+ get('sign-out').disabled=!view.signed_in;
+ for(const id of ['preferences','api-key'])get(id).querySelector('[type=submit]').disabled=false;
+ get('authorize').disabled=false;
+ models();
+}
+
+async function update(action, payload, message){
+ if(busy)return;
+ busy=true;
+ try{
+  const view=await request(action,payload);
+  render(view);
+  get('status').textContent=message;
+ }catch(error){get('status').textContent=error.message}
+ finally{busy=false}
+}
+
+get('mode').onchange=models;
+get('preferences').onsubmit=event=>{
+ event.preventDefault();
+ update('/preferences',{mode:get('mode').value,model:get('model').value},'Payment method and model saved.');
+};
+get('api-key').onsubmit=event=>{
+ event.preventDefault();
+ const key=get('key').value;
+ get('key').value='';
+ update('/key',{key},'API key saved.');
+};
+get('remove-key').onclick=()=>update('/key',{key:''},'API key removed.');
+get('sign-out').onclick=()=>update('/sign-out',{},'Signed out of ChatGPT.');
+get('authorize').onclick=async()=>{
+ if(busy)return;
+ signInTab=window.open('about:blank','_blank');
+ if(!signInTab){get('status').textContent='Allow pop-ups for this page to sign in with ChatGPT.';return}
+ signInTab.opener=null;
+ busy=true;
+ try{
+  const data=await request('/authorize',{});
+  signInTab.location.replace(data.url);
+  get('status').textContent='Finish sign-in in the new tab, then return here.';
+ }catch(error){
+  signInTab.close();
+  signInTab=null;
+  get('status').textContent=error.message;
+ }finally{busy=false}
+};
+window.addEventListener('focus',()=>{
+ if(signInTab && !busy){
+  request().then(view=>{
+   if(!view.signed_in)return;
+   render(view);
+   signInTab=null;
+   get('status').textContent='Connected to ChatGPT.';
+  }).catch(error=>{get('status').textContent=error.message});
+ }
+});
+request().then(render).catch(error=>{get('status').textContent=error.message});
+</script>
+</html>

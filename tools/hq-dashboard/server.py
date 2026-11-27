@@ -34,6 +34,7 @@ daily_run = importlib.util.module_from_spec(_daily_spec)
 _daily_spec.loader.exec_module(daily_run)
 ROOT = hq_settings.data_root()
 APP = hq_settings.app_root()
+agent_search = daily_run.ai_shadow.engines.load('agent_search')
 DEFAULT_STATE = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'JobSearchHQ'
 # Private state path with public request limits.
 REQUEST_DEADLINE_SECONDS = 30
@@ -321,6 +322,12 @@ class App:
             owner = self.review_sessions.get(self.session_key(cookie))
         return owner if review_access(owner, self.review_profile(enabled=True), requested) else None
 
+    def agent_owner(self, session):
+        with self.auth_lock:
+            owner = self.review_sessions.get(session)
+            active = self.sessions.get(session, 0) > time.time()
+        return owner if active and owner and owner == self.review_profile() else None
+
     def session_key(self, cookie):
         try:
             c = SimpleCookie(cookie)
@@ -560,6 +567,41 @@ def handler(app):
         def valid_host(self):
             return len(self.headers.get_all('Host', [])) == 1 and self.headers.get('Host') == app.host
 
+        def agent_settings(self, action='', payload=None):
+            session = app.session_key(self.headers.get('Cookie', ''))
+            owner = app.agent_owner(session)
+            if not owner:
+                return self.send(404, {'error': 'Search agent settings are unavailable for this profile.'})
+            store = agent_search.auth.Store(ROOT, owner, http=getattr(app, 'agent_http', None))
+            options = hq_settings.load(ROOT, defaults_root=APP)['search_engines'].get('agent_search', {})
+            payload = payload or {}
+            try:
+                if action == 'key':
+                    store.set_key(payload.get('key'))
+                elif action == 'preferences':
+                    mode, model = payload.get('mode'), payload.get('model', '')
+                    if model:
+                        if mode == 'plan':
+                            models = agent_search.listed_models(store)
+                            agent_search.choose_model(mode, model, {}, models)
+                            if model not in models:
+                                raise agent_search.auth.Stop('Choose a model listed for your ChatGPT plan.')
+                        elif mode == 'api_key':
+                            agent_search.choose_model(mode, model, {})
+                    store.preferences(mode, model)
+                elif action == 'authorize':
+                    return self.send(200, {'url': agent_search.auth.listen(store, lambda: app.agent_owner(session) == owner)})
+                elif action == 'sign-out':
+                    store.sign_out(options.get('revocation_endpoint') or agent_search.auth.REVOKE_URL)
+                elif action == 'models':
+                    models = agent_search.listed_models(store)
+                    return self.send(200, {'models': models, 'note': agent_search.SEARCH_ONLY
+                                          if models and not any(model in agent_search.PRICES for model in models) else ''})
+                return self.send(200, {**store.view(), 'enabled': agent_search.enabled(options),
+                                       'priced_models': list(agent_search.PRICES)})
+            except agent_search.auth.Stop as error:
+                return self.send(400, {'error': str(error)})
+
         def do_GET(self):
             if not self.valid_host():
                 return self.send(404)
@@ -569,6 +611,11 @@ def handler(app):
                 return self.send(401, {'error': 'Sign in required.'}) if self.path.startswith('/api/') else self.send(303, headers={'Location': '/login'})
             try:
                 url = urlsplit(self.path)
+                if self.path == '/settings':
+                    return self.send(200, (HERE / 'hosted' / 'agent-settings.html').read_bytes(),
+                                     'text/html; charset=utf-8')
+                if self.path in ('/api/agent-settings', '/api/agent-settings/models'):
+                    return self.agent_settings('models' if self.path.endswith('/models') else '')
                 if url.path == '/api/to-review':
                     requested = parse_qs(url.query, keep_blank_values=True).get('profile', [None])
                     owner = app.review_owner(self.headers.get('Cookie', ''), requested[0])
@@ -684,13 +731,17 @@ def handler(app):
                 if self.path not in ('/api/add', '/api/update', '/api/rounds', '/api/star', '/api/writes/dismiss',
                                      '/api/ai/submit', '/api/ai/link', '/api/ai/export', '/api/search/submit',
                                      '/api/to-review/answer', '/api/to-review/filter',
-                                     '/api/ai/cv-trim/preview', '/api/ai/cv-trim/apply'):
+                                     '/api/ai/cv-trim/preview', '/api/ai/cv-trim/apply',
+                                     '/api/agent-settings/key', '/api/agent-settings/preferences',
+                                     '/api/agent-settings/authorize', '/api/agent-settings/sign-out'):
                     return self.send(404)
                 if content_type != 'application/json':
                     return self.send(415)
                 payload = json.loads(raw)
                 if not isinstance(payload, dict):
                     return self.send(400)
+                if self.path.startswith('/api/agent-settings/'):
+                    return self.agent_settings(self.path.rsplit('/', 1)[1], payload)
                 if self.path in ('/api/to-review/answer', '/api/to-review/filter'):
                     owner = app.review_owner(self.headers.get('Cookie', ''), payload.get('profile'))
                     if not owner:

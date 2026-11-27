@@ -25,7 +25,14 @@
     "cv_ai_role_words": ["AI", "agent", "agentic", "LLM", "automation", "machine learning", "prompt"],
     "copy_folder":  "",
     "daily_run": {"at": "06:00", "times": ["06:00", "22:00"], "enabled": true, "before": [], "copies": [], "judge": "on", "judge_ai": "codex"},
-    "search_engines": {},
+    "search_engines": {
+        "agent_search": {
+            "enabled": false,
+            "model": "gpt-5-mini",
+            "max_searches": 10,
+            "max_dollars": 0.30
+        }
+    },
     "no_automatic_read_hosts": ["amazon.jobs", "amazon.com", "smartrecruiters.com"],
     "copy_subfolder":  "Drafts from HQ",
     "home_places_pattern":  "",

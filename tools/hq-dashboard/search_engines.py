@@ -7,6 +7,7 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import sqlite3
 import time
 from urllib.error import HTTPError
 from urllib.parse import quote, unquote, unquote_plus, urlencode, urljoin, urlsplit
@@ -26,7 +27,7 @@ def load(name, folder=HERE / 'search_engines'):
 search = load('daily_search', HERE)
 links = load('link_fetch', HERE)
 careers = load('careers_page')
-FEEDS = ('web_search', 'adzuna', 'jooble', 'careerjet', 'remotive', 'remoteok', 'arbeitnow', 'linkedin')
+FEEDS = ('agent_search', 'web_search', 'adzuna', 'jooble', 'careerjet', 'remotive', 'remoteok', 'arbeitnow', 'linkedin')
 LEGACY = ('configured_boards', 'workday', 'workable_search', 'himalayas', 'jobicy')
 NAMES = (*FEEDS, *LEGACY, 'careers_page')
 KEYED = tuple(search.settings.SEARCH_KEY_FIELDS)
@@ -265,7 +266,8 @@ def extra_rows(board, queries, fetch, day):
 
 
 def find(profile, plan, day, backlog, settings, *, api=None, page=None, board_fetch=None, registry=None,
-         board_reads=None, jobicy_pages=None, allowed=lambda text: True, stopped=None):
+         board_reads=None, jobicy_pages=None, allowed=lambda text, **kwargs: True, stopped=None,
+         profile_root=None, agent_http=None, usage=None, run_id=None, agent_feedback=(), agent_allowed=None):
     owner = profile['id']
     if registry is not None:
         results = []
@@ -286,7 +288,7 @@ def find(profile, plan, day, backlog, settings, *, api=None, page=None, board_fe
         if name in stopped or not enabled(settings, name):
             if name in stopped:
                 reason = stopped[name]
-            elif options.get('enabled') is False:
+            elif options.get('enabled') is False or name == 'agent_search':
                 reason = 'This engine is switched off.'
             elif name == 'linkedin':
                 reason = 'No LinkedIn alert export is configured.'
@@ -294,9 +296,26 @@ def find(profile, plan, day, backlog, settings, *, api=None, page=None, board_fe
                 reason = 'The API key, account ID or supported provider setting is missing.'
             batches.append((name, '', [], 0, reason))
             continue
-        transport = Transport(api, module.PACE if api is api_request else 0, module.CAP, module.TIMEOUT, blocked)
         queries = [row for row in queries_for(name, plan, profile)
                    if allowed(row['words']) and (not row['place'] or allowed(row['place']))]
+        if name == 'agent_search':
+            found, reason = [], ''
+            root = Path(profile_root) if profile_root is not None else search.settings.data_root()
+            try:
+                agent_guard = agent_allowed or allowed
+                store = module.auth.Store(root, owner, http=agent_http)
+                ledger = module.Usage(usage or root / 'work' / 'ai-usage.sqlite3', owner,
+                                      day, run_id or day.isoformat())
+                context = module.context(profile, queries, plan['employers'], list(agent_feedback), agent_guard)
+                found, reason = module.read(store, options, ledger, context, agent_guard, search.boards.safe_link)
+            except module.auth.Stop as error:
+                reason = str(error)
+            except (OSError, ValueError, TypeError, sqlite3.Error):
+                reason = 'The search agent could not finish this run.'
+            hits[name] = found
+            batches.append((name, '', [], len(found), reason))
+            continue
+        transport = Transport(api, module.PACE if api is api_request else 0, module.CAP, module.TIMEOUT, blocked)
         if name == 'web_search':
             web = (module, transport)
             queries = queries[:30] + [dict(words=item['name'] + ' careers', place=item.get('place', ''))
@@ -316,7 +335,8 @@ def find(profile, plan, day, backlog, settings, *, api=None, page=None, board_fe
 
     # Aggregator URLs are leads, and their titles/descriptions cannot establish facts.
     # The web provider can seek the original by matching employer and title.
-    leads = [row for name, rows in hits.items() if name != 'web_search' for row in rows if row['company'] and row['title']]
+    leads = [row for name, rows in hits.items() if name not in ('web_search', 'agent_search')
+             for row in rows if row['company'] and row['title']]
     leads = [row for row in leads if allowed(row['company']) and allowed(row['title'])
              and any(titles for _, titles, _ in search.lane_matches(profile, row['title'], ''))]
     if web:
@@ -330,7 +350,7 @@ def find(profile, plan, day, backlog, settings, *, api=None, page=None, board_fe
                 hits['web_search'].extend(public_hits(module.read(transport, [query], options), options, 'web_search'))
             except (OSError, ValueError, KeyError, TypeError, AttributeError, HTTPException):
                 break
-    urls = [row['url'] for rows in hits.values() for row in rows
+    urls = [row['url'] for name, rows in hits.items() if name != 'agent_search' for row in rows
             if search.boards.safe_link(row['url']) and not careers.is_lead(row['url'])]
     urls[:0] = [item['url'] for item in plan['employers'] if item.get('url')]
     employers = [(item['name'], item['why']) for item in plan['employers']]
@@ -342,7 +362,8 @@ def find(profile, plan, day, backlog, settings, *, api=None, page=None, board_fe
     for board in known:
         candidates[board_key(board)] = board
 
-    page_jobs, page_errors = [], []
+    page_jobs, page_errors, agent_jobs = [], [], []
+    agent_reasons, agent_boards = {}, set()
     if enabled(settings, 'careers_page'):
         last = {}
 
@@ -381,6 +402,25 @@ def find(profile, plan, day, backlog, settings, *, api=None, page=None, board_fe
             board = dict(provider='amazon', board='amazon', label='Amazon', why='Named in the search plan.',
                          found_by='Public jobs search')
             candidates.setdefault(board_key(board), board)
+        agent_reasons = {row['url'].split('#', 1)[0]: row['reason'] for row in hits.get('agent_search', [])
+                         if not careers.is_lead(row['url']) and not read_disallowed(row['url'])}
+        if agent_reasons:
+            def read_agent_page(url):
+                answer = polite(url)
+                if answer and len(answer) > 3 and url in agent_reasons:
+                    agent_reasons.setdefault(answer[3].split('#', 1)[0], agent_reasons[url])
+                return answer
+
+            agent_urls = list(agent_reasons)
+            agent_jobs, _, detected, errors = careers.read(read_agent_page, agent_urls, day, blocked, links._closed)
+            page_errors.extend(errors)
+            direct = [board for url in agent_urls if careers.host(url) not in blocked
+                      and (board := careers.board_for(url))]
+            for board in [*detected, *direct]:
+                key = board_key(board)
+                if key not in candidates and key not in configured_keys:
+                    agent_boards.add(key)
+                    candidates[key] = dict(board, label=board['board'], why='Found by the search agent.')
     else:
         page_errors.append('This engine is switched off.')
 
@@ -489,6 +529,9 @@ def find(profile, plan, day, backlog, settings, *, api=None, page=None, board_fe
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
             answered, count, jobs = False, 0, []
             reason = str(error) if isinstance(error, ReadStopped) else 'The public employer API did not answer.'
+        if key in agent_boards:
+            agent_jobs.extend(jobs)
+            continue
         remember_board(backlog, owner, board, day, answered, count, reason or ('No postings were returned.' if not count else ''))
         for job in jobs:
             job['found_by'] = 'Employer board discovery'
@@ -500,6 +543,16 @@ def find(profile, plan, day, backlog, settings, *, api=None, page=None, board_fe
     confirmed = {search.job_key(job['company'], job['title']): job for job in employer_jobs if job.get('open')}
     for index, (name, token, jobs, total, reason) in enumerate(batches):
         if name not in FEEDS:
+            continue
+        if name == 'agent_search':
+            if not agent_reasons:
+                continue
+            explicitly_closed = {job['link'].split('#', 1)[0] for job in agent_jobs
+                                 if job.get('open') is False and not job.get('lead')}
+            for job in sorted([*agent_jobs, *employer_jobs], key=lambda row: row.get('posted_on') or '', reverse=True):
+                link = job['link'].split('#', 1)[0]
+                if job.get('open') is True and link in agent_reasons and link not in explicitly_closed:
+                    jobs.append(dict(job, found_by=load(name).LABEL, agent_reason=agent_reasons.pop(link)))
             continue
         for hit in hits.get(name, []):
             key = search.job_key(hit.get('company'), hit.get('title'))

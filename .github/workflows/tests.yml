@@ -35,6 +35,7 @@ jobs:
       - run: python -I tools/hq-dashboard/test_ai_shadow.py
       - run: python -I tools/hq-dashboard/test_review_search.py
       - run: python -I tools/hq-dashboard/test_search_keys.py
+      - run: python -I tools/hq-dashboard/test_agent_search.py
       - run: python -I tools/hq-dashboard/test_automatic_read_hosts.py
       # Card 03: closing and re-check.
       - run: python -I tools/hq-dashboard/test_board_reads.py
